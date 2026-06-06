@@ -9,6 +9,7 @@ import pandas as pd
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
+from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
@@ -30,6 +31,10 @@ EXPECTED_TABLE_COLUMNS = {
     "player_market_values": ["source", "source_player_id", "player_id", "player_name", "position", "market_value", "market_rank", "value_format", "source_trace"],
     "pick_market_values": ["source", "pick_label", "pick_season", "round", "market_value", "source_trace"],
     "source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
+    "news_events": ["source", "event_id", "event_type", "published_at", "title", "summary", "url", "player_id", "player_name", "team", "position", "source_trace"],
+    "player_news_matches": ["event_id", "source", "input_player_name", "player_id", "matched_player_name", "match_method", "match_confidence", "is_ambiguous", "source_trace"],
+    "league_news_impact": ["event_id", "source", "published_at", "player_id", "player_name", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"],
+    "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "manager_profiles": ["roster_id", "display_name", "team_name", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
@@ -66,6 +71,10 @@ class VModelTests(unittest.TestCase):
             "asset_market_gaps": ["evidence", "risk", "confidence", "source_trace"],
             "opportunity_board": ["evidence", "risk", "confidence", "source_trace"],
             "source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
+            "news_events": ["source", "source_trace"],
+            "player_news_matches": ["source", "source_trace", "match_confidence"],
+            "league_news_impact": ["evidence", "risk", "confidence", "source_trace"],
+            "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -167,12 +176,17 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Manager Map", html)
         self.assertIn("Asset Ledger", html)
         self.assertIn("Opportunity Board", html)
+        self.assertIn("News Desk", html)
+        self.assertIn("Player News Matches", html)
         self.assertIn("Data Diagnostics", html)
         self.assertIn("waiver-scope", html)
         self.assertIn("Source Freshness", html)
         self.assertIn("Player market rows", html)
         self.assertIn("Usage rows", html)
         self.assertIn("Economic asset rows", html)
+        self.assertIn("News event rows", html)
+        self.assertIn("News impact rows", html)
+        self.assertIn("News Source Freshness", html)
         self.assertIn("Recommendation packets", html)
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
@@ -182,6 +196,40 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(frames["source_freshness"].iloc[0]["source"], "external_sources")
         self.assertEqual(frames["source_freshness"].iloc[0]["status"], "no_external_sources_enabled")
         self.assertIn("player_market_values", frames)
+
+    def test_news_tables_match_sleeper_trending_to_rostered_player(self) -> None:
+        class FakeAPI:
+            BASE_URL = "https://api.sleeper.app/v1"
+
+            def trending_players(self, season: str, trend_type: str, force: bool = False):
+                if trend_type == "add":
+                    return [{"player_id": "1", "count": 25}]
+                return []
+
+        players = {
+            "1": {
+                "full_name": "Jayden Daniels",
+                "position": "QB",
+                "team": "WAS",
+            }
+        }
+        teams = pd.DataFrame([{"roster_id": 2, "team_name": "Melkor Lord of Light"}])
+        roster_players = pd.DataFrame(
+            [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"}]
+        )
+
+        tables = build_news_tables(
+            {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
+            FakeAPI(),
+            players,
+            teams,
+            roster_players,
+        )
+
+        self.assertEqual(tables["player_news_matches"].iloc[0]["player_id"], "1")
+        self.assertEqual(tables["player_news_matches"].iloc[0]["match_confidence"], "high")
+        self.assertEqual(tables["league_news_impact"].iloc[0]["team_name"], "Melkor Lord of Light")
+        self.assertEqual(tables["league_news_impact"].iloc[0]["impact_type"], "market_heat")
 
     def test_economic_tables_create_market_gaps_and_behavior_signals(self) -> None:
         teams = pd.DataFrame(
@@ -364,6 +412,60 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(columns=["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"]).to_csv(
             processed / "source_freshness.csv", index=False
         )
+        pd.DataFrame(
+            [
+                {
+                    "source": "sleeper_trending",
+                    "event_id": "sleeper_trending_add_1",
+                    "event_type": "trending_add",
+                    "published_at": "2026-06-06T00:00:00+00:00",
+                    "title": "Sleeper trending add: Jayden Daniels",
+                    "summary": "Jayden Daniels is trending as an add with count 25.",
+                    "url": "https://api.sleeper.app/v1/players/nfl/trending/add",
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "team": "WAS",
+                    "position": "QB",
+                    "source_trace": "https://api.sleeper.app/v1/players/nfl/trending/add",
+                }
+            ]
+        ).to_csv(processed / "news_events.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "event_id": "sleeper_trending_add_1",
+                    "source": "sleeper_trending",
+                    "input_player_name": "Jayden Daniels",
+                    "player_id": "1",
+                    "matched_player_name": "Jayden Daniels",
+                    "match_method": "sleeper_id",
+                    "match_confidence": "high",
+                    "is_ambiguous": False,
+                    "source_trace": "https://api.sleeper.app/v1/players/nfl/trending/add",
+                }
+            ]
+        ).to_csv(processed / "player_news_matches.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "event_id": "sleeper_trending_add_1",
+                    "source": "sleeper_trending",
+                    "published_at": "2026-06-06T00:00:00+00:00",
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "roster_id": 2,
+                    "team_name": "Melkor Lord of Light",
+                    "impact_type": "market_heat",
+                    "evidence": "Sleeper trending add: Jayden Daniels",
+                    "risk": "medium",
+                    "confidence": "high",
+                    "source_trace": "https://api.sleeper.app/v1/players/nfl/trending/add",
+                }
+            ]
+        ).to_csv(processed / "league_news_impact.csv", index=False)
+        pd.DataFrame(
+            [{"source": "sleeper_trending", "dataset": "trending_add", "status": "cached", "source_url": "https://api.sleeper.app/v1/players/nfl/trending/add", "cache_path": "data/raw_external/sleeper/2026/trending_add.json", "checked_at": "2026-06-06T00:00:00+00:00", "row_count": 1}]
+        ).to_csv(processed / "news_source_freshness.csv", index=False)
         pd.DataFrame(columns=["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"]).to_csv(
             processed / "player_usage_weekly.csv", index=False
         )

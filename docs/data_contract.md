@@ -62,6 +62,10 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `player_market_values` | External source normalization | Player market values | DynastyProcess or configured market source | `source`, `source_player_id`, `player_id`, `player_name`, `position`, `market_value`, `market_rank`, `value_format`, `source_trace` | `source`, `source_trace` |
 | `pick_market_values` | External source normalization | Pick market values when source is available | DynastyProcess or configured pick value source | `source`, `pick_label`, `pick_season`, `round`, `market_value`, `source_trace` | `source`, `source_trace`; empty table is valid when source unavailable |
 | `source_freshness` | External source normalization | Source status and row-count diagnostics | Refresh process | `source`, `dataset`, `status`, `source_url`, `cache_path`, `checked_at`, `row_count` | rows must explain available, cached, disabled, or unavailable source state |
+| `news_events` | News source normalization | Raw news/trending items normalized into rows | RotoWire RSS and Sleeper trending | `source`, `event_id`, `event_type`, `published_at`, `title`, `summary`, `url`, `player_id`, `player_name`, `team`, `position`, `source_trace` | `event_id`, `source`, `source_trace` |
+| `player_news_matches` | News source normalization | Match news items to Sleeper player IDs | `news_events` + Sleeper player cache | `event_id`, `source`, `input_player_name`, `player_id`, `matched_player_name`, `match_method`, `match_confidence`, `is_ambiguous`, `source_trace` | match method and confidence required |
+| `league_news_impact` | Deterministic news analytics | Roster-scoped news impacts | `news_events`, `player_news_matches`, `roster_players`, `teams` | `event_id`, `source`, `published_at`, `player_id`, `player_name`, `roster_id`, `team_name`, `impact_type`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
+| `news_source_freshness` | News source normalization | News source status and row-count diagnostics | Refresh process | `source`, `dataset`, `status`, `source_url`, `cache_path`, `checked_at`, `row_count` | rows must explain cached, refreshed, disabled, or unavailable source state |
 
 ### Derived Analytics Tables
 
@@ -91,6 +95,8 @@ Strategy views are browser and markdown outputs that apply configurable team str
 - Sleeper owns league identity, rosters, users, transactions, drafts, traded picks, and player metadata.
 - nflverse owns NFL usage/performance reference data when available.
 - DynastyProcess owns imported market value reference data when available.
+- RotoWire RSS owns attributed player-news rows imported through its published RSS feed.
+- Sleeper trending owns public add/drop trend rows imported through the Sleeper trending endpoint.
 - Internal proxy values are continuity fallbacks only.
 - Config owns selected current team, strategy profile, tracked pick priorities, and source toggles.
 - Processed tables own normalized analysis state.

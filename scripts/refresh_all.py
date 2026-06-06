@@ -12,6 +12,7 @@ from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
 from src.manager_profiles import build_manager_profiles
+from src.news import build_news_tables
 from src.normalize import (
     build_roster_maps,
     normalize_draft_picks,
@@ -123,6 +124,7 @@ def main(force: bool = False) -> None:
     dataframes["manager_profiles"] = manager_profiles
     dataframes["pick_ownership"] = pick_ownership
     dataframes.update(external_frames)
+    dataframes.update(build_news_tables(config, api, players, dataframes["teams"], dataframes["roster_players"], force=force))
     dataframes.update(
         build_economic_tables(
             dataframes["teams"],

@@ -5,7 +5,7 @@ from typing import Any
 
 import requests
 
-from .utils import RAW_DIR, dump_json, load_json
+from .utils import RAW_DIR, RAW_EXTERNAL_DIR, dump_json, load_json
 
 
 class SleeperAPIError(RuntimeError):
@@ -63,3 +63,10 @@ class SleeperAPI:
 
     def players_nfl(self, cache_path: Path, force: bool = False) -> dict[str, Any]:
         return self.get("/players/nfl", cache_path, force)
+
+    def trending_players(self, season: str, trend_type: str, force: bool = False) -> list[dict[str, Any]]:
+        return self.get(
+            f"/players/nfl/trending/{trend_type}",
+            RAW_EXTERNAL_DIR / "sleeper" / season / f"trending_{trend_type}.json",
+            force,
+        )

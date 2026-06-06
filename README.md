@@ -117,6 +117,10 @@ The first deliverable exports:
 - `asset_market_gaps.csv`
 - `opportunity_board.csv`
 - `source_freshness.csv`
+- `news_events.csv`
+- `player_news_matches.csv`
+- `league_news_impact.csv`
+- `news_source_freshness.csv`
 - `refresh_metadata.csv`
 
 ## Notes

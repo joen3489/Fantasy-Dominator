@@ -5,6 +5,11 @@ external_sources:
     - sleeper
     - nflverse
     - dynastyprocess
+news_sources:
+  enabled:
+    - rotowire_rss
+    - sleeper_trending
+  rotowire_nfl_rss_url: "https://www.rotowire.com/rss/news.php?sport=NFL"
 market_model:
   position_groups:
     QB: ["QB"]

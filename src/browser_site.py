@@ -33,6 +33,10 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR) ->
         "asset_market_gaps": _records(processed_dir / "asset_market_gaps.csv"),
         "opportunity_board": _records(processed_dir / "opportunity_board.csv"),
         "source_freshness": _records(processed_dir / "source_freshness.csv"),
+        "news_events": _records(processed_dir / "news_events.csv"),
+        "player_news_matches": _records(processed_dir / "player_news_matches.csv"),
+        "league_news_impact": _records(processed_dir / "league_news_impact.csv"),
+        "news_source_freshness": _records(processed_dir / "news_source_freshness.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -214,6 +218,7 @@ def _page(
     <a href="#market-gaps">Market Gaps</a>
     <a href="#asset-ledger">Asset Ledger</a>
     <a href="#opportunity-board">Opportunity Board</a>
+    <a href="#news-desk">News Desk</a>
     <a href="#manager-map">Manager Map</a>
     <a href="#manager-behavior">Manager Behavior</a>
     <a href="#pick-ledger">Pick Ledger</a>
@@ -288,6 +293,18 @@ def _page(
       <div id="opportunity-table"></div>
     </section>
 
+    <section id="news-desk">
+      <h2>News Desk</h2>
+      <div class="controls">
+        <button class="news-scope active" data-news-scope="team" type="button">Active Team</button>
+        <button class="news-scope" data-news-scope="league" type="button">League</button>
+        <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched</button>
+      </div>
+      <div id="news-impact-table"></div>
+      <h3>Player News Matches</h3>
+      <div id="news-match-table"></div>
+    </section>
+
     <section id="manager-map">
       <h2>Manager Map</h2>
       <div class="grid">
@@ -353,7 +370,8 @@ def _page(
       tradeScope: 'team',
       waiverScope: 'team',
       waiverStatus: 'ALL',
-      gapScope: 'targets'
+      gapScope: 'targets',
+      newsScope: 'team'
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -368,6 +386,8 @@ def _page(
     const managerSignalColumns = ['team_name', 'trade_activity_score', 'pick_buyer_score', 'pick_seller_score', 'faab_aggression_score', 'waiver_activity_score', 'plain_language_label', 'evidence'];
     const managerEventColumns = ['event_type', 'week', 'team_name', 'counterparty', 'players_in', 'picks_in', 'faab_in', 'players_out', 'picks_out', 'faab_out', 'evidence'];
     const sourceColumns = ['source', 'dataset', 'status', 'row_count', 'checked_at', 'source_url', 'cache_path'];
+    const newsImpactColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence', 'source_trace'];
+    const newsMatchColumns = ['source', 'input_player_name', 'matched_player_name', 'match_method', 'match_confidence', 'is_ambiguous', 'source_trace'];
 
     function init() {{
       populateTeamFilter();
@@ -424,6 +444,7 @@ def _page(
         state.waiverScope = 'team';
         state.waiverStatus = 'ALL';
         state.gapScope = 'targets';
+        state.newsScope = 'team';
         syncControls();
         render();
       }});
@@ -455,6 +476,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.news-scope').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.newsScope = button.dataset.newsScope;
+          setActive('.news-scope', button);
+          render();
+        }});
+      }});
     }}
 
     function syncControls() {{
@@ -467,6 +495,7 @@ def _page(
       document.querySelectorAll('.scope-filter').forEach(button => button.classList.toggle('active', button.dataset.scope === state.tradeScope));
       document.querySelectorAll('.waiver-scope').forEach(button => button.classList.toggle('active', button.dataset.waiverScope === state.waiverScope));
       document.querySelectorAll('.gap-scope').forEach(button => button.classList.toggle('active', button.dataset.gapScope === state.gapScope));
+      document.querySelectorAll('.news-scope').forEach(button => button.classList.toggle('active', button.dataset.newsScope === state.newsScope));
     }}
 
     function render() {{
@@ -511,6 +540,8 @@ def _page(
         assetLedgerColumns
       );
       document.getElementById('opportunity-table').innerHTML = table(applySearch(tables.opportunity_board), opportunityColumns);
+      document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
+      document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
       document.getElementById('manager-signal-table').innerHTML = table(applySearch(tables.manager_behavior_signals), managerSignalColumns);
       document.getElementById('manager-event-table').innerHTML = table(
         sortRows(applySearch(tables.manager_event_log.filter(row => Number(row.roster_id) === state.teamId)), ['week']).reverse(),
@@ -529,6 +560,20 @@ def _page(
       if (state.gapScope === 'targets') rows = rows.filter(row => Number(row.target_roster_id) !== state.teamId);
       if (state.gapScope === 'team') rows = rows.filter(row => Number(row.target_roster_id) === state.teamId);
       return sortRows(applySearch(rows), ['market_gap_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredNewsImpact() {{
+      let rows = tables.league_news_impact.slice();
+      if (state.newsScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.newsScope === 'unmatched') rows = [];
+      return sortRows(applySearch(rows), ['published_at']).reverse().slice(0, 80);
+    }}
+
+    function filteredNewsMatches() {{
+      let rows = tables.player_news_matches.slice();
+      if (state.newsScope !== 'unmatched') rows = rows.filter(row => String(row.match_method) !== 'no_match');
+      if (state.newsScope === 'unmatched') rows = rows.filter(row => String(row.match_method) === 'no_match' || truthy(row.is_ambiguous));
+      return applySearch(rows).slice(0, 80);
     }}
 
     function legacyManagerRenderPlaceholder() {{
@@ -602,8 +647,10 @@ def _page(
         {{ item: 'Pick market rows', value: tables.pick_market_values.length }},
         {{ item: 'Usage rows', value: tables.player_usage_weekly.length }},
         {{ item: 'Economic asset rows', value: tables.team_asset_inventory.length }},
+        {{ item: 'News event rows', value: tables.news_events.length }},
+        {{ item: 'News impact rows', value: tables.league_news_impact.length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
-      ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns);
+      ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns);
     }}
 
     function table(rows, columns) {{
