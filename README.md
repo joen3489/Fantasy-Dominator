@@ -1,4 +1,4 @@
-# Sleeper Dynasty Data
+# Fantasy Dominator
 
 Local structured data repository for a Sleeper dynasty fantasy football league.
 
