@@ -55,6 +55,27 @@ http://localhost:8765
 
 The browser surface is the primary weekly workspace. CSV, SQLite, and markdown outputs are supporting artifacts for auditability and ChatGPT sharing.
 
+## Railway Production
+
+Railway should run the app as a Python service with:
+
+```text
+python scripts/start.py
+```
+
+The production start script:
+
+- Uses Railway's `PORT` environment variable.
+- Binds to `0.0.0.0` so the service is externally reachable.
+- Runs `python scripts/refresh_all.py` on first boot when `data/site/index.html` is missing.
+- Serves the generated browser surface from `data/site/`.
+
+Optional environment variables:
+
+- `FANTASY_REFRESH_ON_START=true` refreshes data on every boot.
+- `FANTASY_FORCE_REFRESH=true` bypasses existing raw/cache files during startup refresh.
+- `HOST=0.0.0.0` is the production default; local `scripts/serve.py` still defaults to `127.0.0.1`.
+
 ## Config
 
 Edit `config/leagues.yml` to add prior league IDs by season:
