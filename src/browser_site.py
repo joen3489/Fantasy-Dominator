@@ -212,6 +212,7 @@ def _page(
     <p><span id="active-team-label">{escape(my_team_name)}</span> weekly command surface. Data refresh is read-only.</p>
   </header>
   <nav>
+    <a href="#todays-board">Today's Board</a>
     <a href="#decision-board">Decision Board</a>
     <a href="#team-overview">Team Overview</a>
     <a href="#roster-value">Roster Value</a>
@@ -228,6 +229,18 @@ def _page(
     <a href="#draft">Draft</a>
   </nav>
   <main>
+    <section id="todays-board">
+      <h2>Today's Board</h2>
+      <div class="grid">
+        <div class="panel"><h3>Buy-Low Targets</h3><div id="today-buy-low"></div></div>
+        <div class="panel"><h3>Sell Windows</h3><div id="today-sell-window"></div></div>
+        <div class="panel"><h3>My Roster News</h3><div id="today-my-news"></div></div>
+        <div class="panel"><h3>Trade Target News</h3><div id="today-target-news"></div></div>
+        <div class="panel"><h3>Pick Alerts</h3><div id="today-pick-alerts"></div></div>
+        <div class="panel"><h3>Manager Angles</h3><div id="today-manager-angles"></div></div>
+      </div>
+    </section>
+
     <section id="decision-board">
       <h2>Decision Board</h2>
       <div class="controls">
@@ -296,9 +309,9 @@ def _page(
     <section id="news-desk">
       <h2>News Desk</h2>
       <div class="controls">
-        <button class="news-scope active" data-news-scope="team" type="button">Active Team</button>
-        <button class="news-scope" data-news-scope="league" type="button">League</button>
-        <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched</button>
+        <button class="news-scope active" data-news-scope="league-impact" type="button">League Impact</button>
+        <button class="news-scope" data-news-scope="watchlist" type="button">Watchlist / Waiver</button>
+        <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched Feed Items</button>
       </div>
       <div id="news-impact-table"></div>
       <h3>Player News Matches</h3>
@@ -371,7 +384,7 @@ def _page(
       waiverScope: 'team',
       waiverStatus: 'ALL',
       gapScope: 'targets',
-      newsScope: 'team'
+      newsScope: 'league-impact'
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -388,6 +401,9 @@ def _page(
     const sourceColumns = ['source', 'dataset', 'status', 'row_count', 'checked_at', 'source_url', 'cache_path'];
     const newsImpactColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence', 'source_trace'];
     const newsMatchColumns = ['source', 'input_player_name', 'matched_player_name', 'match_method', 'match_confidence', 'is_ambiguous', 'source_trace'];
+    const todayOpportunityColumns = ['opportunity_type', 'target_team', 'asset_name', 'position', 'market_gap_score', 'evidence', 'risk', 'confidence'];
+    const todayNewsColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
+    const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
 
     function init() {{
       populateTeamFilter();
@@ -444,7 +460,7 @@ def _page(
         state.waiverScope = 'team';
         state.waiverStatus = 'ALL';
         state.gapScope = 'targets';
-        state.newsScope = 'team';
+        state.newsScope = 'league-impact';
         syncControls();
         render();
       }});
@@ -514,6 +530,12 @@ def _page(
       const passCount = allTeamRoster.filter(row => row.position === 'WR' || row.position === 'TE').length;
       const teamTrades = tables.trades.filter(row => Number(row.team_a_roster_id) === state.teamId || Number(row.team_b_roster_id) === state.teamId);
       const myPicksAway = tables.pick_ownership.filter(row => truthy(row.is_my_original_pick) && !truthy(row.i_currently_own_it));
+      const rankedGaps = sortRows(applySearch(tables.asset_market_gaps), ['market_gap_score']).reverse();
+      const buyLowTargets = rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 8);
+      const sellWindows = rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 8);
+      const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 8);
+      const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 8);
+      const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 8);
 
       setText('metric-roster', allTeamRoster.length);
       setText('metric-qb', qbCount);
@@ -523,6 +545,12 @@ def _page(
       setText('metric-team-trades', teamTrades.length);
 
       document.getElementById('my-pick-alerts').innerHTML = list(myPicksAway.map(row => `${{row.pick_season}} round ${{row.round}}: ${{row.current_owner}}`));
+      document.getElementById('today-buy-low').innerHTML = table(buyLowTargets, todayOpportunityColumns);
+      document.getElementById('today-sell-window').innerHTML = table(sellWindows, todayOpportunityColumns);
+      document.getElementById('today-my-news').innerHTML = table(myNews, todayNewsColumns);
+      document.getElementById('today-target-news').innerHTML = table(targetNews, todayNewsColumns);
+      document.getElementById('today-pick-alerts').innerHTML = list(myPicksAway.slice(0, 8).map(row => `${{row.pick_season}} R${{row.round}} from ${{row.original_team}} is with ${{row.current_owner}}`));
+      document.getElementById('today-manager-angles').innerHTML = table(managerAngles, todayManagerColumns);
       document.getElementById('team-overview-panel').innerHTML = teamOverview(activeTeam, allTeamRoster, teamTrades);
       document.getElementById('strategy-panel').innerHTML = strategyOverlay();
       document.getElementById('likely-traders').innerHTML = table(
@@ -564,14 +592,15 @@ def _page(
 
     function filteredNewsImpact() {{
       let rows = tables.league_news_impact.slice();
-      if (state.newsScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.newsScope === 'league-impact') rows = rows.filter(row => Number(row.roster_id));
+      if (state.newsScope === 'watchlist') rows = rows.filter(row => !Number(row.roster_id));
       if (state.newsScope === 'unmatched') rows = [];
       return sortRows(applySearch(rows), ['published_at']).reverse().slice(0, 80);
     }}
 
     function filteredNewsMatches() {{
       let rows = tables.player_news_matches.slice();
-      if (state.newsScope !== 'unmatched') rows = rows.filter(row => String(row.match_method) !== 'no_match');
+      if (state.newsScope !== 'unmatched') rows = rows.filter(row => String(row.match_method) !== 'no_match' && !truthy(row.is_ambiguous));
       if (state.newsScope === 'unmatched') rows = rows.filter(row => String(row.match_method) === 'no_match' || truthy(row.is_ambiguous));
       return applySearch(rows).slice(0, 80);
     }}

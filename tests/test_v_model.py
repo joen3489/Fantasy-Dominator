@@ -183,6 +183,11 @@ class VModelTests(unittest.TestCase):
             html = output.read_text(encoding="utf-8")
 
         self.assertIn("Team Overview", html)
+        self.assertIn("Today's Board", html)
+        self.assertIn("Buy-Low Targets", html)
+        self.assertIn("Sell Windows", html)
+        self.assertIn("My Roster News", html)
+        self.assertIn("Trade Target News", html)
         self.assertIn("Roster Value Board", html)
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)
@@ -190,6 +195,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Asset Ledger", html)
         self.assertIn("Opportunity Board", html)
         self.assertIn("News Desk", html)
+        self.assertIn("League Impact", html)
+        self.assertIn("Watchlist / Waiver", html)
+        self.assertIn("Unmatched Feed Items", html)
         self.assertIn("Player News Matches", html)
         self.assertIn("Data Diagnostics", html)
         self.assertIn("waiver-scope", html)
@@ -201,6 +209,15 @@ class VModelTests(unittest.TestCase):
         self.assertIn("News impact rows", html)
         self.assertIn("News Source Freshness", html)
         self.assertIn("Recommendation packets", html)
+
+    def test_live_smoke_script_exists_with_required_markers(self) -> None:
+        script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"
+        text = script.read_text(encoding="utf-8")
+
+        self.assertIn("fantasy-dominator-production.up.railway.app", text)
+        self.assertIn("Today's Board", text)
+        self.assertIn("News Desk", text)
+        self.assertIn("Data Diagnostics", text)
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
         frames = refresh_external_sources({"source_policy": "open_legal_only", "external_sources": {"enabled": []}})
