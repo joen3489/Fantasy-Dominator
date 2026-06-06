@@ -13,6 +13,7 @@ from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
+from scripts.serve import RailwayHTTPRequestHandler
 
 
 EXPECTED_TABLE_COLUMNS = {
@@ -49,6 +50,9 @@ EXPECTED_TABLE_COLUMNS = {
 
 
 class VModelTests(unittest.TestCase):
+    def test_railway_handler_uses_http_11(self) -> None:
+        self.assertEqual(RailwayHTTPRequestHandler.protocol_version, "HTTP/1.1")
+
     def test_processed_table_contract_columns_exist(self) -> None:
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         missing_files = []
