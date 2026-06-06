@@ -11,12 +11,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils import SITE_DIR, ensure_dirs
 
 
-class ReusableTCPServer(socketserver.TCPServer):
+class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
+    daemon_threads = True
 
 
 class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def end_headers(self) -> None:
+        self.send_header("Connection", "close")
+        super().end_headers()
 
 
 def main(port: int = 8765, host: str = "127.0.0.1") -> None:

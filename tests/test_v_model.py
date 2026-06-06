@@ -14,6 +14,7 @@ from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from scripts.serve import RailwayHTTPRequestHandler
+from scripts.start import write_boot_page
 
 
 EXPECTED_TABLE_COLUMNS = {
@@ -52,6 +53,14 @@ EXPECTED_TABLE_COLUMNS = {
 class VModelTests(unittest.TestCase):
     def test_railway_handler_uses_http_11(self) -> None:
         self.assertEqual(RailwayHTTPRequestHandler.protocol_version, "HTTP/1.1")
+
+    def test_startup_boot_page_allows_healthcheck_before_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_boot_page(Path(tmp))
+            html = path.read_text(encoding="utf-8")
+
+        self.assertIn("Fantasy Dominator", html)
+        self.assertIn("Data refresh is running", html)
 
     def test_processed_table_contract_columns_exist(self) -> None:
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
