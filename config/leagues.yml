@@ -1,0 +1,87 @@
+current_season: "2026"
+source_policy: open_legal_only
+external_sources:
+  enabled:
+    - sleeper
+    - nflverse
+    - dynastyprocess
+market_model:
+  position_groups:
+    QB: ["QB"]
+    RB: ["RB"]
+    Pass Catcher: ["WR", "TE"]
+    Pick: ["PICK"]
+  scarcity_weights:
+    QB: 1.3
+    RB: 0.9
+    Pass Catcher: 1.15
+    Pick: 1.25
+  timeline_weights:
+    deep_rebuild:
+      youth: 1.25
+      picks: 1.35
+      veteran_rb: 0.55
+      veteran_pass_catcher: 0.75
+  liquidity_rules:
+    picks: high
+    young_qb_wr_te: high
+    aging_rb: thin
+current_team:
+  roster_id: 2
+  display_name: joe3489
+  team_name: Melkor Lord of Light
+strategy_profile:
+  name: Melkor rebuild
+  team_direction: deep_rebuild
+  contention_window: "2027 earliest, more likely 2028"
+  position_groups:
+    QB:
+      positions: ["QB"]
+      read: "Jayden Daniels is the cornerstone; target discounted young QB2 value, do not panic-buy mediocre production."
+    RB:
+      positions: ["RB"]
+      read: "Do not spend premium assets fixing RB early; use waivers and sell role/news spikes."
+    Pass Catcher:
+      positions: ["WR", "TE"]
+      read: "WR and TE are evaluated together because there is no dedicated TE slot; target-earning TEs get a scoring boost."
+  core_holds:
+    - Jayden Daniels
+    - Sam LaPorta
+    - Colston Loveland
+  shop_quietly:
+    - T.J. Hockenson
+    - Pat Freiermuth
+    - Deebo Samuel
+    - Tyreek Hill
+    - Joe Mixon
+  churn_candidates:
+    - Mack Hollins
+    - Samaje Perine
+    - Tyler Badie
+    - Zamir White
+    - Tutu Atwell
+tracked_picks:
+  - pick_season: "2027"
+    round: 1
+    original_roster_id: 2
+    priority: major_reacquisition_target
+    note: "My original 2027 1st; reacquire opportunistically from strength."
+  - pick_season: "2027"
+    round: 2
+    original_roster_id: 2
+    priority: secondary_reacquisition_target
+  - pick_season: "2027"
+    round: 3
+    original_roster_id: 2
+    priority: monitor
+  - pick_season: "2027"
+    round: 4
+    original_roster_id: 2
+    priority: secondary_reacquisition_target
+transaction_weeks:
+  start: 1
+  end: 18
+leagues:
+  "2026": "1313490073630547968"
+  "2025": ""
+  "2024": ""
