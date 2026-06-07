@@ -14,6 +14,7 @@ from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.projections import calculate_fantasy_points
+from src.signals import build_signal_tables
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
 
@@ -41,6 +42,11 @@ EXPECTED_TABLE_COLUMNS = {
     "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
     "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
     "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
+    "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
+    "breakout_candidates": ["player_id", "player_name", "position", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
+    "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
+    "projection_market_gaps": ["player_id", "player_name", "position", "projected_fantasy_points", "projected_ppg", "market_value", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
+    "team_fit_scores": ["roster_id", "team_name", "player_id", "player_name", "position", "timeline_fit_score", "need_fit_score", "liquidity_fit_score", "fit_label", "evidence", "risk", "confidence", "source_trace"],
     "manager_profiles": ["roster_id", "display_name", "team_name", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
@@ -95,6 +101,11 @@ class VModelTests(unittest.TestCase):
             "player_projection_season": ["projection_method", "projection_confidence", "source_trace"],
             "player_projection_weekly": ["projection_method", "projection_confidence", "source_trace"],
             "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
+            "player_signal_scores": ["evidence", "risk", "confidence", "source_trace"],
+            "breakout_candidates": ["evidence", "risk", "confidence", "source_trace"],
+            "sell_candidates": ["evidence", "risk", "confidence", "source_trace"],
+            "projection_market_gaps": ["evidence", "risk", "confidence", "source_trace"],
+            "team_fit_scores": ["evidence", "risk", "confidence", "source_trace"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -199,6 +210,10 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Trade Target News", html)
         self.assertIn("Roster Value Board", html)
         self.assertIn("Projection Board", html)
+        self.assertIn("Signal Board", html)
+        self.assertIn("Breakout Candidates", html)
+        self.assertIn("Sell Candidates", html)
+        self.assertIn("Projection Market Gaps", html)
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)
         self.assertIn("Manager Map", html)
@@ -220,6 +235,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("News Source Freshness", html)
         self.assertIn("Projection season rows", html)
         self.assertIn("Projection Source Freshness", html)
+        self.assertIn("Signal score rows", html)
+        self.assertIn("Breakout candidate rows", html)
         self.assertIn("Recommendation packets", html)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
@@ -230,6 +247,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Today's Board", text)
         self.assertIn("brief-card", text)
         self.assertIn("Projection Board", text)
+        self.assertIn("Signal Board", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Diagnostics", text)
 
@@ -250,6 +268,47 @@ class VModelTests(unittest.TestCase):
         )
 
         self.assertEqual(points, 41.5)
+
+    def test_signal_tables_create_breakouts_and_sell_candidates(self) -> None:
+        projections = pd.DataFrame(
+            [
+                {"player_id": "1", "player_name": "Young WR", "position": "WR", "roster_id": 8, "team_name": "The Clapper", "projected_fantasy_points": 180, "projected_ppg": 10.6, "projection_confidence": "high", "source_trace": "projection"},
+                {"player_id": "2", "player_name": "Aging RB", "position": "RB", "roster_id": 2, "team_name": "Melkor Lord of Light", "projected_fantasy_points": 130, "projected_ppg": 7.6, "projection_confidence": "medium", "source_trace": "projection"},
+            ]
+        )
+        roster = pd.DataFrame(
+            [
+                {"player_id": "1", "player_name": "Young WR", "age": 23, "roster_id": 8, "team_name": "The Clapper"},
+                {"player_id": "2", "player_name": "Aging RB", "age": 29, "roster_id": 2, "team_name": "Melkor Lord of Light"},
+            ]
+        )
+        market = pd.DataFrame(
+            [{"player_id": "1", "player_name": "Young WR", "market_value": 15, "source_trace": "market"}]
+        )
+        needs = pd.DataFrame(
+            [{"roster_id": 2, "team_name": "Melkor Lord of Light", "need_qb": "low", "need_rb": "low", "need_pass_catcher": "high", "team_shape": "rebuild_asset_bank"}]
+        )
+        behavior = pd.DataFrame(
+            [{"roster_id": 8, "plain_language_label": "trade active"}]
+        )
+        news = pd.DataFrame(
+            [{"player_id": "1", "impact_type": "market_heat"}]
+        )
+
+        tables = build_signal_tables(
+            projections,
+            roster,
+            market,
+            needs,
+            behavior,
+            news,
+            {"current_team": {"roster_id": 2}, "strategy_profile": {"team_direction": "deep_rebuild"}},
+        )
+
+        self.assertIn("player_signal_scores", tables)
+        self.assertGreater(len(tables["breakout_candidates"]), 0)
+        self.assertGreater(len(tables["sell_candidates"]), 0)
+        self.assertIn("evidence", tables["player_signal_scores"].columns)
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
         frames = refresh_external_sources({"source_policy": "open_legal_only", "external_sources": {"enabled": []}})
@@ -588,6 +647,43 @@ class VModelTests(unittest.TestCase):
                 }
             ]
         ).to_csv(processed / "projection_source_freshness.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "position": "QB",
+                    "age": 25,
+                    "roster_id": 2,
+                    "team_name": "Melkor Lord of Light",
+                    "projected_fantasy_points": 350,
+                    "projected_ppg": 20.59,
+                    "market_value": 53,
+                    "projection_edge_score": 86,
+                    "market_gap_score": 35,
+                    "timeline_fit_score": 85,
+                    "breakout_score": 70,
+                    "sell_score": 0,
+                    "signal_label": "breakout_target",
+                    "evidence": "fixture signal",
+                    "risk": "medium",
+                    "confidence": "high",
+                    "source_trace": "test",
+                }
+            ]
+        ).to_csv(processed / "player_signal_scores.csv", index=False)
+        pd.DataFrame(
+            [{"player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "current_team_name": "Melkor Lord of Light", "breakout_score": 70, "projection_edge": 86, "market_value": 53, "evidence": "fixture signal", "risk": "medium", "confidence": "high", "source_trace": "test"}]
+        ).to_csv(processed / "breakout_candidates.csv", index=False)
+        pd.DataFrame(
+            [{"player_id": "2", "player_name": "Veteran RB", "position": "RB", "current_team_name": "Melkor Lord of Light", "sell_score": 55, "projection_risk": "medium", "market_value": 40, "evidence": "fixture signal", "risk": "medium", "confidence": "medium", "source_trace": "test"}]
+        ).to_csv(processed / "sell_candidates.csv", index=False)
+        pd.DataFrame(
+            [{"player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "projected_fantasy_points": 350, "projected_ppg": 20.59, "market_value": 53, "gap_score": 35, "gap_label": "projection_value_gap", "evidence": "fixture signal", "risk": "medium", "confidence": "high", "source_trace": "test"}]
+        ).to_csv(processed / "projection_market_gaps.csv", index=False)
+        pd.DataFrame(
+            [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "timeline_fit_score": 85, "need_fit_score": 55, "liquidity_fit_score": 53, "fit_label": "strong_fit", "evidence": "fixture signal", "risk": "medium", "confidence": "high", "source_trace": "test"}]
+        ).to_csv(processed / "team_fit_scores.csv", index=False)
         pd.DataFrame(columns=["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"]).to_csv(
             processed / "player_usage_weekly.csv", index=False
         )

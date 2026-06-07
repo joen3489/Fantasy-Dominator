@@ -40,6 +40,11 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR) ->
         "player_projection_season": _records(processed_dir / "player_projection_season.csv"),
         "player_projection_weekly": _records(processed_dir / "player_projection_weekly.csv"),
         "projection_source_freshness": _records(processed_dir / "projection_source_freshness.csv"),
+        "player_signal_scores": _records(processed_dir / "player_signal_scores.csv"),
+        "breakout_candidates": _records(processed_dir / "breakout_candidates.csv"),
+        "sell_candidates": _records(processed_dir / "sell_candidates.csv"),
+        "projection_market_gaps": _records(processed_dir / "projection_market_gaps.csv"),
+        "team_fit_scores": _records(processed_dir / "team_fit_scores.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -255,6 +260,7 @@ def _page(
     <a href="#team-overview">Team Overview</a>
     <a href="#roster-value">Roster Value</a>
     <a href="#projection-board">Projection Board</a>
+    <a href="#signal-board">Signal Board</a>
     <a href="#market-gaps">Market Gaps</a>
     <a href="#asset-ledger">Asset Ledger</a>
     <a href="#opportunity-board">Opportunity Board</a>
@@ -333,6 +339,24 @@ def _page(
         <label>Confidence<select id="projection-confidence-filter"></select></label>
       </div>
       <div id="projection-table"></div>
+    </section>
+
+    <section id="signal-board">
+      <h2>Signal Board</h2>
+      <div class="controls">
+        <button class="signal-scope active" data-signal-scope="team" type="button">Active Team</button>
+        <button class="signal-scope" data-signal-scope="league" type="button">League</button>
+        <label>Label<select id="signal-label-filter"></select></label>
+        <label>Confidence<select id="signal-confidence-filter"></select></label>
+      </div>
+      <div class="grid">
+        <div class="panel"><h3>Breakout Candidates</h3><div id="signal-breakouts"></div></div>
+        <div class="panel"><h3>Sell Candidates</h3><div id="signal-sells"></div></div>
+      </div>
+      <h3>Projection Market Gaps</h3>
+      <div id="signal-gap-table"></div>
+      <h3>Team Fit Scores</h3>
+      <div id="team-fit-table"></div>
     </section>
 
     <section id="market-gaps">
@@ -435,7 +459,10 @@ def _page(
       gapScope: 'targets',
       newsScope: 'league-impact'
       , projectionScope: 'team',
-      projectionConfidence: 'ALL'
+      projectionConfidence: 'ALL',
+      signalScope: 'team',
+      signalLabel: 'ALL',
+      signalConfidence: 'ALL'
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -456,6 +483,8 @@ def _page(
     const todayNewsColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
     const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
     const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'projected_fantasy_points', 'projected_ppg', 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
+    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
+    const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
 
     function init() {{
       populateTeamFilter();
@@ -463,6 +492,8 @@ def _page(
       populateSelect('status-filter', ['ALL', ...unique(tables.roster_players.map(row => row.roster_status)).sort()]);
       populateSelect('waiver-status-filter', ['ALL', ...unique(tables.waivers.map(row => row.status)).sort()]);
       populateSelect('projection-confidence-filter', ['ALL', ...unique(tables.player_projection_season.map(row => row.projection_confidence)).sort()]);
+      populateSelect('signal-label-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.signal_label)).sort()]);
+      populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
       bindControls();
       render();
     }}
@@ -507,6 +538,14 @@ def _page(
         state.projectionConfidence = event.target.value;
         render();
       }});
+      document.getElementById('signal-label-filter').addEventListener('change', event => {{
+        state.signalLabel = event.target.value;
+        render();
+      }});
+      document.getElementById('signal-confidence-filter').addEventListener('change', event => {{
+        state.signalConfidence = event.target.value;
+        render();
+      }});
       document.getElementById('reset-filters').addEventListener('click', () => {{
         state.teamId = Number(app.myRosterId);
         state.query = '';
@@ -520,6 +559,9 @@ def _page(
         state.newsScope = 'league-impact';
         state.projectionScope = 'team';
         state.projectionConfidence = 'ALL';
+        state.signalScope = 'team';
+        state.signalLabel = 'ALL';
+        state.signalConfidence = 'ALL';
         syncControls();
         render();
       }});
@@ -565,6 +607,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.signal-scope').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.signalScope = button.dataset.signalScope;
+          setActive('.signal-scope', button);
+          render();
+        }});
+      }});
     }}
 
     function syncControls() {{
@@ -574,12 +623,15 @@ def _page(
       document.getElementById('status-filter').value = state.status;
       document.getElementById('waiver-status-filter').value = state.waiverStatus;
       document.getElementById('projection-confidence-filter').value = state.projectionConfidence;
+      document.getElementById('signal-label-filter').value = state.signalLabel;
+      document.getElementById('signal-confidence-filter').value = state.signalConfidence;
       document.querySelectorAll('.pick-filter').forEach(button => button.classList.toggle('active', button.dataset.pickFilter === state.pickFilter));
       document.querySelectorAll('.scope-filter').forEach(button => button.classList.toggle('active', button.dataset.scope === state.tradeScope));
       document.querySelectorAll('.waiver-scope').forEach(button => button.classList.toggle('active', button.dataset.waiverScope === state.waiverScope));
       document.querySelectorAll('.gap-scope').forEach(button => button.classList.toggle('active', button.dataset.gapScope === state.gapScope));
       document.querySelectorAll('.news-scope').forEach(button => button.classList.toggle('active', button.dataset.newsScope === state.newsScope));
       document.querySelectorAll('.projection-scope').forEach(button => button.classList.toggle('active', button.dataset.projectionScope === state.projectionScope));
+      document.querySelectorAll('.signal-scope').forEach(button => button.classList.toggle('active', button.dataset.signalScope === state.signalScope));
     }}
 
     function render() {{
@@ -599,8 +651,10 @@ def _page(
       const teamTrades = tables.trades.filter(row => Number(row.team_a_roster_id) === state.teamId || Number(row.team_b_roster_id) === state.teamId);
       const myPicksAway = tables.pick_ownership.filter(row => truthy(row.is_my_original_pick) && !truthy(row.i_currently_own_it));
       const rankedGaps = sortRows(applySearch(tables.asset_market_gaps), ['market_gap_score']).reverse();
-      const buyLowTargets = rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 5);
-      const sellWindows = rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
+      const breakoutRows = signalBreakoutRows();
+      const sellRows = signalSellRows();
+      const buyLowTargets = breakoutRows.length ? breakoutRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 5);
+      const sellWindows = sellRows.length ? sellRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
       const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 5);
       const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 5);
       const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 5);
@@ -631,6 +685,10 @@ def _page(
         managerSignalColumns
       );
       document.getElementById('projection-table').innerHTML = table(filteredProjections(), projectionColumns);
+      document.getElementById('signal-breakouts').innerHTML = signalCards(signalBreakoutRows(), 'breakout');
+      document.getElementById('signal-sells').innerHTML = signalCards(signalSellRows(), 'sell');
+      document.getElementById('signal-gap-table').innerHTML = table(filteredSignalGaps(), signalGapColumns);
+      document.getElementById('team-fit-table').innerHTML = table(filteredTeamFits(), teamFitColumns);
       document.getElementById('market-gap-table').innerHTML = table(filteredMarketGaps(), marketGapColumns);
       document.getElementById('asset-ledger-table').innerHTML = table(
         sortRows(applySearch(tables.team_asset_inventory.filter(row => Number(row.roster_id) === state.teamId)), ['asset_type', 'market_value']).reverse(),
@@ -679,6 +737,44 @@ def _page(
       if (state.projectionScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.projectionConfidence !== 'ALL') rows = rows.filter(row => row.projection_confidence === state.projectionConfidence);
       return sortRows(applySearch(rows), ['projected_fantasy_points']).reverse().slice(0, 120);
+    }}
+
+    function signalBreakoutRows() {{
+      let rows = tables.breakout_candidates.slice();
+      if (state.signalScope === 'team') rows = rows.filter(row => currentRosterPlayerNames().has(String(row.player_name)));
+      if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
+      return sortRows(applySearch(rows), ['breakout_score']).reverse();
+    }}
+
+    function signalSellRows() {{
+      let rows = tables.sell_candidates.slice();
+      if (state.signalScope === 'team') rows = rows.filter(row => String(row.current_team_name) === activeTeamName());
+      if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
+      return sortRows(applySearch(rows), ['sell_score']).reverse();
+    }}
+
+    function filteredSignalGaps() {{
+      const names = currentRosterPlayerNames();
+      let rows = tables.projection_market_gaps.slice();
+      if (state.signalScope === 'team') rows = rows.filter(row => names.has(String(row.player_name)));
+      if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
+      return sortRows(applySearch(rows), ['gap_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredTeamFits() {{
+      let rows = tables.team_fit_scores.slice();
+      if (state.signalScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
+      return sortRows(applySearch(rows), ['timeline_fit_score', 'need_fit_score']).reverse().slice(0, 80);
+    }}
+
+    function currentRosterPlayerNames() {{
+      return new Set(tables.roster_players.filter(row => Number(row.roster_id) === state.teamId).map(row => String(row.player_name)));
+    }}
+
+    function activeTeamName() {{
+      const team = tables.teams.find(row => Number(row.roster_id) === state.teamId) || {{}};
+      return String(team.team_name || team.display_name || '');
     }}
 
     function legacyManagerRenderPlaceholder() {{
@@ -756,6 +852,9 @@ def _page(
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
         {{ item: 'Projection season rows', value: tables.player_projection_season.length }},
         {{ item: 'Projection weekly rows', value: tables.player_projection_weekly.length }},
+        {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
+        {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
+        {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
       ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
@@ -763,15 +862,31 @@ def _page(
     function opportunityCards(rows, mode) {{
       if (!rows.length) return '<p class="note">No high-signal items found.</p>';
       return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: `${{row.asset_name || 'Unknown asset'}}${{row.target_team ? ` - ${{row.target_team}}` : ''}}`,
+        title: `${{row.asset_name || row.player_name || 'Unknown asset'}}${{row.target_team ? ` - ${{row.target_team}}` : row.current_team_name ? ` - ${{row.current_team_name}}` : ''}}`,
         chips: [
-          row.opportunity_type || mode,
+          row.opportunity_type || row.signal_label || mode,
           row.position,
-          row.market_gap_score ? `score ${{row.market_gap_score}}` : '',
+          row.market_gap_score ? `score ${{row.market_gap_score}}` : row.breakout_score ? `breakout ${{row.breakout_score}}` : row.sell_score ? `sell ${{row.sell_score}}` : '',
           row.risk ? `risk ${{row.risk}}` : '',
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         evidence: row.evidence || row.timeline_fit || row.source_trace || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function signalCards(rows, mode) {{
+      if (!rows.length) return '<p class="note">No signal rows found.</p>';
+      return `<div class="brief-list">${{rows.slice(0, 8).map(row => briefCard({{
+        title: `${{row.player_name || 'Unknown player'}}${{row.current_team_name ? ` - ${{row.current_team_name}}` : ''}}`,
+        chips: [
+          mode,
+          row.position,
+          row.breakout_score ? `breakout ${{row.breakout_score}}` : '',
+          row.sell_score ? `sell ${{row.sell_score}}` : '',
+          row.market_value ? `market ${{row.market_value}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: row.evidence || row.source_trace || 'No evidence provided.'
       }})).join('')}}</div>`;
     }}
 

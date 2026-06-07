@@ -124,6 +124,11 @@ The first deliverable exports:
 - `player_projection_season.csv`
 - `player_projection_weekly.csv`
 - `projection_source_freshness.csv`
+- `player_signal_scores.csv`
+- `breakout_candidates.csv`
+- `sell_candidates.csv`
+- `projection_market_gaps.csv`
+- `team_fit_scores.csv`
 - `refresh_metadata.csv`
 
 ## Notes

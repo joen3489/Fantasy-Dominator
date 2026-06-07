@@ -32,6 +32,7 @@ from src.players import load_players, players_table
 from src.projections import build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
+from src.signals import build_signal_tables
 from src.utils import PROCESSED_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
 
 
@@ -137,6 +138,17 @@ def main(force: bool = False) -> None:
             manager_profiles,
             dataframes["player_market_values"],
             dataframes["pick_market_values"],
+            config,
+        )
+    )
+    dataframes.update(
+        build_signal_tables(
+            dataframes["player_projection_season"],
+            dataframes["roster_players"],
+            dataframes["player_market_values"],
+            dataframes["team_needs_matrix"],
+            dataframes["manager_behavior_signals"],
+            dataframes["league_news_impact"],
             config,
         )
     )

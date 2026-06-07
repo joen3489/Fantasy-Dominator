@@ -10,6 +10,7 @@ REQUIRED_MARKERS = [
     "Today's Board",
     "brief-card",
     "Projection Board",
+    "Signal Board",
     "News Desk",
     "Market Gaps",
     "Data Diagnostics",
