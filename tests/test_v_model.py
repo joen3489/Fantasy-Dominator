@@ -244,6 +244,13 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Counterparty Edges", html)
         self.assertIn("We May Value More Than Owner", html)
         self.assertIn("Owner May Overvalue", html)
+        self.assertIn("Market Lens Lab", html)
+        self.assertIn("Scenario Targets", html)
+        self.assertIn("Scenario Sells", html)
+        self.assertIn("Biggest Movers", html)
+        self.assertIn("Balanced Market", html)
+        self.assertIn("Projection Contrarian", html)
+        self.assertIn("Counterparty Exploit", html)
         self.assertIn("Manager Map", html)
         self.assertIn("Manager Valuation Profiles", html)
         self.assertIn("Asset Ledger", html)
@@ -281,6 +288,8 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("players", bundle["tables"])
         self.assertNotIn("player_usage_weekly", bundle["tables"])
         self.assertNotIn("player_projection_weekly", bundle["tables"])
+        self.assertNotIn("scenario_rankings", bundle["tables"])
+        self.assertFalse((processed / "scenario_rankings.csv").exists())
         self.assertTrue(players_audit_exists)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:

@@ -16,6 +16,7 @@ REQUIRED_MARKERS = [
     "Analyst Brief",
     "News Desk",
     "Market Gaps",
+    "Market Lens Lab",
     "Data Room",
     "Data Diagnostics",
 ]

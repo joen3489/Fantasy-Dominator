@@ -341,6 +341,50 @@ def _page(
       font-size: 13px;
       line-height: 1.4;
     }}
+    .lens-preset-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }}
+    .lens-weight-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }}
+    .lens-weight {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+      padding: 10px;
+      display: grid;
+      gap: 7px;
+    }}
+    .lens-weight-label {{
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: #34403b;
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    input[type="range"] {{
+      width: 100%;
+      min-width: 0;
+      padding: 0;
+      accent-color: var(--accent);
+    }}
+    .scenario-status {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }}
     table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
     th, td {{ padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
     th {{ color: #34403b; background: #f1f3ed; font-weight: 700; position: sticky; top: 0; }}
@@ -390,6 +434,7 @@ def _page(
         <nav>
           <a href="#market-gaps">Market Gaps</a>
           <a href="#counterparty-edges">Counterparty Edges</a>
+          <a href="#market-lens-lab">Market Lens Lab</a>
           <a href="#asset-ledger">Asset Ledger</a>
           <a href="#opportunity-board">Opportunity Board</a>
           <a href="#pick-ledger">Pick Ledger</a>
@@ -546,6 +591,42 @@ def _page(
       <div id="counterparty-edge-table"></div>
     </section>
 
+    <section id="market-lens-lab">
+      <h2>Market Lens Lab</h2>
+      <p class="note">Scenario rankings are browser-only exploration. They do not change canonical tables, default recommendations, or anyone's actual asking price.</p>
+      <div class="lens-preset-row" id="market-lens-presets"></div>
+      <div class="lens-weight-grid">
+        <div class="lens-weight">
+          <div class="lens-weight-label"><span>Market Consensus</span><span id="lens-market-value">25</span></div>
+          <input id="lens-market" data-lens="market" type="range" min="0" max="100" value="25">
+        </div>
+        <div class="lens-weight">
+          <div class="lens-weight-label"><span>Projection Value</span><span id="lens-projection-value">25</span></div>
+          <input id="lens-projection" data-lens="projection" type="range" min="0" max="100" value="25">
+        </div>
+        <div class="lens-weight">
+          <div class="lens-weight-label"><span>Manager Preference</span><span id="lens-manager-value">20</span></div>
+          <input id="lens-manager" data-lens="manager" type="range" min="0" max="100" value="20">
+        </div>
+        <div class="lens-weight">
+          <div class="lens-weight-label"><span>Timeline / Team Fit</span><span id="lens-timeline-value">20</span></div>
+          <input id="lens-timeline" data-lens="timeline" type="range" min="0" max="100" value="20">
+        </div>
+        <div class="lens-weight">
+          <div class="lens-weight-label"><span>News Heat</span><span id="lens-news-value">10</span></div>
+          <input id="lens-news" data-lens="news" type="range" min="0" max="100" value="10">
+        </div>
+      </div>
+      <div id="market-lens-status" class="scenario-status"></div>
+      <div class="grid">
+        <div class="panel"><h3>Scenario Targets</h3><div id="scenario-targets"></div></div>
+        <div class="panel"><h3>Scenario Sells</h3><div id="scenario-sells"></div></div>
+        <div class="panel"><h3>Biggest Movers</h3><div id="scenario-movers"></div></div>
+      </div>
+      <h3>Scenario Detail</h3>
+      <div id="scenario-table"></div>
+    </section>
+
     <section id="asset-ledger">
       <h2>Asset Ledger</h2>
       <div id="asset-ledger-table"></div>
@@ -646,7 +727,18 @@ def _page(
       signalLabel: 'ALL',
       signalConfidence: 'ALL',
       analysisScope: 'team',
-      analysisConfidence: 'ALL'
+      analysisConfidence: 'ALL',
+      lensPreset: 'Balanced Market',
+      lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }}
+    }};
+
+    const marketLensPresets = {{
+      'Balanced Market': {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }},
+      'Projection Contrarian': {{ market: 10, projection: 45, manager: 15, timeline: 20, news: 10 }},
+      'Counterparty Exploit': {{ market: 15, projection: 20, manager: 40, timeline: 15, news: 10 }},
+      'Contender Trade Market': {{ market: 30, projection: 25, manager: 20, timeline: 15, news: 10 }},
+      'Rebuild Asset Bank': {{ market: 20, projection: 20, manager: 15, timeline: 35, news: 10 }},
+      'News Heat Check': {{ market: 20, projection: 15, manager: 15, timeline: 10, news: 40 }}
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -657,6 +749,7 @@ def _page(
     const draftColumns = ['pick_no', 'round', 'roster_id', 'player_name', 'position', 'nfl_team'];
     const marketGapColumns = ['opportunity_type', 'target_team', 'asset_type', 'asset_name', 'position', 'market_value', 'market_gap_score', 'timeline_fit', 'evidence', 'risk', 'confidence'];
     const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', 'our_value_score', 'market_consensus_value', 'estimated_owner_value_score', 'trade_edge_score', 'evidence', 'risk', 'confidence'];
+    const scenarioColumns = ['scenario_label', 'target_team', 'player_name', 'position', 'scenario_score', 'canonical_model', 'market_component', 'projection_component', 'manager_component', 'timeline_component', 'news_component', 'scenario_warning', 'confidence'];
     const assetLedgerColumns = ['asset_type', 'asset_name', 'position', 'market_value', 'liquidity_tier', 'timeline_fit', 'source_trace'];
     const opportunityColumns = ['action_type', 'target_team', 'asset_in', 'asset_out', 'manager_signal', 'evidence', 'risk', 'confidence', 'source_trace'];
     const marketConsensusColumns = ['player_name', 'position', 'consensus_value', 'source_count', 'disagreement_score', 'best_source', 'confidence', 'source_trace'];
@@ -692,6 +785,7 @@ def _page(
       populateSelect('signal-label-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.signal_label)).sort()]);
       populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
       populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
+      renderMarketLensPresetButtons();
       bindControls();
       document.getElementById('loading-state').hidden = true;
       document.querySelector('main').hidden = false;
@@ -847,6 +941,30 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.lens-preset').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.lensPreset = button.dataset.preset;
+          state.lensWeights = {{ ...marketLensPresets[state.lensPreset] }};
+          syncLensControls();
+          render();
+        }});
+      }});
+      document.querySelectorAll('[data-lens]').forEach(input => {{
+        input.addEventListener('input', () => {{
+          state.lensWeights[input.dataset.lens] = Number(input.value);
+          state.lensPreset = 'Custom';
+          syncLensControls();
+          render();
+        }});
+      }});
+    }}
+
+    function renderMarketLensPresetButtons() {{
+      const target = document.getElementById('market-lens-presets');
+      if (!target) return;
+      target.innerHTML = Object.keys(marketLensPresets)
+        .map(name => `<button class="lens-preset${{name === state.lensPreset ? ' active' : ''}}" data-preset="${{escapeHtml(name)}}" type="button">${{escapeHtml(name)}}</button>`)
+        .join('');
     }}
 
     function syncControls() {{
@@ -867,6 +985,17 @@ def _page(
       document.querySelectorAll('.projection-scope').forEach(button => button.classList.toggle('active', button.dataset.projectionScope === state.projectionScope));
       document.querySelectorAll('.signal-scope').forEach(button => button.classList.toggle('active', button.dataset.signalScope === state.signalScope));
       document.querySelectorAll('.analysis-scope').forEach(button => button.classList.toggle('active', button.dataset.analysisScope === state.analysisScope));
+      syncLensControls();
+    }}
+
+    function syncLensControls() {{
+      for (const [key, value] of Object.entries(state.lensWeights)) {{
+        const input = document.getElementById(`lens-${{key}}`);
+        const label = document.getElementById(`lens-${{key}}-value`);
+        if (input) input.value = String(value);
+        if (label) label.textContent = String(value);
+      }}
+      document.querySelectorAll('.lens-preset').forEach(button => button.classList.toggle('active', button.dataset.preset === state.lensPreset));
     }}
 
     function render() {{
@@ -937,6 +1066,12 @@ def _page(
       document.getElementById('edge-do-not-chase').innerHTML = counterpartyCards(filteredCounterpartyEdges('do_not_chase').slice(0, 5));
       document.getElementById('edge-mutual-fit').innerHTML = counterpartyCards(filteredCounterpartyEdges('mutual_fit').slice(0, 5));
       document.getElementById('counterparty-edge-table').innerHTML = table(filteredCounterpartyEdges(), counterpartyColumns);
+      const scenarioRows = scenarioRankings();
+      document.getElementById('market-lens-status').innerHTML = scenarioStatus(scenarioRows);
+      document.getElementById('scenario-targets').innerHTML = scenarioCards(scenarioRows.filter(row => row.scenario_label === 'scenario_target').slice(0, 6));
+      document.getElementById('scenario-sells').innerHTML = scenarioCards(scenarioRows.filter(row => row.scenario_label === 'scenario_sell').slice(0, 6));
+      document.getElementById('scenario-movers').innerHTML = scenarioCards(scenarioMovers(scenarioRows).slice(0, 6));
+      document.getElementById('scenario-table').innerHTML = table(scenarioRows.slice(0, 80), scenarioColumns);
       document.getElementById('asset-ledger-table').innerHTML = table(
         sortRows(applySearch(tables.team_asset_inventory.filter(row => Number(row.roster_id) === state.teamId)), ['asset_type', 'market_value']).reverse(),
         assetLedgerColumns
@@ -969,6 +1104,119 @@ def _page(
       let rows = tables.counterparty_trade_edges.filter(row => Number(row.target_roster_id) !== state.teamId);
       if (edgeType) rows = rows.filter(row => row.edge_type === edgeType);
       return sortRows(applySearch(rows), ['trade_edge_score']).reverse().slice(0, 80);
+    }}
+
+    function scenarioRankings() {{
+      const totalWeight = lensWeightTotal();
+      const validWeights = totalWeight > 0;
+      const signalByPlayer = rowMap(tables.player_signal_scores, 'player_id');
+      const consensusByPlayer = rowMap(tables.market_consensus_values, 'player_id');
+      const newsByPlayer = newsHeatByPlayer();
+      const managerPrefs = managerPreferenceMap();
+      const rows = [];
+
+      for (const edge of tables.counterparty_trade_edges) {{
+        if (Number(edge.target_roster_id) === state.teamId) continue;
+        const playerId = String(edge.player_id || '');
+        const signal = signalByPlayer.get(playerId) || {{}};
+        const consensus = consensusByPlayer.get(playerId) || {{}};
+        const positionGroup = scenarioPositionGroup(edge.position || signal.position);
+        const manager = managerPrefs.get(`${{edge.target_roster_id}}|${{positionGroup}}`) || managerPrefs.get(`${{edge.target_roster_id}}|DEPTH`) || {{}};
+        const marketComponent = capScore(edge.market_consensus_value || consensus.consensus_value || signal.market_value);
+        const projectionComponent = capScore(signal.projection_edge_score || edge.our_value_score);
+        const managerPreference = capScore(manager.preference_score);
+        const managerComponent = capScore(100 - managerPreference);
+        const timelineComponent = capScore(signal.timeline_fit_score);
+        const newsComponent = newsByPlayer.get(playerId) || 0;
+        const scenarioScore = validWeights ? weightedScenarioScore({{ marketComponent, projectionComponent, managerComponent, timelineComponent, newsComponent }}) : 0;
+        const warning = scenarioWarning(consensus, signal, manager, edge, totalWeight);
+        rows.push({{
+          scenario_label: scenarioLabel(edge, scenarioScore, 'target'),
+          target_team: edge.target_team,
+          player_id: playerId,
+          player_name: edge.player_name,
+          position: edge.position,
+          scenario_score: scenarioScore,
+          canonical_model: edge.edge_type,
+          market_component: marketComponent,
+          projection_component: projectionComponent,
+          manager_component: managerComponent,
+          timeline_component: timelineComponent,
+          news_component: newsComponent,
+          scenario_warning: warning,
+          confidence: scenarioConfidence(edge.confidence, signal.confidence, manager.confidence, warning),
+          evidence: `market=${{marketComponent}}; projection=${{projectionComponent}}; manager=${{managerComponent}}; timeline=${{timelineComponent}}; news=${{newsComponent}}; canonical=${{edge.edge_type}}`
+        }});
+      }}
+
+      for (const action of tables.action_recommendations.filter(row => Number(row.roster_id) === state.teamId && row.action_label === 'sell_window')) {{
+        const playerId = String(action.player_id || '');
+        const signal = signalByPlayer.get(playerId) || {{}};
+        const consensus = consensusByPlayer.get(playerId) || {{}};
+        const marketComponent = capScore(action.market_value || consensus.consensus_value || signal.market_value);
+        const projectionComponent = capScore(signal.projection_edge_score || action.projected_ppg * 4);
+        const managerComponent = 50;
+        const timelineComponent = capScore(100 - (signal.timeline_fit_score || 50));
+        const newsComponent = newsByPlayer.get(playerId) || 0;
+        const scenarioScore = validWeights ? weightedScenarioScore({{ marketComponent, projectionComponent, managerComponent, timelineComponent, newsComponent }}) : 0;
+        const warning = scenarioWarning(consensus, signal, {{}}, action, totalWeight);
+        rows.push({{
+          scenario_label: 'scenario_sell',
+          target_team: action.team_name,
+          player_id: playerId,
+          player_name: action.player_name,
+          position: action.position,
+          scenario_score: scenarioScore,
+          canonical_model: action.consumer_label || action.action_label,
+          market_component: marketComponent,
+          projection_component: projectionComponent,
+          manager_component: managerComponent,
+          timeline_component: timelineComponent,
+          news_component: newsComponent,
+          scenario_warning: warning,
+          confidence: scenarioConfidence(action.confidence, signal.confidence, '', warning),
+          evidence: `market=${{marketComponent}}; projection=${{projectionComponent}}; timeline_sell_pressure=${{timelineComponent}}; news=${{newsComponent}}; canonical=${{action.action_label}}`
+        }});
+      }}
+
+      return sortRows(applySearch(rows), ['scenario_score']).reverse();
+    }}
+
+    function scenarioLabel(row, score, fallback) {{
+      if (row.edge_type === 'do_not_chase' || score < 28) return 'do_not_chase';
+      if (row.edge_type === 'owner_may_overvalue') return 'owner_may_overvalue';
+      if (score >= 62) return 'scenario_target';
+      if (row.edge_type === 'mutual_fit') return 'mutual_fit';
+      return fallback === 'target' ? 'scenario_watch' : 'scenario_sell';
+    }}
+
+    function scenarioMovers(rows) {{
+      return rows
+        .map(row => ({{ ...row, mover_delta: Math.abs(num(row.scenario_score) - canonicalScore(row.canonical_model)) }}))
+        .sort((a, b) => b.mover_delta - a.mover_delta);
+    }}
+
+    function scenarioCards(rows) {{
+      if (!rows.length) return '<p class="note">No scenario rows found for this lens.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.player_name || 'Unknown asset'}} - ${{row.target_team || 'Unknown team'}}`,
+        chips: [
+          row.scenario_label,
+          row.position,
+          row.scenario_score ? `scenario ${{row.scenario_score}}` : '',
+          row.canonical_model ? `canonical ${{row.canonical_model}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: `${{row.evidence || ''}} Warning: ${{row.scenario_warning || 'none'}}`
+      }})).join('')}}</div>`;
+    }}
+
+    function scenarioStatus(rows) {{
+      const total = lensWeightTotal();
+      const degraded = rows.filter(row => String(row.scenario_warning || '').includes('degraded')).length;
+      const summary = `Preset: ${{state.lensPreset}}. Weight total: ${{total}}. Scenario rows: ${{rows.length}}. Degraded rows: ${{degraded}}.`;
+      const warning = total === 100 ? 'Weights are valid.' : 'Weights should sum to 100 before treating rankings as comparable.';
+      return `${{escapeHtml(summary)}}<br>${{escapeHtml(warning)}}<br><span class="joke">This is the argument simulator. It changes rankings, not reality.</span>`;
     }}
 
     function filteredNewsImpact() {{
@@ -1274,6 +1522,96 @@ def _page(
       }})).join('')}}</div>`;
     }}
 
+    function weightedScenarioScore(components) {{
+      const weights = state.lensWeights;
+      const total = lensWeightTotal();
+      if (total <= 0) return 0;
+      const score = (
+        components.marketComponent * weights.market +
+        components.projectionComponent * weights.projection +
+        components.managerComponent * weights.manager +
+        components.timelineComponent * weights.timeline +
+        components.newsComponent * weights.news
+      ) / total;
+      return Math.round(score * 100) / 100;
+    }}
+
+    function lensWeightTotal() {{
+      return Object.values(state.lensWeights).reduce((sum, value) => sum + Number(value || 0), 0);
+    }}
+
+    function capScore(value) {{
+      const score = num(value);
+      if (!Number.isFinite(score)) return 0;
+      return Math.round(Math.max(0, Math.min(100, score)) * 100) / 100;
+    }}
+
+    function canonicalScore(label) {{
+      const text = String(label || '');
+      if (text.includes('we_may_value_more') || text.includes('True Buy Low')) return 75;
+      if (text.includes('mutual_fit') || text.includes('Price Check')) return 58;
+      if (text.includes('owner_may_overvalue') || text.includes('Core Hold')) return 42;
+      if (text.includes('do_not_chase') || text.includes('Avoid')) return 12;
+      return 35;
+    }}
+
+    function rowMap(rows, key) {{
+      const map = new Map();
+      rows.forEach(row => {{
+        const value = String(row[key] || '');
+        if (value && !map.has(value)) map.set(value, row);
+      }});
+      return map;
+    }}
+
+    function newsHeatByPlayer() {{
+      const map = new Map();
+      tables.league_news_impact.forEach(row => {{
+        const playerId = String(row.player_id || '');
+        if (!playerId) return;
+        const current = map.get(playerId) || 0;
+        const impact = String(row.impact_type || '');
+        const score = impact.includes('market_heat') ? 80 : impact.includes('injury') ? 70 : 45;
+        map.set(playerId, Math.max(current, score));
+      }});
+      return map;
+    }}
+
+    function managerPreferenceMap() {{
+      const map = new Map();
+      tables.manager_valuation_profiles.forEach(row => {{
+        const key = `${{row.roster_id}}|${{row.position_group}}`;
+        const existing = map.get(key) || {{}};
+        if (num(row.preference_score) >= num(existing.preference_score)) map.set(key, row);
+      }});
+      return map;
+    }}
+
+    function scenarioPositionGroup(position) {{
+      if (position === 'WR' || position === 'TE') return 'PASS_CATCHER';
+      if (position === 'RB') return 'RB';
+      if (position === 'QB') return 'QB';
+      return 'DEPTH';
+    }}
+
+    function scenarioWarning(consensus, signal, manager, row, totalWeight) {{
+      const warnings = [];
+      if (totalWeight !== 100) warnings.push('degraded: weights do not sum to 100');
+      if (!consensus || !consensus.consensus_value) warnings.push('degraded: market consensus missing');
+      if (num(consensus.disagreement_score) >= 25) warnings.push('degraded: market sources disagree');
+      if (String(signal.projection_confidence || signal.confidence || '').toLowerCase() === 'low') warnings.push('degraded: projection confidence low');
+      if (manager && String(manager.confidence || '').toLowerCase() === 'low') warnings.push('degraded: manager preference sparse');
+      if (String(row.risk || '').toLowerCase().includes('sparse')) warnings.push('degraded: sparse evidence');
+      return warnings.length ? warnings.join('; ') : 'none';
+    }}
+
+    function scenarioConfidence(edgeConfidence, signalConfidence, managerConfidence, warning) {{
+      if (String(warning || '').includes('degraded')) return 'low';
+      if (edgeConfidence === 'high' && signalConfidence === 'high' && managerConfidence === 'high') return 'high';
+      if (edgeConfidence === 'low' || signalConfidence === 'low' || managerConfidence === 'low') return 'low';
+      return 'medium';
+    }}
+
     function briefCard(card) {{
       const chips = (card.chips || []).filter(value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0');
       return `<article class="brief-card">
@@ -1326,6 +1664,11 @@ def _page(
 
     function truthy(value) {{
       return value === true || String(value).toLowerCase() === 'true';
+    }}
+
+    function num(value) {{
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
     }}
 
     function unique(values) {{
