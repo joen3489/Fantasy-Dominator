@@ -151,8 +151,11 @@ def main(force: bool = False) -> None:
             dataframes["manager_behavior_signals"],
             dataframes["league_news_impact"],
             config,
+            dataframes["manager_valuation_profiles"],
         )
     )
+    configured_seasons = [str(season) for season, league_id in (config.get("leagues") or {}).items() if league_id]
+    ingested_seasons = sorted({str(value) for value in dataframes["leagues"].get("season", pd.Series(dtype=str)).dropna().tolist()})
     analysis_metadata = build_default_analysis_artifacts(dataframes, config, current_my_roster_id)
     dataframes["refresh_metadata"] = pd.DataFrame(
         [
@@ -162,6 +165,9 @@ def main(force: bool = False) -> None:
                 "configured_league_ids": ";".join(
                     str(value) for value in (config.get("leagues") or {}).values() if value
                 ),
+                "configured_seasons": ";".join(configured_seasons),
+                "ingested_seasons": ";".join(ingested_seasons),
+                "historical_league_ids_configured": max(0, len(configured_seasons) - 1),
                 "transaction_week_start": week_start,
                 "transaction_week_end": week_end,
                 "source_scope": "Sleeper public API plus open/legal external sources",
@@ -175,6 +181,10 @@ def main(force: bool = False) -> None:
                 "target_thesis_count": analysis_metadata.get("target_thesis_count", 0),
                 "sell_thesis_count": analysis_metadata.get("sell_thesis_count", 0),
                 "trade_thesis_count": analysis_metadata.get("trade_thesis_count", 0),
+                "market_source_rows": len(dataframes.get("market_value_sources", pd.DataFrame())),
+                "market_consensus_rows": len(dataframes.get("market_consensus_values", pd.DataFrame())),
+                "manager_valuation_profile_rows": len(dataframes.get("manager_valuation_profiles", pd.DataFrame())),
+                "counterparty_edge_rows": len(dataframes.get("counterparty_trade_edges", pd.DataFrame())),
             }
         ]
     )

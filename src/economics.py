@@ -24,6 +24,7 @@ def build_economic_tables(
     event_log = build_manager_event_log(teams_df, trades_df, waivers_df)
     needs = build_team_needs_matrix(teams_df, roster_players_df, pick_ownership_df)
     behavior = build_manager_behavior_signals(teams_df, trades_df, waivers_df, manager_profiles_df, roster_players_df)
+    valuation_profiles = build_manager_valuation_profiles(teams_df, manager_profiles_df, roster_players_df)
     liquidity = build_liquidity_scores(inventory, needs)
     gaps = build_asset_market_gaps(inventory, needs, behavior, config)
     opportunities = build_opportunity_board(gaps, behavior, config)
@@ -32,6 +33,7 @@ def build_economic_tables(
         "manager_event_log": event_log,
         "team_needs_matrix": needs,
         "manager_behavior_signals": behavior,
+        "manager_valuation_profiles": valuation_profiles,
         "liquidity_scores": liquidity,
         "asset_market_gaps": gaps,
         "opportunity_board": opportunities,
@@ -213,6 +215,40 @@ def build_manager_behavior_signals(
     return pd.DataFrame(rows)
 
 
+def build_manager_valuation_profiles(
+    teams_df: pd.DataFrame,
+    manager_profiles_df: pd.DataFrame,
+    roster_players_df: pd.DataFrame,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    current_teams = _latest_teams(teams_df)
+    for _, team in current_teams.iterrows():
+        roster_id = int(team.get("roster_id"))
+        profile = _row_for(manager_profiles_df, "roster_id", roster_id)
+        roster = roster_players_df[roster_players_df.get("roster_id") == roster_id] if not roster_players_df.empty else pd.DataFrame()
+        pos_counts = Counter(roster.get("position", pd.Series(dtype=str)))
+        trade_count = _int(profile.get("total_trades", 0))
+        firsts_in = _int(profile.get("future_1sts_acquired", 0))
+        firsts_out = _int(profile.get("future_1sts_sold", 0))
+        faab = _int(profile.get("faab_spent_on_waivers", 0))
+        claims = _int(profile.get("number_of_waiver_claims", 0))
+        base_evidence = _behavior_evidence(trade_count, firsts_in, firsts_out, faab, claims)
+        rows.extend(
+            [
+                _valuation_row(team, "pick", "PICK", firsts_in * 28 - firsts_out * 18, trade_count + firsts_in + firsts_out, "pick accumulator", base_evidence),
+                _valuation_row(team, "pick", "PICK", firsts_out * 42 - firsts_in * 12, trade_count + firsts_in + firsts_out, "pick seller", base_evidence),
+                _valuation_row(team, "player", "PASS_CATCHER", int(pos_counts.get("WR", 0) + pos_counts.get("TE", 0)) * 5 + trade_count * 4, int(pos_counts.get("WR", 0) + pos_counts.get("TE", 0)) + trade_count, "pass-catcher collector", f"{base_evidence}; pass_catchers={int(pos_counts.get('WR', 0) + pos_counts.get('TE', 0))}"),
+                _valuation_row(team, "player", "RB", int(pos_counts.get("RB", 0)) * 7 + firsts_out * 9, int(pos_counts.get("RB", 0)) + firsts_out, "RB production buyer", f"{base_evidence}; rb_count={int(pos_counts.get('RB', 0))}"),
+                _valuation_row(team, "waiver", "DEPTH", claims * 18 + faab * 0.6, claims, "waiver aggressor", base_evidence),
+                _valuation_row(team, "roster", "DEPTH", trade_count * 10 + claims * 6, trade_count + claims, "depth churner", base_evidence),
+            ]
+        )
+    return pd.DataFrame(rows, columns=_manager_valuation_columns()).sort_values(
+        ["roster_id", "preference_score"],
+        ascending=[True, False],
+    )
+
+
 def build_liquidity_scores(inventory_df: pd.DataFrame, needs_df: pd.DataFrame) -> pd.DataFrame:
     demand_by_position = _demand_by_position(needs_df)
     rows: list[dict[str, Any]] = []
@@ -347,6 +383,68 @@ def _manager_event_columns() -> list[str]:
         "faab_out",
         "evidence",
     ]
+
+
+def _manager_valuation_columns() -> list[str]:
+    return [
+        "owner_id",
+        "roster_id",
+        "team_name",
+        "asset_type",
+        "position_group",
+        "preference_score",
+        "evidence_count",
+        "recency_weighted_score",
+        "confidence",
+        "label",
+        "evidence",
+    ]
+
+
+def _valuation_row(
+    team: pd.Series,
+    asset_type: str,
+    position_group: str,
+    raw_score: float,
+    evidence_count: int,
+    positive_label: str,
+    evidence: str,
+) -> dict[str, Any]:
+    score = round(max(0.0, min(100.0, raw_score)), 2)
+    confidence = _evidence_confidence(evidence_count)
+    label = positive_label if score >= 35 and confidence != "low" else "low-signal manager"
+    return {
+        "owner_id": team.get("owner_id", ""),
+        "roster_id": team.get("roster_id", ""),
+        "team_name": team.get("team_name", "") or team.get("display_name", ""),
+        "asset_type": asset_type,
+        "position_group": position_group,
+        "preference_score": score,
+        "evidence_count": evidence_count,
+        "recency_weighted_score": score,
+        "confidence": confidence,
+        "label": label,
+        "evidence": evidence,
+    }
+
+
+def _evidence_confidence(evidence_count: int) -> str:
+    if evidence_count >= 8:
+        return "high"
+    if evidence_count >= 2:
+        return "medium"
+    return "low"
+
+
+def _latest_teams(teams_df: pd.DataFrame) -> pd.DataFrame:
+    if teams_df.empty:
+        return pd.DataFrame(columns=["roster_id", "team_name", "owner_id"])
+    frame = teams_df.fillna("").copy()
+    if "season" in frame.columns:
+        frame["_season_sort"] = frame["season"].astype(str)
+        frame = frame.sort_values("_season_sort").drop_duplicates("roster_id", keep="last")
+        frame = frame.drop(columns=["_season_sort"])
+    return frame
 
 
 def _proxy_player_value(position: str, age: float, roster_status: str) -> float:

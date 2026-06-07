@@ -10,7 +10,7 @@ import pandas as pd
 from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
-from src.external_sources import refresh_external_sources
+from src.external_sources import build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
@@ -34,6 +34,8 @@ EXPECTED_TABLE_COLUMNS = {
     "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_picks_received", "team_b_faab_received", "raw"],
     "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_dropped", "waiver_bid", "status", "failure_reason"],
     "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
+    "market_value_sources": ["source", "source_access_type", "source_player_id", "player_id", "player_name", "position", "raw_value", "normalized_value", "market_rank", "value_format", "source_confidence", "source_trace", "checked_at"],
+    "market_consensus_values": ["player_id", "player_name", "position", "consensus_value", "source_count", "disagreement_score", "best_source", "confidence", "source_trace"],
     "player_market_values": ["source", "source_player_id", "player_id", "player_name", "position", "market_value", "market_rank", "value_format", "source_trace"],
     "pick_market_values": ["source", "pick_label", "pick_season", "round", "market_value", "source_trace"],
     "source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
@@ -56,10 +58,12 @@ EXPECTED_TABLE_COLUMNS = {
     "manager_event_log": ["event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
     "team_needs_matrix": ["roster_id", "team_name", "qb_count", "rb_count", "wr_count", "te_count", "pass_catcher_count", "future_firsts_owned", "need_qb", "need_rb", "need_pass_catcher", "need_picks", "team_shape"],
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
+    "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
     "liquidity_scores": ["roster_id", "team_name", "asset_type", "asset_name", "position", "market_value", "liquidity_score", "liquidity_tier", "demand_signal", "source_trace"],
     "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
     "opportunity_board": ["action_type", "target_team", "asset_in", "asset_out", "manager_signal", "evidence", "risk", "confidence", "source_trace"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count"],
+    "counterparty_trade_edges": ["target_roster_id", "target_team", "player_id", "player_name", "position", "our_value_score", "market_consensus_value", "estimated_owner_value_score", "trade_edge_score", "edge_type", "evidence", "risk", "confidence", "source_trace"],
+    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "manager_valuation_profile_rows", "counterparty_edge_rows"],
 }
 
 
@@ -90,6 +94,8 @@ class VModelTests(unittest.TestCase):
 
     def test_decision_support_tables_have_trace_or_evidence_columns(self) -> None:
         expected = {
+            "market_value_sources": ["source", "source_access_type", "source_confidence", "source_trace", "checked_at"],
+            "market_consensus_values": ["source_count", "disagreement_score", "confidence", "source_trace"],
             "player_market_values": ["source", "source_trace"],
             "pick_market_values": ["source", "source_trace"],
             "team_asset_inventory": ["source_trace"],
@@ -110,6 +116,8 @@ class VModelTests(unittest.TestCase):
             "projection_market_gaps": ["evidence", "risk", "confidence", "source_trace"],
             "team_fit_scores": ["evidence", "risk", "confidence", "source_trace"],
             "action_recommendations": ["consumer_label", "why", "evidence", "risk", "confidence", "source_trace"],
+            "manager_valuation_profiles": ["evidence", "confidence", "label"],
+            "counterparty_trade_edges": ["evidence", "risk", "confidence", "source_trace"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -233,7 +241,11 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Projection Market Gaps", html)
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)
+        self.assertIn("Counterparty Edges", html)
+        self.assertIn("We May Value More Than Owner", html)
+        self.assertIn("Owner May Overvalue", html)
         self.assertIn("Manager Map", html)
+        self.assertIn("Manager Valuation Profiles", html)
         self.assertIn("Asset Ledger", html)
         self.assertIn("Opportunity Board", html)
         self.assertIn("News Desk", html)
@@ -245,6 +257,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("waiver-scope", html)
         self.assertIn("Source Freshness", html)
         self.assertIn("Player market rows", html)
+        self.assertIn("Market source rows", html)
+        self.assertIn("Market consensus rows", html)
+        self.assertIn("Counterparty edge rows", html)
         self.assertIn("Usage rows", html)
         self.assertIn("Economic asset rows", html)
         self.assertIn("News event rows", html)
@@ -344,6 +359,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("evidence", tables["player_signal_scores"].columns)
         self.assertIn("action_recommendations", tables)
         self.assertIn("consumer_label", tables["action_recommendations"].columns)
+        self.assertIn("counterparty_trade_edges", tables)
+        self.assertIn("edge_type", tables["counterparty_trade_edges"].columns)
 
     def test_action_labels_are_consumer_calibrated(self) -> None:
         projections = pd.DataFrame(
@@ -480,6 +497,51 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(frames["source_freshness"].iloc[0]["source"], "external_sources")
         self.assertEqual(frames["source_freshness"].iloc[0]["status"], "no_external_sources_enabled")
         self.assertIn("player_market_values", frames)
+        self.assertIn("market_value_sources", frames)
+        self.assertIn("market_consensus_values", frames)
+
+    def test_market_consensus_preserves_component_traces_and_access_policy(self) -> None:
+        sources = pd.DataFrame(
+            [
+                {
+                    "source": "dynastyprocess",
+                    "source_access_type": "open_dataset",
+                    "source_player_id": "1",
+                    "player_id": "1",
+                    "player_name": "Young WR",
+                    "position": "WR",
+                    "raw_value": 4200,
+                    "normalized_value": 42,
+                    "market_rank": 50,
+                    "value_format": "superflex_preferred",
+                    "source_confidence": "high",
+                    "source_trace": "https://github.com/DynastyProcess/data",
+                    "checked_at": "2026-06-07T00:00:00+00:00",
+                },
+                {
+                    "source": "user_file",
+                    "source_access_type": "user_provided",
+                    "source_player_id": "1",
+                    "player_id": "1",
+                    "player_name": "Young WR",
+                    "position": "WR",
+                    "raw_value": 3800,
+                    "normalized_value": 38,
+                    "market_rank": 60,
+                    "value_format": "manual_import",
+                    "source_confidence": "medium",
+                    "source_trace": "manual_file:data/manual/market_values/2026/example.csv",
+                    "checked_at": "2026-06-07T00:00:00+00:00",
+                },
+            ]
+        )
+
+        consensus = build_market_consensus_values(sources)
+
+        self.assertEqual(float(consensus.iloc[0]["consensus_value"]), 40.0)
+        self.assertEqual(int(consensus.iloc[0]["source_count"]), 2)
+        self.assertIn("DynastyProcess", consensus.iloc[0]["source_trace"])
+        self.assertIn("manual_file", consensus.iloc[0]["source_trace"])
 
     def test_news_tables_match_sleeper_trending_to_rostered_player(self) -> None:
         class FakeAPI:
@@ -602,8 +664,12 @@ class VModelTests(unittest.TestCase):
         self.assertIn("asset_market_gaps", tables)
         self.assertIn("manager_behavior_signals", tables)
         self.assertIn("manager_event_log", tables)
+        self.assertIn("manager_valuation_profiles", tables)
         self.assertGreater(len(tables["asset_market_gaps"]), 0)
+        self.assertGreater(len(tables["manager_valuation_profiles"]), 0)
         self.assertEqual(tables["manager_behavior_signals"].loc[tables["manager_behavior_signals"]["roster_id"] == 8, "plain_language_label"].iloc[0], "pick seller / win-now buyer")
+        clapper_labels = set(tables["manager_valuation_profiles"].loc[tables["manager_valuation_profiles"]["roster_id"] == 8, "label"])
+        self.assertTrue({"pick seller", "RB production buyer"}.intersection(clapper_labels))
 
     def _write_minimal_processed_tables(self, processed: Path) -> None:
         pd.DataFrame(
@@ -683,6 +749,9 @@ class VModelTests(unittest.TestCase):
                     "generated_at": "2026-06-06T00:00:00+00:00",
                     "current_season": "2026",
                     "configured_league_ids": "league",
+                    "configured_seasons": "2026",
+                    "ingested_seasons": "2026",
+                    "historical_league_ids_configured": 0,
                     "transaction_week_start": 1,
                     "transaction_week_end": 18,
                     "source_scope": "Sleeper public API only",
@@ -696,6 +765,10 @@ class VModelTests(unittest.TestCase):
                     "target_thesis_count": 0,
                     "sell_thesis_count": 0,
                     "trade_thesis_count": 0,
+                    "market_source_rows": 1,
+                    "market_consensus_rows": 1,
+                    "manager_valuation_profile_rows": 1,
+                    "counterparty_edge_rows": 1,
                 }
             ]
         ).to_csv(processed / "refresh_metadata.csv", index=False)
@@ -859,6 +932,40 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(columns=["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"]).to_csv(
             processed / "player_usage_weekly.csv", index=False
         )
+        pd.DataFrame(
+            [
+                {
+                    "source": "dynastyprocess",
+                    "source_access_type": "open_dataset",
+                    "source_player_id": "1",
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "position": "QB",
+                    "raw_value": 5300,
+                    "normalized_value": 53,
+                    "market_rank": 1,
+                    "value_format": "superflex_preferred",
+                    "source_confidence": "high",
+                    "source_trace": "https://github.com/DynastyProcess/data",
+                    "checked_at": "2026-06-06T00:00:00+00:00",
+                }
+            ]
+        ).to_csv(processed / "market_value_sources.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "position": "QB",
+                    "consensus_value": 53,
+                    "source_count": 1,
+                    "disagreement_score": 0,
+                    "best_source": "dynastyprocess",
+                    "confidence": "high",
+                    "source_trace": "https://github.com/DynastyProcess/data",
+                }
+            ]
+        ).to_csv(processed / "market_consensus_values.csv", index=False)
         pd.DataFrame(columns=["source", "source_player_id", "player_id", "player_name", "position", "market_value", "market_rank", "value_format", "source_trace"]).to_csv(
             processed / "player_market_values.csv", index=False
         )
@@ -885,6 +992,9 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"roster_id": 2, "team_name": "Melkor Lord of Light", "trade_activity_score": 0, "pick_buyer_score": 0, "pick_seller_score": 0, "faab_aggression_score": 0, "waiver_activity_score": 0, "plain_language_label": "quiet market participant", "evidence": "test"}]
         ).to_csv(processed / "manager_behavior_signals.csv", index=False)
+        pd.DataFrame(
+            [{"owner_id": "u2", "roster_id": 2, "team_name": "Melkor Lord of Light", "asset_type": "pick", "position_group": "PICK", "preference_score": 20, "evidence_count": 1, "recency_weighted_score": 20, "confidence": "low", "label": "low-signal manager", "evidence": "test"}]
+        ).to_csv(processed / "manager_valuation_profiles.csv", index=False)
         pd.DataFrame(columns=["event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"]).to_csv(
             processed / "manager_event_log.csv", index=False
         )
@@ -900,6 +1010,9 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"action_type": "buy_low_target", "target_team": "The Clapper", "asset_in": "Young WR", "asset_out": "future offer packet only", "manager_signal": "pick seller / win-now buyer", "evidence": "test", "risk": "medium", "confidence": "medium", "source_trace": "test"}]
         ).to_csv(processed / "opportunity_board.csv", index=False)
+        pd.DataFrame(
+            [{"target_roster_id": 8, "target_team": "The Clapper", "player_id": "2", "player_name": "Young WR", "position": "WR", "our_value_score": 55, "market_consensus_value": 42, "estimated_owner_value_score": 30, "trade_edge_score": 25, "edge_type": "we_may_value_more", "evidence": "test", "risk": "medium", "confidence": "medium", "source_trace": "test"}]
+        ).to_csv(processed / "counterparty_trade_edges.csv", index=False)
 
 
 if __name__ == "__main__":

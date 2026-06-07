@@ -25,15 +25,19 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
         "draft_picks": _records(processed_dir / "draft_picks.csv"),
         "refresh_metadata": _records(processed_dir / "refresh_metadata.csv"),
         "player_usage_weekly": _records(processed_dir / "player_usage_weekly.csv"),
+        "market_value_sources": _records(processed_dir / "market_value_sources.csv"),
+        "market_consensus_values": _records(processed_dir / "market_consensus_values.csv"),
         "player_market_values": _records(processed_dir / "player_market_values.csv"),
         "pick_market_values": _records(processed_dir / "pick_market_values.csv"),
         "team_asset_inventory": _records(processed_dir / "team_asset_inventory.csv"),
         "manager_event_log": _records(processed_dir / "manager_event_log.csv"),
         "team_needs_matrix": _records(processed_dir / "team_needs_matrix.csv"),
         "manager_behavior_signals": _records(processed_dir / "manager_behavior_signals.csv"),
+        "manager_valuation_profiles": _records(processed_dir / "manager_valuation_profiles.csv"),
         "liquidity_scores": _records(processed_dir / "liquidity_scores.csv"),
         "asset_market_gaps": _records(processed_dir / "asset_market_gaps.csv"),
         "opportunity_board": _records(processed_dir / "opportunity_board.csv"),
+        "counterparty_trade_edges": _records(processed_dir / "counterparty_trade_edges.csv"),
         "source_freshness": _records(processed_dir / "source_freshness.csv"),
         "news_events": _records(processed_dir / "news_events.csv"),
         "player_news_matches": _records(processed_dir / "player_news_matches.csv"),
@@ -385,6 +389,7 @@ def _page(
         <div class="nav-group-title">Trade Desk</div>
         <nav>
           <a href="#market-gaps">Market Gaps</a>
+          <a href="#counterparty-edges">Counterparty Edges</a>
           <a href="#asset-ledger">Asset Ledger</a>
           <a href="#opportunity-board">Opportunity Board</a>
           <a href="#pick-ledger">Pick Ledger</a>
@@ -528,6 +533,19 @@ def _page(
       <div id="market-gap-table"></div>
     </section>
 
+    <section id="counterparty-edges">
+      <h2>Counterparty Edges</h2>
+      <p class="note">These are estimated value disagreements, not trade quotes. Nobody has accepted anything. The commissioner can breathe.</p>
+      <div class="grid">
+        <div class="panel"><h3>We May Value More Than Owner</h3><div id="edge-we-value-more"></div></div>
+        <div class="panel"><h3>Owner May Overvalue</h3><div id="edge-owner-overvalues"></div></div>
+        <div class="panel"><h3>Do Not Chase</h3><div id="edge-do-not-chase"></div></div>
+        <div class="panel"><h3>Best Manager Fits</h3><div id="edge-mutual-fit"></div></div>
+      </div>
+      <h3>Counterparty Edge Table</h3>
+      <div id="counterparty-edge-table"></div>
+    </section>
+
     <section id="asset-ledger">
       <h2>Asset Ledger</h2>
       <div id="asset-ledger-table"></div>
@@ -553,6 +571,7 @@ def _page(
     <section id="manager-map">
       <h2>Manager Map</h2>
       <div class="grid">
+        <div class="panel"><h3>Manager Valuation Profiles</h3><div id="manager-valuation-table"></div></div>
         <div class="panel"><h3>Behavior Signals</h3><div id="manager-signal-table"></div></div>
         <div class="panel"><h3>Manager Event Log</h3><div id="manager-event-table"></div></div>
       </div>
@@ -637,9 +656,12 @@ def _page(
     const waiverColumns = ['week', 'team_name', 'player_added', 'player_dropped', 'waiver_bid', 'status', 'failure_reason'];
     const draftColumns = ['pick_no', 'round', 'roster_id', 'player_name', 'position', 'nfl_team'];
     const marketGapColumns = ['opportunity_type', 'target_team', 'asset_type', 'asset_name', 'position', 'market_value', 'market_gap_score', 'timeline_fit', 'evidence', 'risk', 'confidence'];
+    const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', 'our_value_score', 'market_consensus_value', 'estimated_owner_value_score', 'trade_edge_score', 'evidence', 'risk', 'confidence'];
     const assetLedgerColumns = ['asset_type', 'asset_name', 'position', 'market_value', 'liquidity_tier', 'timeline_fit', 'source_trace'];
     const opportunityColumns = ['action_type', 'target_team', 'asset_in', 'asset_out', 'manager_signal', 'evidence', 'risk', 'confidence', 'source_trace'];
+    const marketConsensusColumns = ['player_name', 'position', 'consensus_value', 'source_count', 'disagreement_score', 'best_source', 'confidence', 'source_trace'];
     const managerSignalColumns = ['team_name', 'trade_activity_score', 'pick_buyer_score', 'pick_seller_score', 'faab_aggression_score', 'waiver_activity_score', 'plain_language_label', 'evidence'];
+    const managerValuationColumns = ['team_name', 'asset_type', 'position_group', 'preference_score', 'evidence_count', 'confidence', 'label', 'evidence'];
     const managerEventColumns = ['event_type', 'week', 'team_name', 'counterparty', 'players_in', 'picks_in', 'faab_in', 'players_out', 'picks_out', 'faab_out', 'evidence'];
     const sourceColumns = ['source', 'dataset', 'status', 'row_count', 'checked_at', 'source_url', 'cache_path'];
     const newsImpactColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence', 'source_trace'];
@@ -685,9 +707,9 @@ def _page(
     function ensureTables() {{
       [
         'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers',
-        'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'player_market_values', 'pick_market_values',
-        'team_asset_inventory', 'manager_event_log', 'team_needs_matrix', 'manager_behavior_signals',
-        'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'source_freshness', 'news_events',
+        'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'market_value_sources', 'market_consensus_values',
+        'player_market_values', 'pick_market_values', 'team_asset_inventory', 'manager_event_log', 'team_needs_matrix', 'manager_behavior_signals',
+        'manager_valuation_profiles', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'source_freshness', 'news_events',
         'player_news_matches', 'league_news_impact', 'news_source_freshness', 'player_projection_season',
         'player_projection_weekly', 'projection_source_freshness', 'player_signal_scores', 'breakout_candidates',
         'sell_candidates', 'projection_market_gaps', 'team_fit_scores', 'action_recommendations'
@@ -910,6 +932,11 @@ def _page(
       document.getElementById('manager-dossiers').innerHTML = markdownBrief(analysis.managerDossiers);
       document.getElementById('news-impact-brief').innerHTML = markdownBrief(analysis.newsImpactBrief);
       document.getElementById('market-gap-table').innerHTML = table(filteredMarketGaps(), marketGapColumns);
+      document.getElementById('edge-we-value-more').innerHTML = counterpartyCards(filteredCounterpartyEdges('we_may_value_more').slice(0, 5));
+      document.getElementById('edge-owner-overvalues').innerHTML = counterpartyCards(filteredCounterpartyEdges('owner_may_overvalue').slice(0, 5));
+      document.getElementById('edge-do-not-chase').innerHTML = counterpartyCards(filteredCounterpartyEdges('do_not_chase').slice(0, 5));
+      document.getElementById('edge-mutual-fit').innerHTML = counterpartyCards(filteredCounterpartyEdges('mutual_fit').slice(0, 5));
+      document.getElementById('counterparty-edge-table').innerHTML = table(filteredCounterpartyEdges(), counterpartyColumns);
       document.getElementById('asset-ledger-table').innerHTML = table(
         sortRows(applySearch(tables.team_asset_inventory.filter(row => Number(row.roster_id) === state.teamId)), ['asset_type', 'market_value']).reverse(),
         assetLedgerColumns
@@ -917,6 +944,7 @@ def _page(
       document.getElementById('opportunity-table').innerHTML = table(applySearch(tables.opportunity_board), opportunityColumns);
       document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
+      document.getElementById('manager-valuation-table').innerHTML = table(applySearch(tables.manager_valuation_profiles), managerValuationColumns);
       document.getElementById('manager-signal-table').innerHTML = table(applySearch(tables.manager_behavior_signals), managerSignalColumns);
       document.getElementById('manager-event-table').innerHTML = table(
         sortRows(applySearch(tables.manager_event_log.filter(row => Number(row.roster_id) === state.teamId)), ['week']).reverse(),
@@ -935,6 +963,12 @@ def _page(
       if (state.gapScope === 'targets') rows = rows.filter(row => Number(row.target_roster_id) !== state.teamId);
       if (state.gapScope === 'team') rows = rows.filter(row => Number(row.target_roster_id) === state.teamId);
       return sortRows(applySearch(rows), ['market_gap_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredCounterpartyEdges(edgeType = null) {{
+      let rows = tables.counterparty_trade_edges.filter(row => Number(row.target_roster_id) !== state.teamId);
+      if (edgeType) rows = rows.filter(row => row.edge_type === edgeType);
+      return sortRows(applySearch(rows), ['trade_edge_score']).reverse().slice(0, 80);
     }}
 
     function filteredNewsImpact() {{
@@ -1081,11 +1115,15 @@ def _page(
         {{ item: 'Generated at', value: metadata.generated_at || 'unknown' }},
         {{ item: 'Current season', value: metadata.current_season || app.currentSeason || '' }},
         {{ item: 'Configured leagues', value: leagueIds }},
+        {{ item: 'Configured seasons', value: metadata.configured_seasons || '' }},
+        {{ item: 'Ingested seasons', value: metadata.ingested_seasons || '' }},
         {{ item: 'Transaction weeks', value: `${{metadata.transaction_week_start || ''}}-${{metadata.transaction_week_end || ''}}` }},
         {{ item: 'Source scope', value: metadata.source_scope || 'Sleeper public API only' }},
         {{ item: 'Players cached', value: counts.players || tables.players.length }},
         {{ item: 'Raw cache root', value: metadata.raw_cache_root || 'data/raw' }},
         {{ item: 'Raw external cache root', value: metadata.raw_external_cache_root || 'data/raw_external' }},
+        {{ item: 'Market source rows', value: metadata.market_source_rows || tables.market_value_sources.length }},
+        {{ item: 'Market consensus rows', value: metadata.market_consensus_rows || tables.market_consensus_values.length }},
         {{ item: 'Player market rows', value: tables.player_market_values.length }},
         {{ item: 'Pick market rows', value: tables.pick_market_values.length }},
         {{ item: 'Usage rows', value: counts.player_usage_weekly || tables.player_usage_weekly.length }},
@@ -1096,6 +1134,8 @@ def _page(
         {{ item: 'Projection weekly rows', value: counts.player_projection_weekly || tables.player_projection_weekly.length }},
         {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
         {{ item: 'Action recommendation rows', value: tables.action_recommendations.length }},
+        {{ item: 'Manager valuation profile rows', value: metadata.manager_valuation_profile_rows || tables.manager_valuation_profiles.length }},
+        {{ item: 'Counterparty edge rows', value: metadata.counterparty_edge_rows || tables.counterparty_trade_edges.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
         {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},
         {{ item: 'Analysis artifacts', value: metadata.analysis_artifacts_status || analysis.status || 'missing' }},
@@ -1105,7 +1145,7 @@ def _page(
         {{ item: 'Sell thesis rows', value: metadata.sell_thesis_count || (analysis.sellTheses || []).length }},
         {{ item: 'Trade thesis rows', value: metadata.trade_thesis_count || (analysis.tradeTheses || []).length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
-      ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
+      ], ['item', 'value']) + '<h3>Market Consensus</h3>' + table(tables.market_consensus_values.slice(0, 40), marketConsensusColumns) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
 
     function opportunityCards(rows, mode) {{
@@ -1126,6 +1166,20 @@ def _page(
     function actionRecommendationRows() {{
       const active = tables.action_recommendations.filter(row => Number(row.roster_id) === state.teamId);
       return sortRows(applySearch(active), ['action_rank', 'action_score']).slice(0, 20);
+    }}
+
+    function counterpartyCards(rows) {{
+      if (!rows.length) return '<p class="note">No counterparty edge rows found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.player_name || 'Unknown player'}} - ${{row.target_team || 'Unknown manager'}}`,
+        chips: [
+          row.edge_type,
+          row.position,
+          row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
+      }})).join('')}}</div>`;
     }}
 
     function actionCards(rows) {{

@@ -16,6 +16,7 @@ def build_signal_tables(
     manager_behavior_df: pd.DataFrame,
     news_impact_df: pd.DataFrame,
     config: dict[str, Any],
+    manager_valuation_profiles_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     scores = build_player_signal_scores(
         projections_df,
@@ -31,6 +32,7 @@ def build_signal_tables(
     sells = build_sell_candidates(scores, config)
     fits = build_team_fit_scores(scores, team_needs_df, config)
     actions = build_action_recommendations(scores, config)
+    counterparty_edges = build_counterparty_trade_edges(scores, manager_valuation_profiles_df, team_needs_df, config)
     return {
         "player_signal_scores": scores,
         "breakout_candidates": breakouts,
@@ -38,6 +40,7 @@ def build_signal_tables(
         "projection_market_gaps": gaps,
         "team_fit_scores": fits,
         "action_recommendations": actions,
+        "counterparty_trade_edges": counterparty_edges,
     }
 
 
@@ -247,6 +250,61 @@ def build_action_recommendations(scores_df: pd.DataFrame, config: dict[str, Any]
             }
         )
     return pd.DataFrame(rows, columns=_action_columns()).sort_values(["action_rank", "action_score"], ascending=[True, False])
+
+
+def build_counterparty_trade_edges(
+    scores_df: pd.DataFrame,
+    manager_valuation_profiles_df: pd.DataFrame | None,
+    team_needs_df: pd.DataFrame,
+    config: dict[str, Any],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if scores_df.empty:
+        return pd.DataFrame(rows, columns=_counterparty_columns())
+    current_roster = _int((config.get("current_team") or {}).get("roster_id"))
+    profile_map = _manager_pref_map(manager_valuation_profiles_df if manager_valuation_profiles_df is not None else pd.DataFrame())
+    needs = _row_map(team_needs_df, "roster_id")
+    for _, row in scores_df.fillna("").iterrows():
+        target_roster_id = _int(row.get("roster_id"))
+        if current_roster and target_roster_id == current_roster:
+            continue
+        position = str(row.get("position", ""))
+        position_group = "PASS_CATCHER" if position in PASS_CATCHERS else position
+        profile = profile_map.get((target_roster_id, position_group)) or profile_map.get((target_roster_id, "DEPTH")) or {}
+        owner_preference = _num(profile.get("preference_score"))
+        owner_confidence = str(profile.get("confidence", "low")) or "low"
+        market = _normalize_market(_num(row.get("market_value")))
+        projection_value = _num(row.get("projection_edge_score"))
+        timeline = _num(row.get("timeline_fit_score"))
+        our_value = round(projection_value * 0.52 + timeline * 0.28 + max(0.0, _num(row.get("market_gap_score"))) * 0.2, 2)
+        team_need = _owner_need_score(position, needs.get(target_roster_id, {}))
+        estimated_owner_value = round(market * 0.48 + owner_preference * 0.34 + team_need * 0.18, 2)
+        edge_score = round(our_value - estimated_owner_value, 2)
+        edge_type = _edge_type(edge_score, owner_preference, owner_confidence, _num(row.get("projected_ppg")), market)
+        confidence = _counterparty_confidence(str(row.get("confidence", "low")), owner_confidence, market)
+        rows.append(
+            {
+                "target_roster_id": target_roster_id,
+                "target_team": row.get("team_name", ""),
+                "player_id": row.get("player_id", ""),
+                "player_name": row.get("player_name", ""),
+                "position": position,
+                "our_value_score": our_value,
+                "market_consensus_value": round(market, 2),
+                "estimated_owner_value_score": estimated_owner_value,
+                "trade_edge_score": edge_score,
+                "edge_type": edge_type,
+                "evidence": (
+                    f"projection_edge={row.get('projection_edge_score')}; market={round(market, 2)}; "
+                    f"owner_pref={round(owner_preference, 2)}; owner_label={profile.get('label', 'low-signal manager')}; "
+                    f"owner_need={team_need}"
+                ),
+                "risk": _counterparty_risk(edge_type, confidence, market),
+                "confidence": confidence,
+                "source_trace": row.get("source_trace", ""),
+            }
+        )
+    return pd.DataFrame(rows, columns=_counterparty_columns()).sort_values("trade_edge_score", ascending=False)
 
 
 def _classify_action(row: pd.Series, current_roster: int) -> dict[str, Any]:
@@ -523,3 +581,82 @@ def _fit_columns() -> list[str]:
 
 def _action_columns() -> list[str]:
     return ["roster_id", "team_name", "player_id", "player_name", "position", "age", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"]
+
+
+def _counterparty_columns() -> list[str]:
+    return [
+        "target_roster_id",
+        "target_team",
+        "player_id",
+        "player_name",
+        "position",
+        "our_value_score",
+        "market_consensus_value",
+        "estimated_owner_value_score",
+        "trade_edge_score",
+        "edge_type",
+        "evidence",
+        "risk",
+        "confidence",
+        "source_trace",
+    ]
+
+
+def _manager_pref_map(frame: pd.DataFrame) -> dict[tuple[int, str], dict[str, Any]]:
+    if frame.empty:
+        return {}
+    rows: dict[tuple[int, str], dict[str, Any]] = {}
+    for _, row in frame.fillna("").iterrows():
+        key = (_int(row.get("roster_id")), str(row.get("position_group", "")))
+        existing = rows.get(key, {})
+        if _num(row.get("preference_score")) >= _num(existing.get("preference_score")):
+            rows[key] = row.to_dict()
+    return rows
+
+
+def _owner_need_score(position: str, team: dict[str, Any]) -> float:
+    if not team:
+        return 25.0
+    if position == "QB":
+        return _need_score(team.get("need_qb"))
+    if position == "RB":
+        return _need_score(team.get("need_rb"))
+    if position in PASS_CATCHERS:
+        return _need_score(team.get("need_pass_catcher"))
+    return 35.0
+
+
+def _edge_type(edge_score: float, owner_preference: float, owner_confidence: str, ppg: float, market: float) -> str:
+    if ppg <= 2 and market <= 5:
+        return "do_not_chase"
+    if owner_confidence == "low":
+        return "insufficient_signal"
+    if edge_score >= 18 and owner_preference < 55:
+        return "we_may_value_more"
+    if edge_score <= -18 or owner_preference >= 75:
+        return "owner_may_overvalue"
+    if abs(edge_score) <= 12 and ppg >= 8:
+        return "mutual_fit"
+    return "insufficient_signal"
+
+
+def _counterparty_confidence(signal_confidence: str, owner_confidence: str, market: float) -> str:
+    if signal_confidence == "low" or owner_confidence == "low" or market <= 0:
+        return "low"
+    if signal_confidence == "high" and owner_confidence == "high":
+        return "high"
+    return "medium"
+
+
+def _counterparty_risk(edge_type: str, confidence: str, market: float) -> str:
+    if confidence == "low":
+        return "high: sparse manager, projection, or market evidence"
+    if market <= 0:
+        return "high: market consensus unavailable"
+    if edge_type == "owner_may_overvalue":
+        return "medium: current owner may price above our model"
+    if edge_type == "we_may_value_more":
+        return "medium: confirm current owner is actually open to selling"
+    if edge_type == "do_not_chase":
+        return "high: low-impact asset"
+    return "medium: estimate only, not a trade quote"
