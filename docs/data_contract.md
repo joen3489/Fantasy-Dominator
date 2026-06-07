@@ -32,7 +32,15 @@ Canonical tables live in `data/processed/` as CSV and SQLite tables. They contai
 
 Derived analytics are generated from canonical tables only. They may include model scores, proxy values, labels, confidence, evidence, and strategy fit, but must preserve enough source trace to audit the result.
 
-### Layer 3: Strategy Views
+### Layer 2A: Projection Data Layer
+
+Projection tables convert historical/open data and league scoring settings into projected fantasy production. They are deterministic model outputs, not analyst prose. Projection rows must preserve player identity, projection method, source trace, and confidence.
+
+### Layer 2B: Transform Signal Layer
+
+Transform tables convert projections, market values, news, roster ownership, manager behavior, and strategy config into deterministic target/sell/breakout/watch signals. Signals must include evidence, risk, confidence, and source trace.
+
+### Layer 3: Strategy And Analyst Views
 
 Strategy views are browser and markdown outputs that apply configurable team strategy. Melkor-specific rebuild logic belongs in `config/leagues.yml` and presentation/report overlays, not in canonical normalization.
 
@@ -67,6 +75,14 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `league_news_impact` | Deterministic news analytics | Roster-scoped news impacts | `news_events`, `player_news_matches`, `roster_players`, `teams` | `event_id`, `source`, `published_at`, `player_id`, `player_name`, `roster_id`, `team_name`, `impact_type`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
 | `news_source_freshness` | News source normalization | News source status and row-count diagnostics | Refresh process | `source`, `dataset`, `status`, `source_url`, `cache_path`, `checked_at`, `row_count` | rows must explain cached, refreshed, disabled, or unavailable source state |
 
+### Projection Tables
+
+| Table | Owner | Purpose | Inputs | Required columns | Trace/evidence requirement |
+| --- | --- | --- | --- | --- | --- |
+| `player_projection_season` | Deterministic projection code | Season-level projected fantasy production | `player_usage_weekly`, `players`, league scoring config, roster ownership | `season`, `player_id`, `player_name`, `position`, `team`, `projected_games`, `projected_passing_yards`, `projected_passing_tds`, `projected_interceptions`, `projected_rushing_yards`, `projected_rushing_tds`, `projected_receptions`, `projected_receiving_yards`, `projected_receiving_tds`, `projected_fantasy_points`, `projected_ppg`, `projection_method`, `projection_confidence`, `source_trace` | `projection_method`, `projection_confidence`, `source_trace` required |
+| `player_projection_weekly` | Deterministic projection code | Weekly projected fantasy allocation | `player_projection_season`, schedule/weekly allocation rules | `season`, `week`, `player_id`, `player_name`, `position`, `team`, `projected_fantasy_points`, `projected_snap_or_usage_note`, `projection_method`, `projection_confidence`, `source_trace` | `projection_method`, `projection_confidence`, `source_trace` required |
+| `projection_source_freshness` | Projection refresh process | Projection source status and diagnostics | Refresh process | `source`, `dataset`, `status`, `source_url`, `cache_path`, `checked_at`, `row_count` | rows must explain available, cached, disabled, or unavailable projection inputs |
+
 ### Derived Analytics Tables
 
 | Table | Owner | Purpose | Inputs | Required columns | Trace/evidence requirement |
@@ -82,6 +98,16 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `opportunity_board` | Deterministic economics | Read-only action preview | `asset_market_gaps`, behavior, strategy config | `action_type`, `target_team`, `asset_in`, `asset_out`, `manager_signal`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
 | `refresh_metadata` | Refresh process | One-row refresh diagnostics | config + refresh run | `generated_at`, `current_season`, `configured_league_ids`, `transaction_week_start`, `transaction_week_end`, `source_scope`, `raw_cache_root`, `raw_external_cache_root`, `browser_is_primary_surface`, `recommendation_packets_status` | must describe generated source scope |
 
+### Transform Signal Tables
+
+| Table | Owner | Purpose | Inputs | Required columns | Trace/evidence requirement |
+| --- | --- | --- | --- | --- | --- |
+| `player_signal_scores` | Deterministic signal code | Unified player target/sell/watch scoring | projections, market values, roster ownership, news impact, manager behavior | `player_id`, `player_name`, `position`, `roster_id`, `team_name`, `projection_edge_score`, `market_gap_score`, `timeline_fit_score`, `breakout_score`, `sell_score`, `signal_label`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
+| `breakout_candidates` | Deterministic signal code | Ranked breakout/target candidates | `player_signal_scores` | `player_id`, `player_name`, `position`, `current_team_name`, `breakout_score`, `projection_edge`, `market_value`, `evidence`, `risk`, `confidence`, `source_trace` | derived from signal scores |
+| `sell_candidates` | Deterministic signal code | Ranked sell/trade-away candidates | `player_signal_scores` | `player_id`, `player_name`, `position`, `current_team_name`, `sell_score`, `projection_risk`, `market_value`, `evidence`, `risk`, `confidence`, `source_trace` | derived from signal scores |
+| `projection_market_gaps` | Deterministic signal code | Projection production vs market value gaps | projections, market values | `player_id`, `player_name`, `position`, `projected_fantasy_points`, `projected_ppg`, `market_value`, `gap_score`, `gap_label`, `evidence`, `risk`, `confidence`, `source_trace` | projection and market source traces required |
+| `team_fit_scores` | Deterministic signal code | Fit of player assets by selected team timeline and needs | projections, roster ownership, team needs, strategy config | `roster_id`, `team_name`, `player_id`, `player_name`, `position`, `timeline_fit_score`, `need_fit_score`, `liquidity_fit_score`, `fit_label`, `evidence`, `risk`, `confidence`, `source_trace` | works for any selected roster_id |
+
 ## Presentation Artifacts
 
 | Artifact | Owner | Purpose | Rule |
@@ -89,6 +115,8 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `data/site/index.html` | Browser generation code | Primary browser workflow | Presentation only; reads processed tables |
 | `data/reports/weekly_hinkie_report.md` | Report generation code | Markdown strategy report | Presentation only; strategy overlay is allowed |
 | `data/processed/sleeper_dynasty.sqlite` | Refresh process | SQLite mirror of processed CSVs | Generated artifact; tables replaced on refresh |
+| `data/analysis/target_theses.json` | Codex analyst layer | Explained target theses from signal outputs | Interpretation only; must cite signal/projection evidence |
+| `data/analysis/sell_theses.json` | Codex analyst layer | Explained sell theses from signal outputs | Interpretation only; must cite signal/projection evidence |
 
 ## Source Ownership
 
@@ -97,6 +125,9 @@ Strategy views are browser and markdown outputs that apply configurable team str
 - DynastyProcess owns imported market value reference data when available.
 - RotoWire RSS owns attributed player-news rows imported through its published RSS feed.
 - Sleeper trending owns public add/drop trend rows imported through the Sleeper trending endpoint.
+- Projection code owns deterministic projected stats and fantasy point calculations.
+- Transform code owns breakout/sell/watch labels and scores.
+- Codex owns explanation of transform outputs only, not projection facts or signal scores.
 - Internal proxy values are continuity fallbacks only.
 - Config owns selected current team, strategy profile, tracked pick priorities, and source toggles.
 - Processed tables own normalized analysis state.
@@ -139,7 +170,7 @@ Recommendation generation remains read-only. Future packets should be structured
 - `source_trace`
 - `analyst_note`
 
-The current `opportunity_board` is a read-only preview of this shape. It is not a trade executor.
+The current `opportunity_board` is a read-only preview of this shape. Future packets should cite projection and signal rows when available. It is not a trade executor.
 
 ## V-Model Acceptance Checks
 

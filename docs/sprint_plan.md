@@ -4,12 +4,14 @@ This document is the project control surface for building the full Sleeper dynas
 
 ## Product North Star
 
-Build a browser-first, read-only Sleeper dynasty front office that combines league data, market economics, news intelligence, manager behavior, and Codex-authored analyst interpretation.
+Build a browser-first, read-only Sleeper dynasty front office that combines league data, projected fantasy production, market economics, news intelligence, manager behavior, deterministic signal transforms, and Codex-authored analyst interpretation.
 
 The app should help a dynasty manager understand:
 
 - what the league data says
 - what the market is mispricing
+- what the projected season says a player should be worth
+- which players are breakout, miss, buy, hold, or sell candidates
 - which managers behave in exploitable ways
 - which news items create trade windows
 - what the analyst layer thinks, with evidence and confidence
@@ -20,6 +22,7 @@ Core invariants:
 - Raw data is preserved before normalization.
 - Deterministic app code owns facts.
 - Codex owns interpretation only.
+- Projection models and signal transforms are deterministic app code, not analyst prose.
 - No trade execution, message sending, or Sleeper mutation.
 - Browser is the primary workflow surface.
 - CSV, SQLite, JSON, markdown, and raw files are audit artifacts.
@@ -36,11 +39,13 @@ The left side defines requirements before implementation. The right side defines
 | R3: Canonical data hierarchy | Preserve raw sources first, normalize facts second, derive analytics third, generate presentation fourth. | V3: schema/source-trace tests confirm required columns, IDs, timestamps, and source ownership. |
 | R4: Economic/manager behavior modeling | Generate market gaps, liquidity, team needs, manager behavior, and asset inventory from canonical facts. | V4: deterministic economics tests confirm stable outputs from fixtures. |
 | R5: News intelligence | Convert news/trending/status sources into player-linked and league-aware impact rows. | V5: news fixture/player-match tests confirm source parsing, player matching, and roster impact. |
-| R6: Codex analyst layer | Let Codex write briefs, trade theses, and manager dossiers from processed data only. | V6: analyst artifact validation confirms source trace, evidence, risk, confidence, and no unsupported claims. |
-| R7: Automation and hooks | Run refresh, validation, and analyst generation safely on schedules or guarded hooks. | V7: automation dry-run/guardrail tests confirm no destructive actions or external transaction side effects. |
-| R8: Browser-first front office | Make the browser the main workflow, with team-scoped pages and diagnostics. | V8: browser smoke and team-scope tests confirm core controls, views, and selected-team behavior. |
-| R9: Recommendation packet auditability | Produce read-only recommendation packets with evidence and confidence. | V9: packet tests require action type, assets, evidence, risk, confidence, source trace, and read-only wording. |
-| R10: Feedback/market memory | Track what the app believed, what happened later, and which signals were useful. | V10: outcome/history idempotency tests confirm reruns replace outputs without duplicate history rows. |
+| R6: Projection data layer | Build a projected season model with fantasy points from open/legal data, league scoring, and traceable projection methods. | V6: projection fixture tests confirm fantasy-point math, player joins, source trace, and missing-data behavior. |
+| R7: Transform signal layer | Convert projections, market values, roster context, news, and manager behavior into deterministic target/sell/breakout signals. | V7: signal fixture tests confirm stable labels, scores, risk, confidence, and evidence. |
+| R8: Codex analyst layer | Let Codex write briefs, trade theses, and manager dossiers from processed projection and signal outputs only. | V8: analyst artifact validation confirms source trace, evidence, risk, confidence, and no unsupported claims. |
+| R9: Automation and hooks | Run refresh, validation, and analyst generation safely on schedules or guarded hooks. | V9: automation dry-run/guardrail tests confirm no destructive actions or external transaction side effects. |
+| R10: Browser-first front office | Make the browser the main workflow, with team-scoped pages and diagnostics. | V10: browser smoke and team-scope tests confirm core controls, views, and selected-team behavior. |
+| R11: Recommendation packet auditability | Produce read-only recommendation packets with evidence and confidence. | V11: packet tests require action type, assets, evidence, risk, confidence, source trace, and read-only wording. |
+| R12: Feedback/market memory | Track what the app believed, what happened later, and which signals were useful. | V12: outcome/history idempotency tests confirm reruns replace outputs without duplicate history rows. |
 
 ## Sprint Sequence
 
@@ -160,14 +165,97 @@ Non-goals:
 - No Codex-authored analysis.
 - No recommendations that lack deterministic evidence.
 
-### Sprint 4: Codex Analyst Layer
+### Sprint 4: Projection Data Layer V1
+
+Goal: Build a traceable projected season model before creating stronger recommendations.
+
+Key deliverables:
+
+- Generate season-level player projections from nflverse historical stats, Sleeper player metadata, and league scoring config.
+- Calculate projected fantasy points and projected PPG.
+- Join projections to Sleeper roster ownership and market values when available.
+- Label projection method and missing-data confidence.
+
+Data contracts:
+
+- Add `player_projection_season`.
+- Add `player_projection_weekly` as a future-compatible table, even if V1 uses season allocation only.
+- Add `projection_source_freshness`.
+
+Browser changes:
+
+- Add Projection Board view.
+- Add projection summaries to Today's Board only as factual context, not recommendations.
+- Diagnostics must show projection row counts and projection freshness.
+
+Tests:
+
+- Fantasy scoring fixture tests for passing, rushing, receiving, reception, and turnover fields.
+- Missing stat fields default safely without breaking refresh.
+- Projection rows preserve player IDs, source trace, projection method, and confidence.
+
+Acceptance criteria:
+
+- Every fantasy-relevant rostered player has either a projection row or a clearly labeled missing-data row.
+- Projection output is deterministic and auditable.
+- Browser can show projected fantasy points and PPG for any selected `roster_id`.
+
+Non-goals:
+
+- No Codex-written player takes.
+- No target/sell recommendations from projections yet.
+- No paid projection source dependency.
+
+### Sprint 5: Transform Signal Layer V1
+
+Goal: Transform projections and market context into deterministic player signals.
+
+Key deliverables:
+
+- Compare projected fantasy points/PPG against player market value and liquidity.
+- Generate breakout, miss, buy, hold, sell, and watch labels.
+- Score team fit by roster timeline, position scarcity, age, projection edge, and manager demand.
+- Keep all signals explainable with evidence, risk, confidence, and source trace.
+
+Data contracts:
+
+- Add `player_signal_scores`.
+- Add `breakout_candidates`.
+- Add `sell_candidates`.
+- Add `projection_market_gaps`.
+- Add `team_fit_scores`.
+
+Browser changes:
+
+- Add Signal Board view.
+- Update Today's Board to use signal outputs instead of raw market-gap rows where available.
+- Keep raw signal tables available lower on the page.
+
+Tests:
+
+- Fixture tests for breakout, sell, and projection-market-gap labels.
+- Rebuild vs contender fit tests.
+- Confidence downgrades when projection confidence or market data is missing.
+
+Acceptance criteria:
+
+- The app can deterministically identify projected mispricing before analyst prose exists.
+- Every signal has evidence, risk, confidence, and source trace.
+- Signals work for any selected team.
+
+Non-goals:
+
+- No Codex-authored analysis.
+- No trade execution or outbound messages.
+
+### Sprint 6: Analysis Layer V1
 
 Goal: Add Codex as an interpretation layer over processed facts.
 
 Key deliverables:
 
 - Add `data/analysis/` as a separate generated artifact layer.
-- Build analyst context packets from processed CSV/SQLite data.
+- Build analyst context packets from projection, signal, news, market, and manager behavior outputs.
 - Add controlled prompts for daily GM brief, trade desk, manager dossiers, and news impact memo.
 - Validate analyst artifacts before browser display.
 
@@ -175,6 +263,8 @@ Data contracts:
 
 - Add `daily_gm_brief.md`.
 - Add `trade_theses.json`.
+- Add `target_theses.json`.
+- Add `sell_theses.json`.
 - Add `manager_dossiers.md`.
 - Add `news_impact_brief.md`.
 - Add prompt/version metadata to each artifact.
@@ -182,6 +272,7 @@ Data contracts:
 Browser changes:
 
 - Add Analyst Brief section.
+- Add Target Thesis and Sell Thesis sections.
 - Add Manager Dossiers section.
 - Label all Codex-generated content as analyst interpretation.
 
@@ -194,6 +285,7 @@ Tests:
 Acceptance criteria:
 
 - Codex can regenerate analyst artifacts from processed facts.
+- Codex explanations cite signal/projection rows rather than inventing player takes.
 - Canonical tables are not mutated by Codex.
 - Browser clearly separates facts from interpretation.
 
@@ -202,7 +294,7 @@ Non-goals:
 - No autonomous outbound messages.
 - No hidden prompt runs that write into canonical data.
 
-### Sprint 5: Automation And Hooks
+### Sprint 7: Automation And Hooks
 
 Goal: Safely automate refresh, validation, and analyst generation.
 
@@ -240,7 +332,7 @@ Non-goals:
 - No always-on service requirement.
 - No bypassing Codex trust/approval safeguards.
 
-### Sprint 6: Browser Product Upgrade
+### Sprint 8: Browser Product Upgrade
 
 Goal: Evolve the browser from a dense table surface into a front-office workspace.
 
@@ -277,13 +369,14 @@ Non-goals:
 - No visual polish at the expense of missing workflow controls.
 - No landing page.
 
-### Sprint 7: Recommendation Packets
+### Sprint 9: Recommendation Packets
 
 Goal: Formalize read-only action packets.
 
 Key deliverables:
 
 - Generate recommendation packets from economics, manager behavior, news impact, and strategy overlay.
+- Generate recommendation packets from projection signals, manager behavior, news impact, and strategy overlay.
 - Include deterministic packet fields and optional analyst note.
 - Add filters for reacquire picks, buy lows, sell windows, churn candidates, and manager-specific offers.
 
@@ -314,19 +407,22 @@ Non-goals:
 - No Sleeper auth.
 - No negotiation bot.
 
-### Sprint 8: Feedback And Market Memory
+### Sprint 10: Feedback And Market Memory
 
 Goal: Let the app track whether its reads were useful over time.
 
 Key deliverables:
 
 - Store dated market snapshots and recommendation outcomes.
+- Store dated projection snapshots, signal snapshots, market snapshots, and recommendation outcomes.
 - Track manager prediction history and analyst decisions.
 - Add review views for what changed and whether prior reads were right.
 
 Data contracts:
 
 - Add `market_snapshots`.
+- Add `projection_snapshots`.
+- Add `signal_snapshots`.
 - Add `analyst_decisions`.
 - Add `recommendation_outcomes`.
 - Add `manager_prediction_history`.
@@ -345,6 +441,7 @@ Tests:
 Acceptance criteria:
 
 - The app can compare prior beliefs with later market/news/league events.
+- The app can compare projected season beliefs and signal labels with later market/news/league events.
 - Manager behavior labels become inspectable over time.
 
 Non-goals:
@@ -393,9 +490,33 @@ Owners:
 
 Rules:
 
-- Derived from canonical tables only.
+- Derived from canonical tables, projection tables, and earlier deterministic transforms only.
 - Include evidence and confidence when outputs guide decisions.
 - Internal proxies must be labeled.
+
+### Layer 2A: Projection Data Layer
+
+Owners:
+
+- Deterministic projection code.
+
+Rules:
+
+- Converts historical usage/performance and league scoring settings into projected season and weekly fantasy outputs.
+- Must preserve projection method, source trace, and confidence.
+- Missing or low-confidence projections must be explicit rows or diagnostics, not silent gaps.
+
+### Layer 2B: Transform Signal Layer
+
+Owners:
+
+- Deterministic signal code.
+
+Rules:
+
+- Converts projections, market values, roster context, news, manager behavior, and strategy config into target/sell/watch signals.
+- Must produce evidence, risk, confidence, and source trace.
+- Must not contain Codex-authored prose.
 
 ### Layer 3: Analyst Artifacts
 
@@ -406,7 +527,7 @@ Owners:
 Rules:
 
 - Interpretation only.
-- Must cite processed facts or source traces.
+- Must cite projection rows, signal rows, processed facts, or source traces.
 - Must include prompt/version metadata.
 - Must pass validation before browser display.
 
