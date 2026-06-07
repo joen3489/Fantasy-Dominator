@@ -184,6 +184,8 @@ class VModelTests(unittest.TestCase):
 
         self.assertIn("Team Overview", html)
         self.assertIn("Today's Board", html)
+        self.assertIn("brief-card", html)
+        self.assertIn("brief-list", html)
         self.assertIn("Buy-Low Targets", html)
         self.assertIn("Sell Windows", html)
         self.assertIn("My Roster News", html)
@@ -216,6 +218,7 @@ class VModelTests(unittest.TestCase):
 
         self.assertIn("fantasy-dominator-production.up.railway.app", text)
         self.assertIn("Today's Board", text)
+        self.assertIn("brief-card", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Diagnostics", text)
 

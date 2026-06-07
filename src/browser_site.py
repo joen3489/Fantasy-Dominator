@@ -189,6 +189,41 @@ def _page(
       padding: 14px;
       overflow: hidden;
     }}
+    .brief-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .brief-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+      padding: 11px 12px;
+      display: grid;
+      gap: 7px;
+    }}
+    .brief-card-title {{
+      font-weight: 700;
+      line-height: 1.25;
+    }}
+    .brief-card-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }}
+    .brief-chip {{
+      border: 1px solid var(--line);
+      background: #ffffff;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 12px;
+      color: #34403b;
+      line-height: 1.35;
+    }}
+    .brief-card-evidence {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }}
     table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
     th, td {{ padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
     th {{ color: #34403b; background: #f1f3ed; font-weight: 700; position: sticky; top: 0; }}
@@ -531,11 +566,11 @@ def _page(
       const teamTrades = tables.trades.filter(row => Number(row.team_a_roster_id) === state.teamId || Number(row.team_b_roster_id) === state.teamId);
       const myPicksAway = tables.pick_ownership.filter(row => truthy(row.is_my_original_pick) && !truthy(row.i_currently_own_it));
       const rankedGaps = sortRows(applySearch(tables.asset_market_gaps), ['market_gap_score']).reverse();
-      const buyLowTargets = rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 8);
-      const sellWindows = rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 8);
-      const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 8);
-      const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 8);
-      const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 8);
+      const buyLowTargets = rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 5);
+      const sellWindows = rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
+      const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 5);
+      const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 5);
+      const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 5);
 
       setText('metric-roster', allTeamRoster.length);
       setText('metric-qb', qbCount);
@@ -545,12 +580,12 @@ def _page(
       setText('metric-team-trades', teamTrades.length);
 
       document.getElementById('my-pick-alerts').innerHTML = list(myPicksAway.map(row => `${{row.pick_season}} round ${{row.round}}: ${{row.current_owner}}`));
-      document.getElementById('today-buy-low').innerHTML = table(buyLowTargets, todayOpportunityColumns);
-      document.getElementById('today-sell-window').innerHTML = table(sellWindows, todayOpportunityColumns);
-      document.getElementById('today-my-news').innerHTML = table(myNews, todayNewsColumns);
-      document.getElementById('today-target-news').innerHTML = table(targetNews, todayNewsColumns);
-      document.getElementById('today-pick-alerts').innerHTML = list(myPicksAway.slice(0, 8).map(row => `${{row.pick_season}} R${{row.round}} from ${{row.original_team}} is with ${{row.current_owner}}`));
-      document.getElementById('today-manager-angles').innerHTML = table(managerAngles, todayManagerColumns);
+      document.getElementById('today-buy-low').innerHTML = opportunityCards(buyLowTargets, 'buy');
+      document.getElementById('today-sell-window').innerHTML = opportunityCards(sellWindows, 'sell');
+      document.getElementById('today-my-news').innerHTML = newsCards(myNews);
+      document.getElementById('today-target-news').innerHTML = newsCards(targetNews);
+      document.getElementById('today-pick-alerts').innerHTML = pickAlertCards(myPicksAway.slice(0, 5));
+      document.getElementById('today-manager-angles').innerHTML = managerCards(managerAngles);
       document.getElementById('team-overview-panel').innerHTML = teamOverview(activeTeam, allTeamRoster, teamTrades);
       document.getElementById('strategy-panel').innerHTML = strategyOverlay();
       document.getElementById('likely-traders').innerHTML = table(
@@ -680,6 +715,71 @@ def _page(
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
       ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns);
+    }}
+
+    function opportunityCards(rows, mode) {{
+      if (!rows.length) return '<p class="note">No high-signal items found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.asset_name || 'Unknown asset'}}${{row.target_team ? ` - ${{row.target_team}}` : ''}}`,
+        chips: [
+          row.opportunity_type || mode,
+          row.position,
+          row.market_gap_score ? `score ${{row.market_gap_score}}` : '',
+          row.risk ? `risk ${{row.risk}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: row.evidence || row.timeline_fit || row.source_trace || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function newsCards(rows) {{
+      if (!rows.length) return '<p class="note">No high-signal news found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.player_name || 'Unknown player'}}${{row.team_name ? ` - ${{row.team_name}}` : ''}}`,
+        chips: [
+          row.impact_type,
+          row.source,
+          row.risk ? `risk ${{row.risk}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: row.evidence || row.source_trace || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function pickAlertCards(rows) {{
+      if (!rows.length) return '<p class="note">No pick alerts found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.pick_season}} R${{row.round}} - ${{row.original_team || 'Original team unknown'}}`,
+        chips: [
+          row.current_owner ? `held by ${{row.current_owner}}` : '',
+          row.previous_owner ? `from ${{row.previous_owner}}` : '',
+          truthy(row.is_my_original_pick) ? 'my original pick' : ''
+        ],
+        evidence: `Current owner: ${{row.current_owner || 'unknown'}}. Previous owner: ${{row.previous_owner || 'unknown'}}.`
+      }})).join('')}}</div>`;
+    }}
+
+    function managerCards(rows) {{
+      if (!rows.length) return '<p class="note">No manager angles found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: row.team_name || 'Unknown manager',
+        chips: [
+          row.plain_language_label,
+          row.trade_activity_score ? `trade ${{row.trade_activity_score}}` : '',
+          row.pick_seller_score ? `pick sell ${{row.pick_seller_score}}` : '',
+          row.faab_aggression_score ? `faab ${{row.faab_aggression_score}}` : ''
+        ],
+        evidence: row.evidence || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function briefCard(card) {{
+      const chips = (card.chips || []).filter(value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0');
+      return `<article class="brief-card">
+        <div class="brief-card-title">${{escapeHtml(card.title || 'Untitled')}}</div>
+        <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
+        <div class="brief-card-evidence">${{escapeHtml(card.evidence || '')}}</div>
+      </article>`;
     }}
 
     function table(rows, columns) {{
