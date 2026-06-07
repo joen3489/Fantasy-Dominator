@@ -520,6 +520,121 @@ Non-goals:
 - No opaque self-modifying model.
 - No automatic strategy changes without review.
 
+### Sprint 11: Market Lens Lab V1
+
+Goal: Let the user explore different valuation philosophies in the browser without changing canonical facts, generated recommendations, or source-of-truth tables.
+
+This sprint builds on the market-consensus and counterparty-edge foundation. The product thesis is that a dynasty edge often appears when four valuation lenses disagree:
+
+- market consensus
+- projection value
+- manager revealed preference
+- roster/timeline fit
+
+The app should let us ask, "What if this league mate values assets more like DynastyProcess, more like projections, more like short-term roster need, or more like their own past behavior?" That scenario exploration should be fast, readable, and clearly labeled as exploratory.
+
+Key deliverables:
+
+- Add browser-only weighting controls for the four valuation lenses.
+- Add deterministic default presets:
+  - Balanced Market
+  - Projection Contrarian
+  - Counterparty Exploit
+  - Contender Trade Market
+  - Rebuild Asset Bank
+  - News Heat Check
+- Add a scenario scoring layer in the browser using existing processed component fields.
+- Show how selected weights reorder counterparty targets, buy/watch targets, sell candidates, and do-not-chase assets.
+- Add sensitivity rows that identify which players move the most when weights change.
+- Keep canonical CSV/SQLite outputs unchanged when sliders move.
+- Add a clear warning that scenario scores are exploratory and do not replace default model output.
+
+Data contracts:
+
+- No new canonical tables are required for V1.
+- Browser scenario state is client-side only.
+- Inputs are existing processed outputs:
+  - `market_consensus_values`
+  - `player_signal_scores`
+  - `manager_valuation_profiles`
+  - `counterparty_trade_edges`
+  - `team_needs_matrix`
+  - `league_news_impact`
+- Add a documented browser scenario component contract:
+  - `market_component`
+  - `projection_component`
+  - `manager_component`
+  - `timeline_component`
+  - `news_component`
+  - `scenario_score`
+  - `scenario_label`
+  - `scenario_warning`
+- Scenario rows must remain presentation-layer calculations. They must not be written back into `data/processed/` unless a future settings/snapshot sprint explicitly adds that contract.
+
+Browser changes:
+
+- Add **Market Lens Lab** as a Trade Desk subsection.
+- Add preset buttons near the top of the section.
+- Add sliders or numeric inputs for:
+  - Market Consensus
+  - Projection Value
+  - Manager Preference
+  - Timeline / Team Fit
+  - News Heat
+- Show total weight and require valid weights before ranking.
+- Add three result panels:
+  - Scenario Targets
+  - Scenario Sells
+  - Biggest Movers
+- Add a compact evidence row for each result:
+  - market value
+  - projected PPG
+  - manager label/confidence
+  - edge type
+  - risk/confidence
+- Add a "canonical model" comparison column so users can see when the scenario disagrees with the default model.
+- Do not put this above Today's Board yet; V1 belongs in Trade Desk as an exploratory lab.
+
+Implementation notes:
+
+- Keep all calculations in `src/browser_site.py` JavaScript for V1.
+- Use existing table fields only; do not add new external ingestion.
+- Normalize component scores to a 0-100 scale before applying weights.
+- Treat missing component data as degraded, not zero certainty.
+- Cap scenario confidence when:
+  - market consensus is missing
+  - source disagreement is high
+  - manager valuation confidence is low
+  - projection confidence is low
+  - news match is ambiguous
+- Preserve the default model ordering in existing Action Board and Counterparty Edge sections.
+
+Tests:
+
+- Browser HTML contains `Market Lens Lab`.
+- Default preset weights sum to 100.
+- Each preset produces deterministic client-side configuration data.
+- Scenario calculations do not change canonical table payloads.
+- Missing market, projection, or manager components produce degraded warnings.
+- Browser smoke confirms Market Lens Lab renders with preset controls and result panels.
+- Regression test confirms `python scripts/refresh_all.py` still writes the same processed table set and does not add scenario CSVs.
+
+Acceptance criteria:
+
+- A user can change valuation weights in the browser and immediately see target/sell rankings change.
+- The app clearly labels scenario output as exploratory.
+- Canonical recommendations, processed CSVs, and SQLite tables remain unchanged by slider interaction.
+- Scenario results explain which lens drove the ranking.
+- The live site passes smoke tests and browser checks after deploy.
+
+Non-goals:
+
+- No saved user preferences.
+- No new external market sources.
+- No KTC automation.
+- No Codex analyst rewriting based on slider state.
+- No transaction execution, outbound messages, or Sleeper mutation.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources
