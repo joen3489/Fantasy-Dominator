@@ -203,7 +203,14 @@ class VModelTests(unittest.TestCase):
 
             output = build_browser_site(site, processed)
             html = output.read_text(encoding="utf-8")
+            manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            players_audit_exists = (site / "data" / "audit" / "players.json").exists()
 
+        self.assertIn("The Front Office", html)
+        self.assertIn("front-office-manifest", html)
+        self.assertNotIn('id="app-data"', html)
+        self.assertIn("Data Room", html)
         self.assertIn("Team Overview", html)
         self.assertIn("Today's Board", html)
         self.assertIn("brief-card", html)
@@ -251,12 +258,22 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Analysis artifacts", html)
         self.assertIn("Target thesis rows", html)
         self.assertIn("Recommendation packets", html)
+        self.assertEqual(manifest["appName"], "The Front Office")
+        self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
+        self.assertIn("players", manifest["auditTables"])
+        self.assertIn("player_usage_weekly", manifest["auditTables"])
+        self.assertIn("player_projection_weekly", manifest["auditTables"])
+        self.assertNotIn("players", bundle["tables"])
+        self.assertNotIn("player_usage_weekly", bundle["tables"])
+        self.assertNotIn("player_projection_weekly", bundle["tables"])
+        self.assertTrue(players_audit_exists)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"
         text = script.read_text(encoding="utf-8")
 
         self.assertIn("fantasy-dominator-production.up.railway.app", text)
+        self.assertIn("The Front Office", text)
         self.assertIn("Today's Board", text)
         self.assertIn("brief-card", text)
         self.assertIn("Projection Board", text)
@@ -264,6 +281,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Analyst Brief", text)
         self.assertIn("Action Board", text)
         self.assertIn("News Desk", text)
+        self.assertIn("Data Room", text)
         self.assertIn("Data Diagnostics", text)
 
     def test_projection_scoring_uses_league_settings_and_te_bonus(self) -> None:

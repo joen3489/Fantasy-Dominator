@@ -7,6 +7,7 @@ import requests
 
 DEFAULT_URL = "https://fantasy-dominator-production.up.railway.app/"
 REQUIRED_MARKERS = [
+    "The Front Office",
     "Today's Board",
     "Action Board",
     "brief-card",
@@ -15,6 +16,7 @@ REQUIRED_MARKERS = [
     "Analyst Brief",
     "News Desk",
     "Market Gaps",
+    "Data Room",
     "Data Diagnostics",
 ]
 BOOT_ONLY_MARKER = "Data refresh is running; reload shortly"

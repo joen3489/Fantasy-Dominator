@@ -12,6 +12,8 @@ from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
 def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, analysis_dir: Path = ANALYSIS_DIR) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     tables = {
         "teams": _records(processed_dir / "teams.csv"),
         "players": _records(processed_dir / "players.csv"),
@@ -52,8 +54,9 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
     config = load_config()
     analysis = _analysis_artifacts(analysis_dir)
+    manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis)
     target = output_dir / "index.html"
-    target.write_text(_page(tables, my_roster_id, my_team_name, config, analysis), encoding="utf-8")
+    target.write_text(_page(my_team_name, manifest), encoding="utf-8")
     return target
 
 
@@ -111,42 +114,83 @@ def _my_team_name(teams: list[dict[str, Any]], my_roster_id: int | None) -> str:
     return "Unknown team"
 
 
-def _page(
+def _write_data_chunks(
+    data_dir: Path,
     tables: dict[str, list[dict[str, Any]]],
     my_roster_id: int | None,
     my_team_name: str,
     config: dict[str, Any],
     analysis: dict[str, Any],
+) -> dict[str, Any]:
+    audit_only_tables = {
+        "players",
+        "player_usage_weekly",
+        "player_projection_weekly",
+    }
+    table_counts = {name: len(rows) for name, rows in tables.items()}
+    app_tables = {name: rows for name, rows in tables.items() if name not in audit_only_tables}
+    app_payload = {
+        "tables": app_tables,
+        "myRosterId": my_roster_id,
+        "myTeamName": my_team_name,
+        "strategyProfile": config.get("strategy_profile") or {},
+        "trackedPicks": config.get("tracked_picks") or [],
+        "currentSeason": config.get("current_season", ""),
+        "configuredLeagues": config.get("leagues") or {},
+        "analysis": analysis,
+        "tableCounts": table_counts,
+    }
+    (data_dir / "app_bundle.json").write_text(
+        json.dumps(app_payload, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
+
+    audit_dir = data_dir / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    for name in sorted(audit_only_tables):
+        (audit_dir / f"{name}.json").write_text(
+            json.dumps(tables.get(name, []), ensure_ascii=False).replace("</", "<\\/"),
+            encoding="utf-8",
+        )
+
+    manifest = {
+        "appName": "The Front Office",
+        "bundlePath": "data/app_bundle.json",
+        "auditTables": {name: f"data/audit/{name}.json" for name in sorted(audit_only_tables)},
+        "tableCounts": table_counts,
+        "initialTables": sorted(app_tables),
+        "payloadPolicy": "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded",
+    }
+    (data_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _page(
+    my_team_name: str,
+    manifest: dict[str, Any],
 ) -> str:
-    data_json = json.dumps(
-        {
-            "tables": tables,
-            "myRosterId": my_roster_id,
-            "myTeamName": my_team_name,
-            "strategyProfile": config.get("strategy_profile") or {},
-            "trackedPicks": config.get("tracked_picks") or [],
-            "currentSeason": config.get("current_season", ""),
-            "configuredLeagues": config.get("leagues") or {},
-            "analysis": analysis,
-        },
-        ensure_ascii=False,
-    ).replace("</", "<\\/")
+    manifest_json = json.dumps(manifest, ensure_ascii=False).replace("</", "<\\/")
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sleeper Dynasty Data</title>
+  <title>The Front Office</title>
   <style>
     :root {{
       color-scheme: light;
-      --bg: #f6f7f3;
+      --bg: #f5f4ef;
       --panel: #ffffff;
       --ink: #15171a;
       --muted: #626a73;
       --line: #d8ddd2;
-      --accent: #116149;
-      --accent-2: #9b3d2e;
+      --accent: #0f5c4a;
+      --accent-2: #a23f2d;
+      --rail: #202722;
+      --gold: #c49b44;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -156,6 +200,43 @@ def _page(
       color: var(--ink);
       letter-spacing: 0;
     }}
+    .app-shell {{
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+    }}
+    .side-rail {{
+      background: var(--rail);
+      color: #f8f4ea;
+      padding: 22px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }}
+    .brand-kicker {{
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .side-rail h1 {{ margin: 4px 0 8px; font-size: 25px; line-height: 1.05; }}
+    .side-rail p {{ margin: 0 0 18px; color: #cbd4cc; font-size: 13px; line-height: 1.4; }}
+    .nav-group {{ margin: 0 0 18px; }}
+    .nav-group-title {{ color: #96a89d; font-size: 11px; font-weight: 800; text-transform: uppercase; margin: 0 0 7px; }}
+    nav {{
+      display: grid;
+      gap: 5px;
+    }}
+    nav a {{
+      color: #f8f4ea;
+      text-decoration: none;
+      padding: 8px 9px;
+      border-radius: 6px;
+      font-size: 14px;
+    }}
+    nav a:hover {{ background: rgba(255,255,255,0.08); }}
     header {{
       border-bottom: 1px solid var(--line);
       background: #fbfcf8;
@@ -166,28 +247,12 @@ def _page(
     }}
     h1 {{ margin: 0; font-size: 26px; line-height: 1.15; }}
     header p {{ margin: 6px 0 0; color: var(--muted); }}
-    nav {{
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      padding: 12px 28px;
-      border-bottom: 1px solid var(--line);
-      background: #eef1e9;
-      position: sticky;
-      top: 72px;
-      z-index: 2;
-    }}
-    nav a, button, select, input {{
+    button, select, input {{
       border: 1px solid var(--line);
       background: var(--panel);
       border-radius: 6px;
       font: inherit;
       font-size: 14px;
-    }}
-    nav a {{
-      color: var(--ink);
-      text-decoration: none;
-      padding: 8px 10px;
     }}
     main {{ padding: 22px 28px 48px; max-width: 1440px; margin: 0 auto; }}
     section {{ margin: 0 0 28px; }}
@@ -279,10 +344,13 @@ def _page(
     .tag {{ display: inline-block; color: #fff; background: var(--accent); border-radius: 4px; padding: 2px 6px; font-size: 12px; }}
     .warn {{ background: var(--accent-2); }}
     .note {{ color: var(--muted); font-size: 13px; line-height: 1.45; }}
+    .joke {{ color: #53635b; font-size: 13px; font-style: italic; }}
+    .loading {{ padding: 22px 28px; color: var(--muted); }}
     .list {{ margin: 0; padding-left: 20px; font-size: 13px; }}
     @media (max-width: 720px) {{
-      header, nav, main {{ padding-left: 14px; padding-right: 14px; }}
-      nav {{ position: static; }}
+      .app-shell {{ display: block; }}
+      .side-rail {{ position: static; height: auto; }}
+      header, main {{ padding-left: 14px; padding-right: 14px; }}
       .grid {{ grid-template-columns: 1fr; }}
       th {{ position: static; }}
       select, input {{ width: 100%; }}
@@ -290,31 +358,61 @@ def _page(
   </style>
 </head>
 <body>
-  <header>
-    <h1>Sleeper Dynasty Data</h1>
-    <p><span id="active-team-label">{escape(my_team_name)}</span> weekly command surface. Data refresh is read-only.</p>
-  </header>
-  <nav>
-    <a href="#todays-board">Today's Board</a>
-    <a href="#decision-board">Decision Board</a>
-    <a href="#team-overview">Team Overview</a>
-    <a href="#roster-value">Roster Value</a>
-    <a href="#projection-board">Projection Board</a>
-    <a href="#signal-board">Signal Board</a>
-    <a href="#analyst-brief">Analyst Brief</a>
-    <a href="#market-gaps">Market Gaps</a>
-    <a href="#asset-ledger">Asset Ledger</a>
-    <a href="#opportunity-board">Opportunity Board</a>
-    <a href="#news-desk">News Desk</a>
-    <a href="#manager-map">Manager Map</a>
-    <a href="#manager-behavior">Manager Behavior</a>
-    <a href="#pick-ledger">Pick Ledger</a>
-    <a href="#trade-market">Trade Market</a>
-    <a href="#waiver-market">Waiver Market</a>
-    <a href="#diagnostics">Diagnostics</a>
-    <a href="#draft">Draft</a>
-  </nav>
-  <main>
+  <script id="front-office-manifest" type="application/json">{manifest_json}</script>
+  <div class="app-shell">
+    <aside class="side-rail">
+      <div class="brand-kicker">Dynasty Command</div>
+      <h1>The Front Office</h1>
+      <p>Find the market leak, then pretend it was obvious all along.</p>
+      <div class="nav-group">
+        <div class="nav-group-title">Command Center</div>
+        <nav>
+          <a href="#todays-board">Today's Board</a>
+          <a href="#decision-board">Decision Board</a>
+          <a href="#analyst-brief">Analyst Brief</a>
+        </nav>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Team Room</div>
+        <nav>
+          <a href="#team-overview">Team Overview</a>
+          <a href="#roster-value">Roster Value</a>
+          <a href="#projection-board">Projection Board</a>
+          <a href="#signal-board">Signal Board</a>
+        </nav>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Trade Desk</div>
+        <nav>
+          <a href="#market-gaps">Market Gaps</a>
+          <a href="#asset-ledger">Asset Ledger</a>
+          <a href="#opportunity-board">Opportunity Board</a>
+          <a href="#pick-ledger">Pick Ledger</a>
+        </nav>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Intel</div>
+        <nav>
+          <a href="#news-desk">News Desk</a>
+          <a href="#manager-map">Manager Map</a>
+          <a href="#manager-behavior">Manager Behavior</a>
+        </nav>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Data Room</div>
+        <nav>
+          <a href="#diagnostics">Diagnostics</a>
+          <a href="#draft">Draft</a>
+        </nav>
+      </div>
+    </aside>
+    <div>
+      <header>
+        <h1>The Front Office</h1>
+        <p><span id="active-team-label">{escape(my_team_name)}</span> weekly command surface. Read-only, because the league chat already has enough chaos.</p>
+      </header>
+      <div id="loading-state" class="loading">Opening the binder, checking the cap table, and pretending future picks are a real currency...</div>
+      <main hidden>
     <section id="todays-board">
       <h2>Today's Board</h2>
       <div class="grid">
@@ -498,18 +596,22 @@ def _page(
     </section>
 
     <section id="diagnostics">
-      <h2>Data Diagnostics</h2>
+      <h2>Data Room</h2>
+      <p class="note">Data Diagnostics, source freshness, and audit payloads. This is where the facts live before anyone starts doing victory laps.</p>
       <div id="diagnostics-panel"></div>
     </section>
 
     <section id="draft"><h2>Draft Results</h2><div id="draft-table"></div></section>
-  </main>
-  <script id="app-data" type="application/json">{data_json}</script>
+      </main>
+    </div>
+  </div>
   <script>
-    const app = JSON.parse(document.getElementById('app-data').textContent);
-    const tables = app.tables;
+    const manifest = JSON.parse(document.getElementById('front-office-manifest').textContent);
+    let app = null;
+    let tables = {{}};
+    let analysis = {{}};
     const state = {{
-      teamId: Number(app.myRosterId),
+      teamId: 0,
       query: '',
       position: 'ALL',
       status: 'ALL',
@@ -549,9 +651,17 @@ def _page(
     const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
     const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'action_score', 'projected_ppg', 'market_value', 'why', 'risk', 'confidence'];
-    const analysis = app.analysis || {{}};
-
-    function init() {{
+    async function init() {{
+      try {{
+        app = await fetchJson(manifest.bundlePath);
+      }} catch (error) {{
+        document.getElementById('loading-state').textContent = `The Front Office could not load its data bundle: ${{error.message}}`;
+        return;
+      }}
+      tables = app.tables || {{}};
+      analysis = app.analysis || {{}};
+      state.teamId = Number(app.myRosterId);
+      ensureTables();
       populateTeamFilter();
       populateSelect('position-filter', ['ALL', ...unique(tables.roster_players.map(row => row.position)).sort()]);
       populateSelect('status-filter', ['ALL', ...unique(tables.roster_players.map(row => row.roster_status)).sort()]);
@@ -561,7 +671,29 @@ def _page(
       populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
       populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
       bindControls();
+      document.getElementById('loading-state').hidden = true;
+      document.querySelector('main').hidden = false;
       render();
+    }}
+
+    async function fetchJson(path) {{
+      const response = await fetch(path, {{ cache: 'no-store' }});
+      if (!response.ok) throw new Error(`${{response.status}} ${{response.statusText}}`);
+      return response.json();
+    }}
+
+    function ensureTables() {{
+      [
+        'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers',
+        'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'player_market_values', 'pick_market_values',
+        'team_asset_inventory', 'manager_event_log', 'team_needs_matrix', 'manager_behavior_signals',
+        'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'source_freshness', 'news_events',
+        'player_news_matches', 'league_news_impact', 'news_source_freshness', 'player_projection_season',
+        'player_projection_weekly', 'projection_source_freshness', 'player_signal_scores', 'breakout_candidates',
+        'sell_candidates', 'projection_market_gaps', 'team_fit_scores', 'action_recommendations'
+      ].forEach(name => {{
+        if (!Array.isArray(tables[name])) tables[name] = [];
+      }});
     }}
 
     function populateTeamFilter() {{
@@ -944,23 +1076,24 @@ def _page(
     function diagnostics() {{
       const metadata = (tables.refresh_metadata || [])[0] || {{}};
       const leagueIds = metadata.configured_league_ids || Object.values(app.configuredLeagues || {{}}).filter(Boolean).join(';');
+      const counts = app.tableCounts || manifest.tableCounts || {{}};
       return table([
         {{ item: 'Generated at', value: metadata.generated_at || 'unknown' }},
         {{ item: 'Current season', value: metadata.current_season || app.currentSeason || '' }},
         {{ item: 'Configured leagues', value: leagueIds }},
         {{ item: 'Transaction weeks', value: `${{metadata.transaction_week_start || ''}}-${{metadata.transaction_week_end || ''}}` }},
         {{ item: 'Source scope', value: metadata.source_scope || 'Sleeper public API only' }},
-        {{ item: 'Players cached', value: tables.players.length }},
+        {{ item: 'Players cached', value: counts.players || tables.players.length }},
         {{ item: 'Raw cache root', value: metadata.raw_cache_root || 'data/raw' }},
         {{ item: 'Raw external cache root', value: metadata.raw_external_cache_root || 'data/raw_external' }},
         {{ item: 'Player market rows', value: tables.player_market_values.length }},
         {{ item: 'Pick market rows', value: tables.pick_market_values.length }},
-        {{ item: 'Usage rows', value: tables.player_usage_weekly.length }},
+        {{ item: 'Usage rows', value: counts.player_usage_weekly || tables.player_usage_weekly.length }},
         {{ item: 'Economic asset rows', value: tables.team_asset_inventory.length }},
         {{ item: 'News event rows', value: tables.news_events.length }},
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
         {{ item: 'Projection season rows', value: tables.player_projection_season.length }},
-        {{ item: 'Projection weekly rows', value: tables.player_projection_weekly.length }},
+        {{ item: 'Projection weekly rows', value: counts.player_projection_weekly || tables.player_projection_weekly.length }},
         {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
         {{ item: 'Action recommendation rows', value: tables.action_recommendations.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},

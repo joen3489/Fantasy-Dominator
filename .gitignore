@@ -9,4 +9,5 @@ data/processed/*.sqlite
 data/analysis/
 data/reports/
 data/site/index.html
+data/site/data/
 data/site/server.*.log
