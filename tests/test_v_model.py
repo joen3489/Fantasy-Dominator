@@ -15,6 +15,7 @@ from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
+from src.profile_intelligence import build_profile_intelligence_tables
 from src.projections import calculate_fantasy_points
 from src.signals import build_signal_tables
 from scripts.refresh_all import _discover_league_history
@@ -64,7 +65,12 @@ EXPECTED_TABLE_COLUMNS = {
     "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
     "opportunity_board": ["action_type", "target_team", "asset_in", "asset_out", "manager_signal", "evidence", "risk", "confidence", "source_trace"],
     "counterparty_trade_edges": ["target_roster_id", "target_team", "player_id", "player_name", "position", "our_value_score", "market_consensus_value", "estimated_owner_value_score", "trade_edge_score", "edge_type", "evidence", "risk", "confidence", "source_trace"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "manager_valuation_profile_rows", "counterparty_edge_rows"],
+    "manager_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
+    "manager_cycle_profiles": ["owner_id", "roster_id", "team_name", "dynasty_cycle", "trade_temperature", "pick_posture", "waiver_posture", "likely_needs", "likely_sells", "confidence", "evidence"],
+    "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
+    "player_transaction_history": ["player_id", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
+    "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
+    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
 }
 
 
@@ -119,6 +125,11 @@ class VModelTests(unittest.TestCase):
             "action_recommendations": ["consumer_label", "why", "evidence", "risk", "confidence", "source_trace"],
             "manager_valuation_profiles": ["evidence", "confidence", "label"],
             "counterparty_trade_edges": ["evidence", "risk", "confidence", "source_trace"],
+            "manager_profile_tags": ["evidence", "risk", "confidence", "source_trace"],
+            "manager_cycle_profiles": ["evidence", "confidence"],
+            "player_dossiers": ["source_trace"],
+            "player_transaction_history": ["evidence", "source_trace"],
+            "player_profile_tags": ["evidence", "risk", "confidence", "source_trace"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -291,6 +302,92 @@ class VModelTests(unittest.TestCase):
         self.assertIn("2025", row["seasons_covered"])
         self.assertIn("2026", row["seasons_covered"])
 
+    def test_profile_intelligence_builds_manager_cycle_and_player_tags(self) -> None:
+        manager_profiles = pd.DataFrame(
+            [
+                {
+                    "owner_id": "owner-a",
+                    "roster_id": 2,
+                    "team_name": "Rebuild Crew",
+                    "seasons_covered": "2024; 2025; 2026",
+                    "total_trades": 18,
+                    "future_1sts_acquired": 8,
+                    "future_1sts_sold": 1,
+                    "future_2nds_acquired": 4,
+                    "future_2nds_sold": 1,
+                    "faab_spent_on_waivers": 45,
+                    "number_of_waiver_claims": 24,
+                    "rb_count": 4,
+                    "pass_catcher_count": 11,
+                },
+                {
+                    "owner_id": "owner-b",
+                    "roster_id": 8,
+                    "team_name": "Go For It",
+                    "seasons_covered": "2024; 2025; 2026",
+                    "total_trades": 60,
+                    "future_1sts_acquired": 1,
+                    "future_1sts_sold": 8,
+                    "future_2nds_acquired": 1,
+                    "future_2nds_sold": 5,
+                    "faab_spent_on_waivers": 360,
+                    "number_of_waiver_claims": 90,
+                    "rb_count": 9,
+                    "pass_catcher_count": 16,
+                },
+            ]
+        )
+        roster = pd.DataFrame(
+            [
+                {"season": "2026", "roster_id": 2, "player_id": "1", "player_name": "Young WR", "position": "WR", "age": 23, "team_name": "Rebuild Crew", "roster_status": "starter"},
+                {"season": "2026", "roster_id": 8, "player_id": "2", "player_name": "Old RB", "position": "RB", "age": 29, "team_name": "Go For It", "roster_status": "starter"},
+            ]
+        )
+        tables = build_profile_intelligence_tables(
+            manager_profiles,
+            pd.DataFrame(columns=["event_type"]),
+            pd.DataFrame(columns=["roster_id", "position_group", "preference_score"]),
+            pd.DataFrame(
+                [
+                    {"roster_id": 2, "team_name": "Rebuild Crew", "team_shape": "rebuild_asset_bank", "future_firsts_owned": 5, "need_qb": "low", "need_rb": "high", "need_pass_catcher": "medium", "need_picks": "low"},
+                    {"roster_id": 8, "team_name": "Go For It", "team_shape": "contender_shape", "future_firsts_owned": 1, "need_qb": "low", "need_rb": "low", "need_pass_catcher": "low", "need_picks": "high"},
+                ]
+            ),
+            pd.DataFrame(
+                [
+                    {"current_owner_roster_id": 2, "round": 1},
+                    {"current_owner_roster_id": 2, "round": 1},
+                    {"current_owner_roster_id": 2, "round": 1},
+                    {"current_owner_roster_id": 2, "round": 1},
+                    {"current_owner_roster_id": 2, "round": 1},
+                ]
+            ),
+            roster,
+            pd.DataFrame(
+                [
+                    {"season": "2026", "week": 1, "created_datetime": "2026-06-01", "team_a_roster_id": 2, "team_a_name": "Rebuild Crew", "team_a_players_received": "Young WR", "team_b_roster_id": 8, "team_b_name": "Go For It", "team_b_players_received": "Old RB"}
+                ]
+            ),
+            pd.DataFrame([{"season": "2026", "week": 1, "roster_id": 2, "team_name": "Rebuild Crew", "player_added": "Young WR", "player_dropped": "", "waiver_bid": 5}]),
+            pd.DataFrame([{"season": "2026", "pick_no": 1, "round": 1, "roster_id": 2, "player_id": "1", "player_name": "Young WR"}]),
+            pd.DataFrame([{"player_id": "1", "player_name": "Young WR", "consensus_value": 30, "source_trace": "market"}]),
+            pd.DataFrame([{"player_id": "1", "player_name": "Young WR", "projected_fantasy_points": 170, "projected_ppg": 10, "projection_confidence": "high", "source_trace": "projection"}]),
+            pd.DataFrame(columns=["player_id"]),
+            pd.DataFrame([{"player_id": "1", "impact_type": "role_or_value_change", "source_trace": "news"}]),
+            pd.DataFrame([{"player_id": "1", "player_name": "Young WR", "market_value": 30, "projection_edge_score": 70, "breakout_score": 72, "sell_score": 0, "signal_label": "breakout_target", "confidence": "high", "source_trace": "signal"}]),
+        )
+
+        cycles = tables["manager_cycle_profiles"]
+        manager_tags = tables["manager_profile_tags"]
+        player_tags = tables["player_profile_tags"]
+
+        self.assertIn("rebuild", set(cycles["dynasty_cycle"]))
+        self.assertIn("pick accumulator", set(manager_tags["tag"]))
+        self.assertTrue((manager_tags["score"].astype(float) < 100).any())
+        self.assertIn("breakout candidate", set(player_tags["tag"]))
+        self.assertIn("source_trace", tables["player_dossiers"].columns)
+        self.assertGreater(len(tables["player_transaction_history"]), 0)
+
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             processed = Path(tmp) / "processed"
@@ -345,6 +442,10 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Asset Ledger", html)
         self.assertIn("Opportunity Board", html)
         self.assertIn("News Desk", html)
+        self.assertIn("Manager Room", html)
+        self.assertIn("Player Room", html)
+        self.assertIn("Manager Cycle Profiles", html)
+        self.assertIn("Player Dossiers", html)
         self.assertIn("League Impact", html)
         self.assertIn("Watchlist / Waiver", html)
         self.assertIn("Unmatched Feed Items", html)
@@ -356,6 +457,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Market source rows", html)
         self.assertIn("Market consensus rows", html)
         self.assertIn("Counterparty edge rows", html)
+        self.assertIn("Manager profile tag rows", html)
+        self.assertIn("Player dossier rows", html)
+        self.assertIn("Player profile tag rows", html)
         self.assertIn("Usage rows", html)
         self.assertIn("Economic asset rows", html)
         self.assertIn("News event rows", html)
@@ -871,6 +975,9 @@ class VModelTests(unittest.TestCase):
                     "market_consensus_rows": 1,
                     "manager_valuation_profile_rows": 1,
                     "counterparty_edge_rows": 1,
+                    "manager_profile_tag_rows": 1,
+                    "player_profile_tag_rows": 1,
+                    "player_dossier_rows": 1,
                 }
             ]
         ).to_csv(processed / "refresh_metadata.csv", index=False)
@@ -1115,6 +1222,21 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"target_roster_id": 8, "target_team": "The Clapper", "player_id": "2", "player_name": "Young WR", "position": "WR", "our_value_score": 55, "market_consensus_value": 42, "estimated_owner_value_score": 30, "trade_edge_score": 25, "edge_type": "we_may_value_more", "evidence": "test", "risk": "medium", "confidence": "medium", "source_trace": "test"}]
         ).to_csv(processed / "counterparty_trade_edges.csv", index=False)
+        pd.DataFrame(
+            [{"entity_id": "2", "entity_name": "Melkor Lord of Light", "tag": "rebuilder", "score": 72, "confidence": "medium", "evidence": "test", "risk": "medium", "source_trace": "manager_profiles", "generated_at": "2026-06-06T00:00:00+00:00"}]
+        ).to_csv(processed / "manager_profile_tags.csv", index=False)
+        pd.DataFrame(
+            [{"owner_id": "u2", "roster_id": 2, "team_name": "Melkor Lord of Light", "dynasty_cycle": "rebuild", "trade_temperature": "active trade market", "pick_posture": "pick accumulator", "waiver_posture": "quiet waiver market", "likely_needs": "RB; pass catcher", "likely_sells": "veteran RBs", "confidence": "medium", "evidence": "test"}]
+        ).to_csv(processed / "manager_cycle_profiles.csv", index=False)
+        pd.DataFrame(
+            [{"player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "age": 25, "roster_id": 2, "team_name": "Melkor Lord of Light", "roster_status": "starter", "market_value": 53, "projected_fantasy_points": 350, "projected_ppg": 20.59, "projection_confidence": "high", "signal_label": "breakout_target", "breakout_score": 70, "sell_score": 0, "news_impact": "role_or_value_change", "transaction_count": 1, "last_transaction": "draft_pick", "source_trace": "test"}]
+        ).to_csv(processed / "player_dossiers.csv", index=False)
+        pd.DataFrame(
+            [{"player_id": "1", "player_name": "Jayden Daniels", "event_type": "draft_pick", "season": 2026, "week": "", "created_datetime": "", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "", "direction": "drafted pick 1", "evidence": "test", "source_trace": "draft_picks"}]
+        ).to_csv(processed / "player_transaction_history.csv", index=False)
+        pd.DataFrame(
+            [{"entity_id": "1", "entity_name": "Jayden Daniels", "tag": "franchise cornerstone", "score": 85, "confidence": "high", "evidence": "test", "risk": "medium", "source_trace": "player_dossiers", "generated_at": "2026-06-06T00:00:00+00:00"}]
+        ).to_csv(processed / "player_profile_tags.csv", index=False)
 
 
 if __name__ == "__main__":

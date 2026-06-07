@@ -96,6 +96,8 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `team_needs_matrix` | Deterministic economics | Team roster-shape and pick-capital needs | `teams`, `roster_players`, `pick_ownership` | `roster_id`, `team_name`, `qb_count`, `rb_count`, `wr_count`, `te_count`, `pass_catcher_count`, `future_firsts_owned`, `need_qb`, `need_rb`, `need_pass_catcher`, `need_picks`, `team_shape` | counts are derived from canonical tables |
 | `manager_behavior_signals` | Deterministic analytics | Scored manager behavior labels | `teams`, `trades`, `waivers`, `manager_profiles`, `roster_players` | `roster_id`, `team_name`, `trade_activity_score`, `pick_buyer_score`, `pick_seller_score`, `faab_aggression_score`, `waiver_activity_score`, `rb_appetite_score`, `pass_catcher_appetite_score`, `plain_language_label`, `evidence` | `evidence` required |
 | `manager_valuation_profiles` | Deterministic revealed-preference model | Estimate manager asset-type preferences from observed history | `teams`, `manager_profiles`, `roster_players` | `owner_id`, `roster_id`, `team_name`, `asset_type`, `position_group`, `preference_score`, `evidence_count`, `recency_weighted_score`, `confidence`, `label`, `evidence` | `evidence`, sample size, and confidence required; language must remain estimate-based |
+| `manager_profile_tags` | Deterministic profile intelligence | Evidence-backed manager tendency tags | `manager_profiles`, `manager_event_log`, `manager_valuation_profiles`, `team_needs_matrix`, `pick_ownership` | `entity_id`, `entity_name`, `tag`, `score`, `confidence`, `evidence`, `risk`, `source_trace`, `generated_at` | tags are deterministic estimates; evidence/risk/confidence/source_trace required |
+| `manager_cycle_profiles` | Deterministic profile intelligence | Manager dynasty-cycle and posture summary | `manager_profiles`, `manager_event_log`, `team_needs_matrix`, `pick_ownership` | `owner_id`, `roster_id`, `team_name`, `dynasty_cycle`, `trade_temperature`, `pick_posture`, `waiver_posture`, `likely_needs`, `likely_sells`, `confidence`, `evidence` | cycle labels are estimates from observed behavior, not known intent |
 | `liquidity_scores` | Deterministic economics | Asset liquidity estimate | `team_asset_inventory`, `team_needs_matrix` | `roster_id`, `team_name`, `asset_type`, `asset_name`, `position`, `market_value`, `liquidity_score`, `liquidity_tier`, `demand_signal`, `source_trace` | `source_trace` required |
 | `asset_market_gaps` | Deterministic economics | Buy/sell/target gap signals | inventory, needs, behavior, strategy config | `target_roster_id`, `target_team`, `asset_type`, `asset_name`, `position`, `market_value`, `market_gap_score`, `opportunity_type`, `timeline_fit`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
 | `opportunity_board` | Deterministic economics | Read-only action preview | `asset_market_gaps`, behavior, strategy config | `action_type`, `target_team`, `asset_in`, `asset_out`, `manager_signal`, `evidence`, `risk`, `confidence`, `source_trace` | `evidence`, `risk`, `confidence`, `source_trace` required |
@@ -111,6 +113,9 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `projection_market_gaps` | Deterministic signal code | Projection production vs market value gaps | projections, market values | `player_id`, `player_name`, `position`, `projected_fantasy_points`, `projected_ppg`, `market_value`, `gap_score`, `gap_label`, `evidence`, `risk`, `confidence`, `source_trace` | projection and market source traces required |
 | `team_fit_scores` | Deterministic signal code | Fit of player assets by selected team timeline and needs | projections, roster ownership, team needs, strategy config | `roster_id`, `team_name`, `player_id`, `player_name`, `position`, `timeline_fit_score`, `need_fit_score`, `liquidity_fit_score`, `fit_label`, `evidence`, `risk`, `confidence`, `source_trace` | works for any selected roster_id |
 | `counterparty_trade_edges` | Deterministic counterparty model | Estimate where our projection/market view may diverge from current owner preference | `player_signal_scores`, `manager_valuation_profiles`, `team_needs_matrix`, strategy config | `target_roster_id`, `target_team`, `player_id`, `player_name`, `position`, `our_value_score`, `market_consensus_value`, `estimated_owner_value_score`, `trade_edge_score`, `edge_type`, `evidence`, `risk`, `confidence`, `source_trace` | must say estimate, include evidence/risk/confidence, and never imply a trade was sent or accepted |
+| `player_dossiers` | Deterministic profile intelligence | Player profile join across ownership, market, projection, news, signal, and league history | `roster_players`, `market_consensus_values`, `player_projection_season`, `league_news_impact`, `player_signal_scores`, `player_transaction_history` | `player_id`, `player_name`, `position`, `age`, `roster_id`, `team_name`, `roster_status`, `market_value`, `projected_fantasy_points`, `projected_ppg`, `projection_confidence`, `signal_label`, `breakout_score`, `sell_score`, `news_impact`, `transaction_count`, `last_transaction`, `source_trace` | factual profile join; no analyst prose |
+| `player_transaction_history` | Deterministic profile intelligence | League-specific player transaction history | `trades`, `waivers`, `draft_picks` | `player_id`, `player_name`, `event_type`, `season`, `week`, `created_datetime`, `roster_id`, `team_name`, `counterparty`, `direction`, `evidence`, `source_trace` | transaction evidence and source table trace required |
+| `player_profile_tags` | Deterministic profile intelligence | Evidence-backed player archetype tags | `player_dossiers`, `player_signal_scores`, `league_news_impact` | `entity_id`, `entity_name`, `tag`, `score`, `confidence`, `evidence`, `risk`, `source_trace`, `generated_at` | tags are deterministic prompts for research, not guarantees |
 
 ## Presentation Artifacts
 
@@ -126,6 +131,8 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `data/analysis/trade_theses.json` | Codex analyst layer | Manager-aware trade thesis packets | Interpretation only; no transaction execution or outbound messaging |
 | `data/analysis/daily_gm_brief.md` | Codex analyst layer | Readable active-team analyst brief | Presentation and interpretation only |
 | `data/analysis/manager_dossiers.md` | Codex analyst layer | Plain-language manager behavior summaries | Must be grounded in manager behavior/event tables |
+| `data/analysis/manager_dossiers.json` | Codex analyst layer | Machine-readable manager dossier items | Interpretation only; must cite manager profile tags and cycle evidence |
+| `data/analysis/player_dossiers.json` | Codex analyst layer | Machine-readable player dossier items | Interpretation only; must cite player dossier/tag evidence |
 | `data/analysis/news_impact_brief.md` | Codex analyst layer | Readable summary of imported news impact rows | Must not become canonical news truth |
 | `data/analysis/analysis_validation.json` | Analysis layer | Artifact validation status and guardrail errors | Generated validation artifact |
 
@@ -145,6 +152,14 @@ Strategy views are browser and markdown outputs that apply configurable team str
 - Config owns selected current team, strategy profile, tracked pick priorities, and source toggles.
 - Processed tables own normalized analysis state.
 - Browser and markdown own presentation only.
+
+## Profile Tag Taxonomy
+
+Manager profile tags are limited to: `rebuilder`, `contender`, `pick accumulator`, `pick spender`, `waiver aggressor`, `trade grinder`, `depth churner`, `veteran buyer`, `pass-catcher collector`, and `low-signal manager`.
+
+Player profile tags are limited to: `franchise cornerstone`, `breakout candidate`, `post-hype sleeper`, `hype train`, `emerging role`, `declining asset`, `liquidity chip`, `roster clogger`, `injury discount`, and `market overheat`.
+
+Every tag is a deterministic Layer 2 estimate. Codex may explain tags in Layer 3 artifacts, but Codex must not create canonical tags or write generated facts into processed tables.
 
 ## Internal Proxy Value Rules
 

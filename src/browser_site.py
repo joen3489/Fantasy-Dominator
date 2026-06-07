@@ -52,6 +52,11 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
         "projection_market_gaps": _records(processed_dir / "projection_market_gaps.csv"),
         "team_fit_scores": _records(processed_dir / "team_fit_scores.csv"),
         "action_recommendations": _records(processed_dir / "action_recommendations.csv"),
+        "manager_profile_tags": _records(processed_dir / "manager_profile_tags.csv"),
+        "manager_cycle_profiles": _records(processed_dir / "manager_cycle_profiles.csv"),
+        "player_dossiers": _records(processed_dir / "player_dossiers.csv"),
+        "player_transaction_history": _records(processed_dir / "player_transaction_history.csv"),
+        "player_profile_tags": _records(processed_dir / "player_profile_tags.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -77,6 +82,8 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "targetTheses": _json_items(analysis_dir / "target_theses.json"),
         "sellTheses": _json_items(analysis_dir / "sell_theses.json"),
         "tradeTheses": _json_items(analysis_dir / "trade_theses.json"),
+        "managerDossierItems": _json_items(analysis_dir / "manager_dossiers.json"),
+        "playerDossierItems": _json_items(analysis_dir / "player_dossiers.json"),
         "contextPackets": _json_items(analysis_dir / "analysis_context_packets.json"),
         "validation": _json_items(analysis_dir / "analysis_validation.json"),
         "dailyGmBrief": _text_or_empty(analysis_dir / "daily_gm_brief.md"),
@@ -444,6 +451,8 @@ def _page(
         <div class="nav-group-title">Intel</div>
         <nav>
           <a href="#news-desk">News Desk</a>
+          <a href="#manager-room">Manager Room</a>
+          <a href="#player-room">Player Room</a>
           <a href="#manager-map">Manager Map</a>
           <a href="#manager-behavior">Manager Behavior</a>
         </nav>
@@ -649,6 +658,32 @@ def _page(
       <div id="news-match-table"></div>
     </section>
 
+    <section id="manager-room">
+      <h2>Manager Room</h2>
+      <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly.</p>
+      <div class="grid">
+        <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
+        <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
+      </div>
+      <h3>Manager Cycle Profiles</h3>
+      <div id="manager-cycle-table"></div>
+      <h3>Manager Tag Evidence</h3>
+      <div id="manager-profile-tag-table"></div>
+    </section>
+
+    <section id="player-room">
+      <h2>Player Room</h2>
+      <p class="note">Player tags combine roster status, market value, projections, news, signals, and league transaction history. A tag is a research prompt with evidence, not a parade route.</p>
+      <div class="grid">
+        <div class="panel"><h3>Active Team Player Cards</h3><div id="player-dossier-cards"></div></div>
+        <div class="panel"><h3>Player Tag Board</h3><div id="player-tag-cards"></div></div>
+      </div>
+      <h3>Player Dossiers</h3>
+      <div id="player-dossier-table"></div>
+      <h3>Player Transaction History</h3>
+      <div id="player-transaction-history-table"></div>
+    </section>
+
     <section id="manager-map">
       <h2>Manager Map</h2>
       <div class="grid">
@@ -766,6 +801,10 @@ def _page(
     const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
     const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'action_score', 'projected_ppg', 'market_value', 'why', 'risk', 'confidence'];
+    const managerCycleColumns = ['team_name', 'dynasty_cycle', 'trade_temperature', 'pick_posture', 'waiver_posture', 'likely_needs', 'likely_sells', 'confidence', 'evidence'];
+    const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
+    const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', 'market_value', 'projected_ppg', 'projection_confidence', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
+    const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'evidence'];
     async function init() {{
       try {{
         app = await fetchJson(manifest.bundlePath);
@@ -806,7 +845,8 @@ def _page(
         'manager_valuation_profiles', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'source_freshness', 'news_events',
         'player_news_matches', 'league_news_impact', 'news_source_freshness', 'player_projection_season',
         'player_projection_weekly', 'projection_source_freshness', 'player_signal_scores', 'breakout_candidates',
-        'sell_candidates', 'projection_market_gaps', 'team_fit_scores', 'action_recommendations'
+        'sell_candidates', 'projection_market_gaps', 'team_fit_scores', 'action_recommendations',
+        'manager_profile_tags', 'manager_cycle_profiles', 'player_dossiers', 'player_transaction_history', 'player_profile_tags'
       ].forEach(name => {{
         if (!Array.isArray(tables[name])) tables[name] = [];
       }});
@@ -1079,6 +1119,14 @@ def _page(
       document.getElementById('opportunity-table').innerHTML = table(applySearch(tables.opportunity_board), opportunityColumns);
       document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
+      document.getElementById('active-manager-dossier').innerHTML = activeManagerDossier();
+      document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16));
+      document.getElementById('manager-cycle-table').innerHTML = table(filteredManagerCycles(), managerCycleColumns);
+      document.getElementById('manager-profile-tag-table').innerHTML = table(filteredManagerTags(), profileTagColumns);
+      document.getElementById('player-dossier-cards').innerHTML = playerDossierCards(filteredPlayerDossiers().slice(0, 12));
+      document.getElementById('player-tag-cards').innerHTML = profileTagCards(filteredPlayerTags().slice(0, 18));
+      document.getElementById('player-dossier-table').innerHTML = table(filteredPlayerDossiers(), playerDossierColumns);
+      document.getElementById('player-transaction-history-table').innerHTML = table(filteredPlayerHistory(), playerHistoryColumns);
       document.getElementById('manager-valuation-table').innerHTML = table(applySearch(tables.manager_valuation_profiles), managerValuationColumns);
       document.getElementById('manager-signal-table').innerHTML = table(applySearch(tables.manager_behavior_signals), managerSignalColumns);
       document.getElementById('manager-event-table').innerHTML = table(
@@ -1232,6 +1280,31 @@ def _page(
       if (state.newsScope !== 'unmatched') rows = rows.filter(row => String(row.match_method) !== 'no_match' && !truthy(row.is_ambiguous));
       if (state.newsScope === 'unmatched') rows = rows.filter(row => String(row.match_method) === 'no_match' || truthy(row.is_ambiguous));
       return applySearch(rows).slice(0, 80);
+    }}
+
+    function filteredManagerCycles() {{
+      return sortRows(applySearch(tables.manager_cycle_profiles.slice()), ['team_name']).slice(0, 80);
+    }}
+
+    function filteredManagerTags() {{
+      return sortRows(applySearch(tables.manager_profile_tags.slice()), ['score']).reverse().slice(0, 120);
+    }}
+
+    function filteredPlayerDossiers() {{
+      let rows = tables.player_dossiers.filter(row => Number(row.roster_id) === state.teamId);
+      return sortRows(applySearch(rows), ['market_value', 'projected_ppg']).reverse().slice(0, 120);
+    }}
+
+    function filteredPlayerTags() {{
+      const teamPlayerIds = new Set(filteredPlayerDossiers().map(row => String(row.player_id)));
+      let rows = tables.player_profile_tags.filter(row => teamPlayerIds.has(String(row.entity_id)));
+      return sortRows(applySearch(rows), ['score']).reverse().slice(0, 120);
+    }}
+
+    function filteredPlayerHistory() {{
+      const teamPlayerNames = new Set(filteredPlayerDossiers().map(row => String(row.player_name)));
+      let rows = tables.player_transaction_history.filter(row => teamPlayerNames.has(String(row.player_name)));
+      return sortRows(applySearch(rows), ['season', 'created_datetime']).reverse().slice(0, 120);
     }}
 
     function filteredProjections() {{
@@ -1406,6 +1479,10 @@ def _page(
         {{ item: 'Action recommendation rows', value: tables.action_recommendations.length }},
         {{ item: 'Manager valuation profile rows', value: metadata.manager_valuation_profile_rows || tables.manager_valuation_profiles.length }},
         {{ item: 'Counterparty edge rows', value: metadata.counterparty_edge_rows || tables.counterparty_trade_edges.length }},
+        {{ item: 'Manager profile tag rows', value: metadata.manager_profile_tag_rows || tables.manager_profile_tags.length }},
+        {{ item: 'Manager cycle rows', value: tables.manager_cycle_profiles.length }},
+        {{ item: 'Player dossier rows', value: metadata.player_dossier_rows || tables.player_dossiers.length }},
+        {{ item: 'Player profile tag rows', value: metadata.player_profile_tag_rows || tables.player_profile_tags.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
         {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},
         {{ item: 'Analysis artifacts', value: metadata.analysis_artifacts_status || analysis.status || 'missing' }},
@@ -1541,6 +1618,58 @@ def _page(
           row.faab_aggression_score ? `faab ${{row.faab_aggression_score}}` : ''
         ],
         evidence: row.evidence || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function activeManagerDossier() {{
+      const cycle = tables.manager_cycle_profiles.find(row => Number(row.roster_id) === state.teamId) || {{}};
+      const tags = tables.manager_profile_tags.filter(row => Number(row.entity_id) === state.teamId).slice(0, 8);
+      if (!cycle.team_name && !tags.length) return '<p class="note">No manager profile found.</p>';
+      return briefCard({{
+        title: cycle.team_name || activeTeamName(),
+        chips: [
+          cycle.dynasty_cycle,
+          cycle.trade_temperature,
+          cycle.pick_posture,
+          cycle.waiver_posture,
+          cycle.confidence ? `confidence ${{cycle.confidence}}` : ''
+        ],
+        evidence: `${{cycle.evidence || ''}} Tags: ${{tags.map(row => row.tag).join(', ') || 'none'}}. Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`
+      }});
+    }}
+
+    function profileTagCards(rows) {{
+      if (!rows.length) return '<p class="note">No profile tags found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: row.entity_name || 'Unknown',
+        chips: [
+          row.tag,
+          row.score ? `score ${{row.score}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
+      }})).join('')}}</div>`;
+    }}
+
+    function playerDossierCards(rows) {{
+      if (!rows.length) return '<p class="note">No player dossiers found for this team.</p>';
+      const tagsByPlayer = new Map();
+      tables.player_profile_tags.forEach(row => {{
+        const key = String(row.entity_id || '');
+        const list = tagsByPlayer.get(key) || [];
+        list.push(row.tag);
+        tagsByPlayer.set(key, list);
+      }});
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: row.player_name || 'Unknown player',
+        chips: [
+          row.position,
+          row.market_value ? `market ${{row.market_value}}` : '',
+          row.projected_ppg ? `ppg ${{row.projected_ppg}}` : '',
+          row.projection_confidence ? `projection ${{row.projection_confidence}}` : '',
+          (tagsByPlayer.get(String(row.player_id || '')) || []).slice(0, 2).join(', ')
+        ],
+        evidence: `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
       }})).join('')}}</div>`;
     }}
 

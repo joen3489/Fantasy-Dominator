@@ -30,6 +30,7 @@ from src.normalize import (
 )
 from src.pick_ownership import build_pick_ownership
 from src.players import load_players, players_table
+from src.profile_intelligence import build_profile_intelligence_tables
 from src.projections import build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
@@ -155,6 +156,24 @@ def main(force: bool = False) -> None:
             dataframes["manager_valuation_profiles"],
         )
     )
+    dataframes.update(
+        build_profile_intelligence_tables(
+            dataframes["manager_profiles"],
+            dataframes["manager_event_log"],
+            dataframes["manager_valuation_profiles"],
+            dataframes["team_needs_matrix"],
+            dataframes["pick_ownership"],
+            dataframes["roster_players"],
+            dataframes["trades"],
+            dataframes["waivers"],
+            dataframes["draft_picks"],
+            dataframes["market_consensus_values"],
+            dataframes["player_projection_season"],
+            dataframes["player_projection_weekly"],
+            dataframes["league_news_impact"],
+            dataframes["player_signal_scores"],
+        )
+    )
     configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]
     ingested_seasons = sorted({str(value) for value in dataframes["leagues"].get("season", pd.Series(dtype=str)).dropna().tolist()})
     analysis_metadata = build_default_analysis_artifacts(dataframes, config, current_my_roster_id)
@@ -186,6 +205,9 @@ def main(force: bool = False) -> None:
                 "market_consensus_rows": len(dataframes.get("market_consensus_values", pd.DataFrame())),
                 "manager_valuation_profile_rows": len(dataframes.get("manager_valuation_profiles", pd.DataFrame())),
                 "counterparty_edge_rows": len(dataframes.get("counterparty_trade_edges", pd.DataFrame())),
+                "manager_profile_tag_rows": len(dataframes.get("manager_profile_tags", pd.DataFrame())),
+                "player_profile_tag_rows": len(dataframes.get("player_profile_tags", pd.DataFrame())),
+                "player_dossier_rows": len(dataframes.get("player_dossiers", pd.DataFrame())),
             }
         ]
     )

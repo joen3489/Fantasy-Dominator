@@ -32,6 +32,8 @@ def build_analysis_artifacts(
     target_theses = build_target_theses(dataframes, active_roster_id, active_team_name, generated_at)
     sell_theses = build_sell_theses(dataframes, active_roster_id, active_team_name, generated_at)
     trade_theses = build_trade_theses(dataframes, active_roster_id, active_team_name, generated_at)
+    manager_dossier_items = build_manager_dossier_items(dataframes, generated_at)
+    player_dossier_items = build_player_dossier_items(dataframes, generated_at)
     validations = validate_analysis_artifacts(target_theses, sell_theses, trade_theses)
 
     artifacts = {
@@ -39,6 +41,8 @@ def build_analysis_artifacts(
         "target_theses.json": _json_artifact("target_theses", target_theses, generated_at, active_roster_id, active_team_name),
         "sell_theses.json": _json_artifact("sell_theses", sell_theses, generated_at, active_roster_id, active_team_name),
         "trade_theses.json": _json_artifact("trade_theses", trade_theses, generated_at, active_roster_id, active_team_name),
+        "manager_dossiers.json": _json_artifact("manager_dossiers", manager_dossier_items, generated_at, active_roster_id, active_team_name),
+        "player_dossiers.json": _json_artifact("player_dossiers", player_dossier_items, generated_at, active_roster_id, active_team_name),
         "analysis_validation.json": _json_artifact("analysis_validation", validations, generated_at, active_roster_id, active_team_name),
     }
     for filename, payload in artifacts.items():
@@ -61,6 +65,8 @@ def build_analysis_artifacts(
         "target_thesis_count": len(target_theses),
         "sell_thesis_count": len(sell_theses),
         "trade_thesis_count": len(trade_theses),
+        "manager_dossier_count": len(manager_dossier_items),
+        "player_dossier_count": len(player_dossier_items),
         "validation_error_count": len(validations["errors"]),
         "source_tables": _source_tables(),
     }
@@ -313,6 +319,79 @@ def build_news_impact_brief(dataframes: dict[str, pd.DataFrame], generated_at: s
     return "\n".join(lines).strip() + "\n"
 
 
+def build_manager_dossier_items(dataframes: dict[str, pd.DataFrame], generated_at: str) -> list[dict[str, Any]]:
+    cycles = _rows(dataframes.get("manager_cycle_profiles", pd.DataFrame()))
+    tags = _rows(dataframes.get("manager_profile_tags", pd.DataFrame()))
+    tags_by_id: dict[str, list[dict[str, Any]]] = {}
+    for tag in tags:
+        tags_by_id.setdefault(str(tag.get("entity_id", "")), []).append(tag)
+    items: list[dict[str, Any]] = []
+    for index, cycle in enumerate(cycles, start=1):
+        roster_id = str(cycle.get("roster_id", ""))
+        selected_tags = tags_by_id.get(roster_id, [])[:6]
+        tag_text = ", ".join(str(tag.get("tag", "")) for tag in selected_tags if tag.get("tag"))
+        evidence = str(cycle.get("evidence", ""))
+        risk = "medium: manager cycle is an estimated tendency, not intent"
+        items.append(
+            {
+                "dossier_id": f"manager-{index:03d}",
+                "roster_id": _int(roster_id),
+                "team_name": cycle.get("team_name", ""),
+                "dynasty_cycle": cycle.get("dynasty_cycle", ""),
+                "tags": tag_text,
+                "evidence": evidence,
+                "risk": risk,
+                "confidence": cycle.get("confidence", "low"),
+                "source_trace": "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log",
+                "analysis_text": (
+                    f"{cycle.get('team_name', 'This manager')} profiles as {cycle.get('dynasty_cycle', 'unclear')} "
+                    f"with {cycle.get('trade_temperature', 'unknown trade activity')} and {cycle.get('pick_posture', 'unclear pick posture')}. "
+                    f"Tags: {tag_text or 'none'}. Evidence: {evidence}."
+                ),
+                "generated_at": generated_at,
+            }
+        )
+    return items
+
+
+def build_player_dossier_items(dataframes: dict[str, pd.DataFrame], generated_at: str) -> list[dict[str, Any]]:
+    dossiers = _rows(dataframes.get("player_dossiers", pd.DataFrame()).head(120))
+    tags = _rows(dataframes.get("player_profile_tags", pd.DataFrame()))
+    tags_by_id: dict[str, list[dict[str, Any]]] = {}
+    for tag in tags:
+        tags_by_id.setdefault(str(tag.get("entity_id", "")), []).append(tag)
+    items: list[dict[str, Any]] = []
+    for index, player in enumerate(dossiers, start=1):
+        player_id = str(player.get("player_id", ""))
+        selected_tags = tags_by_id.get(player_id, [])[:6]
+        tag_text = ", ".join(str(tag.get("tag", "")) for tag in selected_tags if tag.get("tag"))
+        evidence = (
+            f"ppg={player.get('projected_ppg', 0)}; market={player.get('market_value', 0)}; "
+            f"signal={player.get('signal_label', '')}; news={player.get('news_impact', '')}; transactions={player.get('transaction_count', 0)}"
+        )
+        items.append(
+            {
+                "dossier_id": f"player-{index:03d}",
+                "roster_id": _int(player.get("roster_id")),
+                "team_name": player.get("team_name", ""),
+                "player_id": player_id,
+                "player_name": player.get("player_name", ""),
+                "position": player.get("position", ""),
+                "tags": tag_text,
+                "evidence": evidence,
+                "risk": "medium: deterministic player tag, not a guaranteed outcome",
+                "confidence": player.get("projection_confidence", "low"),
+                "source_trace": player.get("source_trace", "") or "player_dossiers;player_profile_tags",
+                "analysis_text": (
+                    f"{player.get('player_name', 'This player')} carries tags {tag_text or 'none'} from projection, market, news, "
+                    f"and league transaction signals. Evidence: {evidence}."
+                ),
+                "generated_at": generated_at,
+            }
+        )
+    return items
+
+
 def validate_analysis_artifacts(*artifact_lists: list[dict[str, Any]]) -> dict[str, Any]:
     errors: list[str] = []
     required = {"evidence", "risk", "confidence", "source_trace", "analysis_text"}
@@ -417,10 +496,14 @@ def _source_tables() -> list[str]:
         "action_recommendations",
         "player_projection_season",
         "player_signal_scores",
+        "player_dossiers",
+        "player_profile_tags",
         "breakout_candidates",
         "sell_candidates",
         "league_news_impact",
         "manager_behavior_signals",
+        "manager_cycle_profiles",
+        "manager_profile_tags",
         "opportunity_board",
     ]
 
