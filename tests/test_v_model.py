@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
+from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
@@ -56,7 +58,7 @@ EXPECTED_TABLE_COLUMNS = {
     "liquidity_scores": ["roster_id", "team_name", "asset_type", "asset_name", "position", "market_value", "liquidity_score", "liquidity_tier", "demand_signal", "source_trace"],
     "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
     "opportunity_board": ["action_type", "target_team", "asset_in", "asset_out", "manager_signal", "evidence", "risk", "confidence", "source_trace"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status"],
+    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count"],
 }
 
 
@@ -211,6 +213,11 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Roster Value Board", html)
         self.assertIn("Projection Board", html)
         self.assertIn("Signal Board", html)
+        self.assertIn("Analyst Brief", html)
+        self.assertIn("Target Theses", html)
+        self.assertIn("Sell Theses", html)
+        self.assertIn("Trade Theses", html)
+        self.assertIn("Manager Dossiers", html)
         self.assertIn("Breakout Candidates", html)
         self.assertIn("Sell Candidates", html)
         self.assertIn("Projection Market Gaps", html)
@@ -237,6 +244,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Projection Source Freshness", html)
         self.assertIn("Signal score rows", html)
         self.assertIn("Breakout candidate rows", html)
+        self.assertIn("Analysis artifacts", html)
+        self.assertIn("Target thesis rows", html)
         self.assertIn("Recommendation packets", html)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
@@ -248,6 +257,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("brief-card", text)
         self.assertIn("Projection Board", text)
         self.assertIn("Signal Board", text)
+        self.assertIn("Analyst Brief", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Diagnostics", text)
 
@@ -309,6 +319,83 @@ class VModelTests(unittest.TestCase):
         self.assertGreater(len(tables["breakout_candidates"]), 0)
         self.assertGreater(len(tables["sell_candidates"]), 0)
         self.assertIn("evidence", tables["player_signal_scores"].columns)
+
+    def test_analysis_artifacts_explain_signals_without_mutating_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            analysis_dir = Path(tmp) / "analysis"
+            dataframes = {
+                "teams": pd.DataFrame(
+                    [{"roster_id": 2, "display_name": "joe3489", "team_name": "Melkor Lord of Light"}]
+                ),
+                "breakout_candidates": pd.DataFrame(
+                    [
+                        {
+                            "player_id": "1",
+                            "player_name": "Young WR",
+                            "position": "WR",
+                            "current_team_name": "The Clapper",
+                            "breakout_score": 72,
+                            "projection_edge": 80,
+                            "market_value": 25,
+                            "evidence": "ppg=12; market=25",
+                            "risk": "medium: verify role",
+                            "confidence": "high",
+                            "source_trace": "breakout_candidates;player_projection_season",
+                        }
+                    ]
+                ),
+                "sell_candidates": pd.DataFrame(
+                    [
+                        {
+                            "player_id": "2",
+                            "player_name": "Aging RB",
+                            "position": "RB",
+                            "current_team_name": "Melkor Lord of Light",
+                            "sell_score": 61,
+                            "projection_risk": "medium",
+                            "market_value": 40,
+                            "evidence": "age=29; ppg=8",
+                            "risk": "medium: timing matters",
+                            "confidence": "medium",
+                            "source_trace": "sell_candidates;player_projection_season",
+                        }
+                    ]
+                ),
+                "manager_behavior_signals": pd.DataFrame(
+                    [
+                        {"roster_id": 8, "team_name": "The Clapper", "plain_language_label": "pick seller / win-now buyer", "evidence": "sold future first", "trade_activity_score": 70, "pick_seller_score": 80, "faab_aggression_score": 0}
+                    ]
+                ),
+                "opportunity_board": pd.DataFrame(
+                    [
+                        {"action_type": "buy_low_target", "target_team": "The Clapper", "asset_in": "Young WR", "asset_out": "future offer packet only", "manager_signal": "pick seller", "evidence": "market gap", "risk": "medium", "confidence": "medium", "source_trace": "opportunity_board"}
+                    ]
+                ),
+                "league_news_impact": pd.DataFrame(
+                    [
+                        {"player_name": "Young WR", "evidence": "trending add", "risk": "medium", "confidence": "medium", "source_trace": "league_news_impact"}
+                    ]
+                ),
+            }
+
+            metadata = build_analysis_artifacts(
+                analysis_dir,
+                dataframes,
+                {"current_team": {"roster_id": 2}},
+                2,
+            )
+
+            target_payload = json.loads((analysis_dir / "target_theses.json").read_text(encoding="utf-8"))
+            target_items = target_payload["items"]
+            validation_text = (analysis_dir / "analysis_validation.json").read_text(encoding="utf-8")
+            daily_brief = (analysis_dir / "daily_gm_brief.md").read_text(encoding="utf-8")
+
+        self.assertEqual(metadata["status"], "generated")
+        self.assertEqual(metadata["target_thesis_count"], 1)
+        self.assertIn("source_trace", target_items[0])
+        self.assertIn("analysis_text", target_items[0])
+        self.assertIn("Target Theses", daily_brief)
+        self.assertNotIn("accepted", validation_text.lower())
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
         frames = refresh_external_sources({"source_policy": "open_legal_only", "external_sources": {"enabled": []}})
@@ -527,6 +614,12 @@ class VModelTests(unittest.TestCase):
                     "raw_external_cache_root": "data/raw_external",
                     "browser_is_primary_surface": True,
                     "recommendation_packets_status": "planned_contract_only",
+                    "analysis_artifacts_status": "missing",
+                    "analysis_generated_at": "2026-06-06T00:00:00+00:00",
+                    "analysis_context_packet_count": 0,
+                    "target_thesis_count": 0,
+                    "sell_thesis_count": 0,
+                    "trade_thesis_count": 0,
                 }
             ]
         ).to_csv(processed / "refresh_metadata.csv", index=False)

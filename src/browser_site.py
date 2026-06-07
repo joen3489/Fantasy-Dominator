@@ -7,10 +7,10 @@ from typing import Any
 
 import pandas as pd
 
-from .utils import PROCESSED_DIR, load_config
+from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
 
-def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR) -> Path:
+def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, analysis_dir: Path = ANALYSIS_DIR) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     tables = {
         "teams": _records(processed_dir / "teams.csv"),
@@ -50,8 +50,9 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR) ->
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
     config = load_config()
+    analysis = _analysis_artifacts(analysis_dir)
     target = output_dir / "index.html"
-    target.write_text(_page(tables, my_roster_id, my_team_name, config), encoding="utf-8")
+    target.write_text(_page(tables, my_roster_id, my_team_name, config, analysis), encoding="utf-8")
     return target
 
 
@@ -60,6 +61,42 @@ def _records(path: Path) -> list[dict[str, Any]]:
         return []
     frame = pd.read_csv(path).fillna("")
     return frame.to_dict(orient="records")
+
+
+def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
+    return {
+        "status": "available" if analysis_dir.exists() else "missing",
+        "targetTheses": _json_items(analysis_dir / "target_theses.json"),
+        "sellTheses": _json_items(analysis_dir / "sell_theses.json"),
+        "tradeTheses": _json_items(analysis_dir / "trade_theses.json"),
+        "contextPackets": _json_items(analysis_dir / "analysis_context_packets.json"),
+        "validation": _json_items(analysis_dir / "analysis_validation.json"),
+        "dailyGmBrief": _text_or_empty(analysis_dir / "daily_gm_brief.md"),
+        "managerDossiers": _text_or_empty(analysis_dir / "manager_dossiers.md"),
+        "newsImpactBrief": _text_or_empty(analysis_dir / "news_impact_brief.md"),
+    }
+
+
+def _json_items(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if isinstance(payload, dict):
+        items = payload.get("items", [])
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def _text_or_empty(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
 
 
 def _is_true(value: Any) -> bool:
@@ -78,6 +115,7 @@ def _page(
     my_roster_id: int | None,
     my_team_name: str,
     config: dict[str, Any],
+    analysis: dict[str, Any],
 ) -> str:
     data_json = json.dumps(
         {
@@ -88,6 +126,7 @@ def _page(
             "trackedPicks": config.get("tracked_picks") or [],
             "currentSeason": config.get("current_season", ""),
             "configuredLeagues": config.get("leagues") or {},
+            "analysis": analysis,
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")
@@ -261,6 +300,7 @@ def _page(
     <a href="#roster-value">Roster Value</a>
     <a href="#projection-board">Projection Board</a>
     <a href="#signal-board">Signal Board</a>
+    <a href="#analyst-brief">Analyst Brief</a>
     <a href="#market-gaps">Market Gaps</a>
     <a href="#asset-ledger">Asset Ledger</a>
     <a href="#opportunity-board">Opportunity Board</a>
@@ -357,6 +397,26 @@ def _page(
       <div id="signal-gap-table"></div>
       <h3>Team Fit Scores</h3>
       <div id="team-fit-table"></div>
+    </section>
+
+    <section id="analyst-brief">
+      <h2>Analyst Brief</h2>
+      <p class="note">Analysis is interpretation generated from deterministic tables. It does not send, accept, or execute transactions.</p>
+      <div class="controls">
+        <button class="analysis-scope active" data-analysis-scope="team" type="button">Active Team</button>
+        <button class="analysis-scope" data-analysis-scope="league" type="button">League</button>
+        <label>Confidence<select id="analysis-confidence-filter"></select></label>
+      </div>
+      <div class="grid">
+        <div class="panel"><h3>Daily GM Brief</h3><div id="daily-gm-brief"></div></div>
+        <div class="panel"><h3>Target Theses</h3><div id="target-theses"></div></div>
+        <div class="panel"><h3>Sell Theses</h3><div id="sell-theses"></div></div>
+        <div class="panel"><h3>Trade Theses</h3><div id="trade-theses"></div></div>
+      </div>
+      <div class="grid">
+        <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossiers"></div></div>
+        <div class="panel"><h3>News Impact Brief</h3><div id="news-impact-brief"></div></div>
+      </div>
     </section>
 
     <section id="market-gaps">
@@ -462,7 +522,9 @@ def _page(
       projectionConfidence: 'ALL',
       signalScope: 'team',
       signalLabel: 'ALL',
-      signalConfidence: 'ALL'
+      signalConfidence: 'ALL',
+      analysisScope: 'team',
+      analysisConfidence: 'ALL'
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -485,6 +547,7 @@ def _page(
     const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'projected_fantasy_points', 'projected_ppg', 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
     const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
+    const analysis = app.analysis || {{}};
 
     function init() {{
       populateTeamFilter();
@@ -494,6 +557,7 @@ def _page(
       populateSelect('projection-confidence-filter', ['ALL', ...unique(tables.player_projection_season.map(row => row.projection_confidence)).sort()]);
       populateSelect('signal-label-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.signal_label)).sort()]);
       populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
+      populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
       bindControls();
       render();
     }}
@@ -546,6 +610,10 @@ def _page(
         state.signalConfidence = event.target.value;
         render();
       }});
+      document.getElementById('analysis-confidence-filter').addEventListener('change', event => {{
+        state.analysisConfidence = event.target.value;
+        render();
+      }});
       document.getElementById('reset-filters').addEventListener('click', () => {{
         state.teamId = Number(app.myRosterId);
         state.query = '';
@@ -562,6 +630,8 @@ def _page(
         state.signalScope = 'team';
         state.signalLabel = 'ALL';
         state.signalConfidence = 'ALL';
+        state.analysisScope = 'team';
+        state.analysisConfidence = 'ALL';
         syncControls();
         render();
       }});
@@ -614,6 +684,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.analysis-scope').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.analysisScope = button.dataset.analysisScope;
+          setActive('.analysis-scope', button);
+          render();
+        }});
+      }});
     }}
 
     function syncControls() {{
@@ -625,6 +702,7 @@ def _page(
       document.getElementById('projection-confidence-filter').value = state.projectionConfidence;
       document.getElementById('signal-label-filter').value = state.signalLabel;
       document.getElementById('signal-confidence-filter').value = state.signalConfidence;
+      document.getElementById('analysis-confidence-filter').value = state.analysisConfidence;
       document.querySelectorAll('.pick-filter').forEach(button => button.classList.toggle('active', button.dataset.pickFilter === state.pickFilter));
       document.querySelectorAll('.scope-filter').forEach(button => button.classList.toggle('active', button.dataset.scope === state.tradeScope));
       document.querySelectorAll('.waiver-scope').forEach(button => button.classList.toggle('active', button.dataset.waiverScope === state.waiverScope));
@@ -632,6 +710,7 @@ def _page(
       document.querySelectorAll('.news-scope').forEach(button => button.classList.toggle('active', button.dataset.newsScope === state.newsScope));
       document.querySelectorAll('.projection-scope').forEach(button => button.classList.toggle('active', button.dataset.projectionScope === state.projectionScope));
       document.querySelectorAll('.signal-scope').forEach(button => button.classList.toggle('active', button.dataset.signalScope === state.signalScope));
+      document.querySelectorAll('.analysis-scope').forEach(button => button.classList.toggle('active', button.dataset.analysisScope === state.analysisScope));
     }}
 
     function render() {{
@@ -689,6 +768,12 @@ def _page(
       document.getElementById('signal-sells').innerHTML = signalCards(signalSellRows(), 'sell');
       document.getElementById('signal-gap-table').innerHTML = table(filteredSignalGaps(), signalGapColumns);
       document.getElementById('team-fit-table').innerHTML = table(filteredTeamFits(), teamFitColumns);
+      document.getElementById('daily-gm-brief').innerHTML = markdownBrief(analysis.dailyGmBrief);
+      document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
+      document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
+      document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
+      document.getElementById('manager-dossiers').innerHTML = markdownBrief(analysis.managerDossiers);
+      document.getElementById('news-impact-brief').innerHTML = markdownBrief(analysis.newsImpactBrief);
       document.getElementById('market-gap-table').innerHTML = table(filteredMarketGaps(), marketGapColumns);
       document.getElementById('asset-ledger-table').innerHTML = table(
         sortRows(applySearch(tables.team_asset_inventory.filter(row => Number(row.roster_id) === state.teamId)), ['asset_type', 'market_value']).reverse(),
@@ -766,6 +851,27 @@ def _page(
       if (state.signalScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
       return sortRows(applySearch(rows), ['timeline_fit_score', 'need_fit_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredTargetTheses() {{
+      let rows = (analysis.targetTheses || []).slice();
+      if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
+      return applySearch(rows).slice(0, 12);
+    }}
+
+    function filteredSellTheses() {{
+      let rows = (analysis.sellTheses || []).slice();
+      if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
+      return applySearch(rows).slice(0, 12);
+    }}
+
+    function filteredTradeTheses() {{
+      let rows = (analysis.tradeTheses || []).slice();
+      if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
+      return applySearch(rows).slice(0, 12);
     }}
 
     function currentRosterPlayerNames() {{
@@ -855,6 +961,12 @@ def _page(
         {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
         {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},
+        {{ item: 'Analysis artifacts', value: metadata.analysis_artifacts_status || analysis.status || 'missing' }},
+        {{ item: 'Analysis generated at', value: metadata.analysis_generated_at || 'unknown' }},
+        {{ item: 'Analysis context packets', value: metadata.analysis_context_packet_count || (analysis.contextPackets || []).length }},
+        {{ item: 'Target thesis rows', value: metadata.target_thesis_count || (analysis.targetTheses || []).length }},
+        {{ item: 'Sell thesis rows', value: metadata.sell_thesis_count || (analysis.sellTheses || []).length }},
+        {{ item: 'Trade thesis rows', value: metadata.trade_thesis_count || (analysis.tradeTheses || []).length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
       ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
@@ -888,6 +1000,27 @@ def _page(
         ],
         evidence: row.evidence || row.source_trace || 'No evidence provided.'
       }})).join('')}}</div>`;
+    }}
+
+    function thesisCards(rows, mode) {{
+      if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',
+        chips: [
+          mode,
+          row.position,
+          row.signal_label || row.approach_type,
+          row.confidence ? `confidence ${{row.confidence}}` : '',
+          row.risk ? `risk ${{row.risk}}` : ''
+        ],
+        evidence: `${{row.analysis_text || ''}} Evidence: ${{row.evidence || ''}} Source: ${{row.source_trace || ''}}`
+      }})).join('')}}</div>`;
+    }}
+
+    function markdownBrief(text) {{
+      if (!text) return '<p class="note">Analysis artifact is missing. Refresh can regenerate this without blocking the fact tables.</p>';
+      const lines = String(text).split('\\n').filter(line => line.trim() && !line.startsWith('---') && !line.includes(': deterministic_template')).slice(0, 18);
+      return `<div class="brief-list">${{lines.map(line => `<div class="brief-card-evidence">${{escapeHtml(line.replace(/^#+\\s*/, '').replace(/^-\\s*/, ''))}}</div>`).join('')}}</div>`;
     }}
 
     function newsCards(rows) {{

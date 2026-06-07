@@ -115,8 +115,14 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `data/site/index.html` | Browser generation code | Primary browser workflow | Presentation only; reads processed tables |
 | `data/reports/weekly_hinkie_report.md` | Report generation code | Markdown strategy report | Presentation only; strategy overlay is allowed |
 | `data/processed/sleeper_dynasty.sqlite` | Refresh process | SQLite mirror of processed CSVs | Generated artifact; tables replaced on refresh |
+| `data/analysis/analysis_context_packets.json` | Analysis layer | Machine-readable context packets for analyst generation | Interpretation input only; built from processed tables |
 | `data/analysis/target_theses.json` | Codex analyst layer | Explained target theses from signal outputs | Interpretation only; must cite signal/projection evidence |
 | `data/analysis/sell_theses.json` | Codex analyst layer | Explained sell theses from signal outputs | Interpretation only; must cite signal/projection evidence |
+| `data/analysis/trade_theses.json` | Codex analyst layer | Manager-aware trade thesis packets | Interpretation only; no transaction execution or outbound messaging |
+| `data/analysis/daily_gm_brief.md` | Codex analyst layer | Readable active-team analyst brief | Presentation and interpretation only |
+| `data/analysis/manager_dossiers.md` | Codex analyst layer | Plain-language manager behavior summaries | Must be grounded in manager behavior/event tables |
+| `data/analysis/news_impact_brief.md` | Codex analyst layer | Readable summary of imported news impact rows | Must not become canonical news truth |
+| `data/analysis/analysis_validation.json` | Analysis layer | Artifact validation status and guardrail errors | Generated validation artifact |
 
 ## Source Ownership
 
@@ -127,7 +133,7 @@ Strategy views are browser and markdown outputs that apply configurable team str
 - Sleeper trending owns public add/drop trend rows imported through the Sleeper trending endpoint.
 - Projection code owns deterministic projected stats and fantasy point calculations.
 - Transform code owns breakout/sell/watch labels and scores.
-- Codex owns explanation of transform outputs only, not projection facts or signal scores.
+- Codex and deterministic analysis templates own explanation of transform outputs only, not projection facts or signal scores.
 - Internal proxy values are continuity fallbacks only.
 - Config owns selected current team, strategy profile, tracked pick priorities, and source toggles.
 - Processed tables own normalized analysis state.

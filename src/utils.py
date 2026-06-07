@@ -17,10 +17,11 @@ PROCESSED_DIR = DATA_DIR / "processed"
 CACHE_DIR = DATA_DIR / "cache"
 REPORTS_DIR = DATA_DIR / "reports"
 SITE_DIR = DATA_DIR / "site"
+ANALYSIS_DIR = DATA_DIR / "analysis"
 
 
 def ensure_dirs() -> None:
-    for path in (RAW_DIR, RAW_EXTERNAL_DIR, PROCESSED_DIR, CACHE_DIR, REPORTS_DIR, SITE_DIR):
+    for path in (RAW_DIR, RAW_EXTERNAL_DIR, PROCESSED_DIR, CACHE_DIR, REPORTS_DIR, SITE_DIR, ANALYSIS_DIR):
         path.mkdir(parents=True, exist_ok=True)
 
 

@@ -6,6 +6,7 @@ data/raw/
 data/raw_external/
 data/processed/*.csv
 data/processed/*.sqlite
+data/analysis/
 data/reports/
 data/site/index.html
 data/site/server.*.log

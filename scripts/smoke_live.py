@@ -11,6 +11,7 @@ REQUIRED_MARKERS = [
     "brief-card",
     "Projection Board",
     "Signal Board",
+    "Analyst Brief",
     "News Desk",
     "Market Gaps",
     "Data Diagnostics",

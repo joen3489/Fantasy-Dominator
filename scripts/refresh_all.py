@@ -8,6 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.analysis import build_default_analysis_artifacts
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
@@ -152,6 +153,7 @@ def main(force: bool = False) -> None:
             config,
         )
     )
+    analysis_metadata = build_default_analysis_artifacts(dataframes, config, current_my_roster_id)
     dataframes["refresh_metadata"] = pd.DataFrame(
         [
             {
@@ -167,6 +169,12 @@ def main(force: bool = False) -> None:
                 "raw_external_cache_root": str((Path("data") / "raw_external").as_posix()),
                 "browser_is_primary_surface": True,
                 "recommendation_packets_status": "planned_contract_only",
+                "analysis_artifacts_status": analysis_metadata.get("status", "unknown"),
+                "analysis_generated_at": analysis_metadata.get("generated_at", ""),
+                "analysis_context_packet_count": analysis_metadata.get("context_packet_count", 0),
+                "target_thesis_count": analysis_metadata.get("target_thesis_count", 0),
+                "sell_thesis_count": analysis_metadata.get("sell_thesis_count", 0),
+                "trade_thesis_count": analysis_metadata.get("trade_thesis_count", 0),
             }
         ]
     )

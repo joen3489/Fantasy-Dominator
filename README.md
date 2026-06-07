@@ -131,9 +131,21 @@ The first deliverable exports:
 - `team_fit_scores.csv`
 - `refresh_metadata.csv`
 
+Analysis artifacts are generated separately under `data/analysis/`:
+
+- `analysis_context_packets.json`
+- `target_theses.json`
+- `sell_theses.json`
+- `trade_theses.json`
+- `daily_gm_brief.md`
+- `manager_dossiers.md`
+- `news_impact_brief.md`
+- `analysis_validation.json`
+
 ## Notes
 
 - The API is read-only and does not require a token.
 - Raw JSON is cached before normalization.
 - Player data is cached because `/players/nfl` is large.
 - This project does not execute fantasy transactions.
+- Analyst artifacts are interpretation only and must cite deterministic processed outputs.
