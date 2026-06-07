@@ -100,9 +100,11 @@ def build_team_asset_inventory(
 ) -> pd.DataFrame:
     player_values = _player_value_map(player_market_values_df)
     pick_values = _pick_value_map(pick_market_values_df)
+    current_rosters = _latest_season_rows(roster_players_df)
+    current_pick_ownership = _current_or_future_pick_rows(pick_ownership_df, _latest_season(current_rosters))
     rows: list[dict[str, Any]] = []
 
-    for _, player in roster_players_df.iterrows():
+    for _, player in current_rosters.iterrows():
         position = str(player.get("position", ""))
         age = _num(player.get("age"))
         market = player_values.get(str(player.get("player_id", ""))) or player_values.get(str(player.get("player_name", "")).lower())
@@ -124,7 +126,7 @@ def build_team_asset_inventory(
             }
         )
 
-    for _, pick in pick_ownership_df.iterrows():
+    for _, pick in current_pick_ownership.iterrows():
         round_no = _int(pick.get("round"))
         label = f"{pick.get('pick_season', '')} R{round_no} {pick.get('original_team', '')}"
         market_value = pick_values.get((str(pick.get("pick_season", "")), str(round_no))) or _proxy_pick_value(round_no)
@@ -149,15 +151,18 @@ def build_team_asset_inventory(
 
 def build_team_needs_matrix(teams_df: pd.DataFrame, roster_players_df: pd.DataFrame, pick_ownership_df: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for _, team in teams_df.iterrows():
+    current_teams = _latest_teams(teams_df)
+    current_rosters = _latest_season_rows(roster_players_df)
+    current_pick_ownership = _current_or_future_pick_rows(pick_ownership_df, _latest_season(current_rosters))
+    for _, team in current_teams.iterrows():
         roster_id = int(team.get("roster_id"))
-        roster = roster_players_df[roster_players_df.get("roster_id") == roster_id] if not roster_players_df.empty else pd.DataFrame()
+        roster = current_rosters[current_rosters.get("roster_id") == roster_id] if not current_rosters.empty else pd.DataFrame()
         positions = roster.get("position", pd.Series(dtype=str))
         qb = int((positions == "QB").sum())
         rb = int((positions == "RB").sum())
         wr = int((positions == "WR").sum())
         te = int((positions == "TE").sum())
-        picks = pick_ownership_df[pick_ownership_df.get("current_owner_roster_id") == roster_id] if not pick_ownership_df.empty else pd.DataFrame()
+        picks = current_pick_ownership[current_pick_ownership.get("current_owner_roster_id") == roster_id] if not current_pick_ownership.empty else pd.DataFrame()
         firsts = int((picks.get("round", pd.Series(dtype=int)).astype(str) == "1").sum()) if not picks.empty else 0
         rows.append(
             {
@@ -187,7 +192,9 @@ def build_manager_behavior_signals(
     roster_players_df: pd.DataFrame,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for _, team in teams_df.iterrows():
+    current_teams = _latest_teams(teams_df)
+    current_rosters = _latest_season_rows(roster_players_df)
+    for _, team in current_teams.iterrows():
         roster_id = int(team.get("roster_id"))
         profile = _row_for(manager_profiles_df, "roster_id", roster_id)
         trade_count = _int(profile.get("total_trades", 0))
@@ -195,7 +202,7 @@ def build_manager_behavior_signals(
         firsts_out = _int(profile.get("future_1sts_sold", 0))
         faab = _int(profile.get("faab_spent_on_waivers", 0))
         claims = _int(profile.get("number_of_waiver_claims", 0))
-        roster = roster_players_df[roster_players_df.get("roster_id") == roster_id] if not roster_players_df.empty else pd.DataFrame()
+        roster = current_rosters[current_rosters.get("roster_id") == roster_id] if not current_rosters.empty else pd.DataFrame()
         pos_counts = Counter(roster.get("position", pd.Series(dtype=str)))
         rows.append(
             {
@@ -222,10 +229,11 @@ def build_manager_valuation_profiles(
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     current_teams = _latest_teams(teams_df)
+    current_rosters = _latest_season_rows(roster_players_df)
     for _, team in current_teams.iterrows():
         roster_id = int(team.get("roster_id"))
         profile = _row_for(manager_profiles_df, "roster_id", roster_id)
-        roster = roster_players_df[roster_players_df.get("roster_id") == roster_id] if not roster_players_df.empty else pd.DataFrame()
+        roster = current_rosters[current_rosters.get("roster_id") == roster_id] if not current_rosters.empty else pd.DataFrame()
         pos_counts = Counter(roster.get("position", pd.Series(dtype=str)))
         trade_count = _int(profile.get("total_trades", 0))
         firsts_in = _int(profile.get("future_1sts_acquired", 0))
@@ -445,6 +453,32 @@ def _latest_teams(teams_df: pd.DataFrame) -> pd.DataFrame:
         frame = frame.sort_values("_season_sort").drop_duplicates("roster_id", keep="last")
         frame = frame.drop(columns=["_season_sort"])
     return frame
+
+
+def _latest_season_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty or "season" not in frame.columns:
+        return frame
+    seasons = pd.to_numeric(frame.get("season"), errors="coerce").dropna()
+    if seasons.empty:
+        return frame
+    latest = str(int(seasons.max()))
+    return frame[frame.get("season").astype(str) == latest]
+
+
+def _latest_season(frame: pd.DataFrame) -> int:
+    if frame.empty or "season" not in frame.columns:
+        return 0
+    seasons = pd.to_numeric(frame.get("season"), errors="coerce").dropna()
+    return int(seasons.max()) if not seasons.empty else 0
+
+
+def _current_or_future_pick_rows(frame: pd.DataFrame, current_season: int) -> pd.DataFrame:
+    if frame.empty or "pick_season" not in frame.columns:
+        return frame
+    if not current_season:
+        return frame
+    pick_seasons = pd.to_numeric(frame.get("pick_season"), errors="coerce").fillna(0)
+    return frame[pick_seasons >= current_season]
 
 
 def _proxy_player_value(position: str, age: float, roster_status: str) -> float:

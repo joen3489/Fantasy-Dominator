@@ -23,8 +23,9 @@ def build_projection_tables(
     scoring = _scoring_settings(leagues_df)
     source_path = RAW_EXTERNAL_DIR / "nflverse" / season / "player_stats.csv"
     raw_stats = _load_raw_stats(source_path)
+    current_roster_players = _current_season_roster(roster_players_df, season)
 
-    season_rows = _build_season_projection_rows(season, raw_stats, roster_players_df, scoring)
+    season_rows = _build_season_projection_rows(season, raw_stats, current_roster_players, scoring)
     season_df = pd.DataFrame(season_rows, columns=_season_columns())
     weekly_df = _build_weekly_projection_rows(season_df)
     freshness = pd.DataFrame(
@@ -214,6 +215,13 @@ def _load_raw_stats(path: Path) -> pd.DataFrame:
         return pd.read_csv(path, low_memory=False)
     except Exception:
         return pd.DataFrame()
+
+
+def _current_season_roster(roster_players_df: pd.DataFrame, season: str) -> pd.DataFrame:
+    if roster_players_df.empty or "season" not in roster_players_df.columns:
+        return roster_players_df
+    current = roster_players_df[roster_players_df.get("season").astype(str) == str(season)]
+    return current if not current.empty else roster_players_df
 
 
 def _scoring_settings(leagues_df: pd.DataFrame) -> dict[str, float]:

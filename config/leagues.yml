@@ -86,6 +86,9 @@ tracked_picks:
 transaction_weeks:
   start: 1
   end: 18
+historical_ingestion:
+  auto_discover_previous_leagues: true
+  max_previous_seasons: 8
 leagues:
   "2026": "1313490073630547968"
   "2025": ""

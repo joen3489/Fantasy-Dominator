@@ -17,6 +17,7 @@ from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.projections import calculate_fantasy_points
 from src.signals import build_signal_tables
+from scripts.refresh_all import _discover_league_history
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
 
@@ -52,7 +53,7 @@ EXPECTED_TABLE_COLUMNS = {
     "projection_market_gaps": ["player_id", "player_name", "position", "projected_fantasy_points", "projected_ppg", "market_value", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
     "team_fit_scores": ["roster_id", "team_name", "player_id", "player_name", "position", "timeline_fit_score", "need_fit_score", "liquidity_fit_score", "fit_label", "evidence", "risk", "confidence", "source_trace"],
     "action_recommendations": ["roster_id", "team_name", "player_id", "player_name", "position", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"],
-    "manager_profiles": ["roster_id", "display_name", "team_name", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
+    "manager_profiles": ["owner_id", "roster_id", "display_name", "team_name", "seasons_covered", "roster_ids_by_season", "team_names_by_season", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
     "manager_event_log": ["event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
@@ -201,6 +202,94 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(ownership.iloc[0]["current_owner"], "The Clapper")
         self.assertTrue(bool(ownership.iloc[0]["is_my_original_pick"]))
         self.assertFalse(bool(ownership.iloc[0]["is_currently_owned_by_me"]))
+
+    def test_league_history_discovery_walks_previous_league_chain(self) -> None:
+        class FakeAPI:
+            def __init__(self) -> None:
+                self.leagues = {
+                    "2026": {"previous_league_id": "league-2025"},
+                    "2025": {"previous_league_id": "league-2024"},
+                    "2024": {"previous_league_id": ""},
+                }
+
+            def league(self, season: str, league_id: str, force: bool = False) -> dict:
+                return self.leagues[season]
+
+        discovered = _discover_league_history(
+            {
+                "current_season": "2026",
+                "leagues": {"2026": "league-2026", "2025": "", "2024": ""},
+                "historical_ingestion": {"max_previous_seasons": 4},
+            },
+            FakeAPI(),
+        )
+
+        self.assertEqual(discovered["2026"], "league-2026")
+        self.assertEqual(discovered["2025"], "league-2025")
+        self.assertEqual(discovered["2024"], "league-2024")
+
+    def test_manager_profiles_aggregate_history_by_owner_id(self) -> None:
+        from src.manager_profiles import build_manager_profiles
+
+        teams = pd.DataFrame(
+            [
+                {"season": "2025", "league_id": "old", "roster_id": 7, "owner_id": "owner-a", "display_name": "same", "team_name": "Old Name"},
+                {"season": "2026", "league_id": "new", "roster_id": 2, "owner_id": "owner-a", "display_name": "same", "team_name": "New Name"},
+            ]
+        )
+        trades = pd.DataFrame(
+            [
+                {
+                    "season": "2025",
+                    "team_a_roster_id": 7,
+                    "team_a_name": "Old Name",
+                    "team_a_players_received": "Young WR",
+                    "team_a_picks_received": "2026 R1 original roster 2",
+                    "team_a_faab_received": 0,
+                    "team_b_roster_id": 8,
+                    "team_b_name": "Other",
+                    "team_b_players_received": "Veteran RB",
+                    "team_b_picks_received": "",
+                    "team_b_faab_received": 0,
+                },
+                {
+                    "season": "2026",
+                    "team_a_roster_id": 3,
+                    "team_a_name": "Other",
+                    "team_a_players_received": "Bench WR",
+                    "team_a_picks_received": "",
+                    "team_a_faab_received": 0,
+                    "team_b_roster_id": 2,
+                    "team_b_name": "New Name",
+                    "team_b_players_received": "QB",
+                    "team_b_picks_received": "",
+                    "team_b_faab_received": 0,
+                },
+            ]
+        )
+        waivers = pd.DataFrame(
+            [
+                {"season": "2025", "roster_id": 7, "waiver_bid": 11},
+                {"season": "2026", "roster_id": 2, "waiver_bid": 22},
+            ]
+        )
+        roster_players = pd.DataFrame(
+            [
+                {"season": "2026", "roster_id": 2, "position": "QB"},
+                {"season": "2026", "roster_id": 2, "position": "WR"},
+            ]
+        )
+
+        profiles = build_manager_profiles(teams, trades, waivers, roster_players)
+
+        self.assertEqual(len(profiles), 1)
+        row = profiles.iloc[0]
+        self.assertEqual(row["owner_id"], "owner-a")
+        self.assertEqual(row["roster_id"], 2)
+        self.assertEqual(row["total_trades"], 2)
+        self.assertEqual(row["faab_spent_on_waivers"], 33)
+        self.assertIn("2025", row["seasons_covered"])
+        self.assertIn("2026", row["seasons_covered"])
 
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -701,8 +790,12 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [
                 {
+                    "owner_id": "u2",
                     "roster_id": 2,
                     "team_name": "Melkor Lord of Light",
+                    "seasons_covered": "2026",
+                    "roster_ids_by_season": "2026:2",
+                    "team_names_by_season": "2026:Melkor Lord of Light",
                     "total_trades": 0,
                     "future_1sts_acquired": 0,
                     "future_1sts_sold": 0,

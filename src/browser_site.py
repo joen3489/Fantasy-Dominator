@@ -742,7 +742,7 @@ def _page(
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
-    const managerColumns = ['team_name', 'total_trades', 'future_1sts_acquired', 'future_1sts_sold', 'faab_spent_on_waivers', 'number_of_waiver_claims', 'contender_rebuilder_indicator'];
+    const managerColumns = ['team_name', 'owner_id', 'seasons_covered', 'roster_ids_by_season', 'total_trades', 'future_1sts_acquired', 'future_1sts_sold', 'faab_spent_on_waivers', 'number_of_waiver_claims', 'contender_rebuilder_indicator'];
     const pickColumns = ['pick_season', 'round', 'original_team', 'current_owner', 'previous_owner', 'is_my_original_pick', 'i_currently_own_it'];
     const tradeColumns = ['week', 'created_datetime', 'team_a_name', 'team_a_players_received', 'team_a_picks_received', 'team_a_faab_received', 'team_b_name', 'team_b_players_received', 'team_b_picks_received', 'team_b_faab_received'];
     const waiverColumns = ['week', 'team_name', 'player_added', 'player_dropped', 'waiver_bid', 'status', 'failure_reason'];
@@ -814,7 +814,7 @@ def _page(
 
     function populateTeamFilter() {{
       const select = document.getElementById('team-filter');
-      select.innerHTML = tables.teams
+      select.innerHTML = currentSeasonTeams()
         .slice()
         .sort((a, b) => String(a.team_name).localeCompare(String(b.team_name)))
         .map(team => `<option value="${{escapeHtml(team.roster_id)}}">${{escapeHtml(team.team_name || team.display_name)}}</option>`)
@@ -999,16 +999,16 @@ def _page(
     }}
 
     function render() {{
-      const activeTeam = tables.teams.find(team => Number(team.roster_id) === state.teamId) || {{}};
+      const activeTeam = currentSeasonTeams().find(team => Number(team.roster_id) === state.teamId) || tables.teams.find(team => Number(team.roster_id) === state.teamId) || {{}};
       const teamName = activeTeam.team_name || activeTeam.display_name || 'Unknown team';
       document.getElementById('active-team-label').textContent = teamName;
 
-      let roster = tables.roster_players.filter(row => Number(row.roster_id) === state.teamId);
+      let roster = currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId);
       if (state.position !== 'ALL') roster = roster.filter(row => row.position === state.position);
       if (state.status !== 'ALL') roster = roster.filter(row => row.roster_status === state.status);
       roster = applySearch(roster);
 
-      const allTeamRoster = tables.roster_players.filter(row => Number(row.roster_id) === state.teamId);
+      const allTeamRoster = currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId);
       const qbCount = allTeamRoster.filter(row => row.position === 'QB').length;
       const rbCount = allTeamRoster.filter(row => row.position === 'RB').length;
       const passCount = allTeamRoster.filter(row => row.position === 'WR' || row.position === 'TE').length;
@@ -1292,12 +1292,34 @@ def _page(
     }}
 
     function currentRosterPlayerNames() {{
-      return new Set(tables.roster_players.filter(row => Number(row.roster_id) === state.teamId).map(row => String(row.player_name)));
+      return new Set(currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId).map(row => String(row.player_name)));
     }}
 
     function activeTeamName() {{
-      const team = tables.teams.find(row => Number(row.roster_id) === state.teamId) || {{}};
+      const team = currentSeasonTeams().find(row => Number(row.roster_id) === state.teamId) || tables.teams.find(row => Number(row.roster_id) === state.teamId) || {{}};
       return String(team.team_name || team.display_name || '');
+    }}
+
+    function currentSeasonTeams() {{
+      const currentSeason = String(app.currentSeason || '');
+      const current = tables.teams.filter(row => String(row.season || '') === currentSeason);
+      return current.length ? current : latestRowsByRoster(tables.teams);
+    }}
+
+    function currentSeasonRoster() {{
+      const currentSeason = String(app.currentSeason || '');
+      const current = tables.roster_players.filter(row => String(row.season || '') === currentSeason);
+      return current.length ? current : tables.roster_players;
+    }}
+
+    function latestRowsByRoster(rows) {{
+      const latest = new Map();
+      rows.forEach(row => {{
+        const key = String(row.roster_id || '');
+        const existing = latest.get(key);
+        if (!existing || String(row.season || '') > String(existing.season || '')) latest.set(key, row);
+      }});
+      return [...latest.values()];
     }}
 
     function legacyManagerRenderPlaceholder() {{

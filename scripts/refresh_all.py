@@ -49,6 +49,7 @@ def main(force: bool = False) -> None:
     configured_roster_id = int(configured_roster_id) if configured_roster_id not in (None, "") else None
     week_start = int(config.get("transaction_weeks", {}).get("start", 1))
     week_end = int(config.get("transaction_weeks", {}).get("end", 18))
+    league_ids_by_season = _discover_league_history(config, api, force=force)
 
     external_frames = refresh_external_sources(config, force=force)
 
@@ -67,7 +68,7 @@ def main(force: bool = False) -> None:
     }
     current_my_roster_id = None
 
-    for season, league_id in (config.get("leagues") or {}).items():
+    for season, league_id in league_ids_by_season.items():
         if not league_id:
             continue
         season = str(season)
@@ -154,7 +155,7 @@ def main(force: bool = False) -> None:
             dataframes["manager_valuation_profiles"],
         )
     )
-    configured_seasons = [str(season) for season, league_id in (config.get("leagues") or {}).items() if league_id]
+    configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]
     ingested_seasons = sorted({str(value) for value in dataframes["leagues"].get("season", pd.Series(dtype=str)).dropna().tolist()})
     analysis_metadata = build_default_analysis_artifacts(dataframes, config, current_my_roster_id)
     dataframes["refresh_metadata"] = pd.DataFrame(
@@ -163,7 +164,7 @@ def main(force: bool = False) -> None:
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "current_season": config.get("current_season", ""),
                 "configured_league_ids": ";".join(
-                    str(value) for value in (config.get("leagues") or {}).values() if value
+                    str(value) for value in league_ids_by_season.values() if value
                 ),
                 "configured_seasons": ";".join(configured_seasons),
                 "ingested_seasons": ";".join(ingested_seasons),
@@ -218,6 +219,34 @@ def _sqlite_connection(path: Path):
 
     path.parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(path)
+
+
+def _discover_league_history(config: dict, api: SleeperAPI, force: bool = False) -> dict[str, str]:
+    configured = {str(season): str(league_id) for season, league_id in (config.get("leagues") or {}).items() if league_id}
+    if not (config.get("historical_ingestion") or {}).get("auto_discover_previous_leagues", True):
+        return configured
+    current_season = str(config.get("current_season", "") or "")
+    current_league_id = configured.get(current_season)
+    if not current_league_id:
+        return configured
+
+    discovered = dict(configured)
+    season = int(current_season) if current_season.isdigit() else 0
+    league_id = current_league_id
+    seen = {league_id}
+    max_history = int((config.get("historical_ingestion") or {}).get("max_previous_seasons", 8))
+
+    for _ in range(max_history):
+        league = api.league(str(season), league_id, force=force)
+        previous_id = str(league.get("previous_league_id") or "")
+        if not previous_id or previous_id in seen or not season:
+            break
+        season -= 1
+        discovered.setdefault(str(season), previous_id)
+        seen.add(previous_id)
+        league_id = previous_id
+
+    return dict(sorted(discovered.items(), reverse=True))
 
 
 if __name__ == "__main__":
