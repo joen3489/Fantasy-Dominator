@@ -29,6 +29,7 @@ from src.normalize import (
 )
 from src.pick_ownership import build_pick_ownership
 from src.players import load_players, players_table
+from src.projections import build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
 from src.utils import PROCESSED_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
@@ -125,6 +126,7 @@ def main(force: bool = False) -> None:
     dataframes["pick_ownership"] = pick_ownership
     dataframes.update(external_frames)
     dataframes.update(build_news_tables(config, api, players, dataframes["teams"], dataframes["roster_players"], force=force))
+    dataframes.update(build_projection_tables(config, dataframes["leagues"], dataframes["roster_players"]))
     dataframes.update(
         build_economic_tables(
             dataframes["teams"],

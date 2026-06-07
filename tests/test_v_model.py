@@ -13,6 +13,7 @@ from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
+from src.projections import calculate_fantasy_points
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
 
@@ -37,6 +38,9 @@ EXPECTED_TABLE_COLUMNS = {
     "player_news_matches": ["event_id", "source", "input_player_name", "player_id", "matched_player_name", "match_method", "match_confidence", "is_ambiguous", "source_trace"],
     "league_news_impact": ["event_id", "source", "published_at", "player_id", "player_name", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"],
     "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
+    "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
+    "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
+    "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "manager_profiles": ["roster_id", "display_name", "team_name", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
@@ -88,6 +92,9 @@ class VModelTests(unittest.TestCase):
             "player_news_matches": ["source", "source_trace", "match_confidence"],
             "league_news_impact": ["evidence", "risk", "confidence", "source_trace"],
             "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
+            "player_projection_season": ["projection_method", "projection_confidence", "source_trace"],
+            "player_projection_weekly": ["projection_method", "projection_confidence", "source_trace"],
+            "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -191,6 +198,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("My Roster News", html)
         self.assertIn("Trade Target News", html)
         self.assertIn("Roster Value Board", html)
+        self.assertIn("Projection Board", html)
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)
         self.assertIn("Manager Map", html)
@@ -210,6 +218,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("News event rows", html)
         self.assertIn("News impact rows", html)
         self.assertIn("News Source Freshness", html)
+        self.assertIn("Projection season rows", html)
+        self.assertIn("Projection Source Freshness", html)
         self.assertIn("Recommendation packets", html)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
@@ -219,8 +229,27 @@ class VModelTests(unittest.TestCase):
         self.assertIn("fantasy-dominator-production.up.railway.app", text)
         self.assertIn("Today's Board", text)
         self.assertIn("brief-card", text)
+        self.assertIn("Projection Board", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Diagnostics", text)
+
+    def test_projection_scoring_uses_league_settings_and_te_bonus(self) -> None:
+        points = calculate_fantasy_points(
+            {
+                "projected_passing_yards": 250,
+                "projected_passing_tds": 2,
+                "projected_interceptions": 1,
+                "projected_rushing_yards": 40,
+                "projected_rushing_tds": 1,
+                "projected_receptions": 5,
+                "projected_receiving_yards": 50,
+                "projected_receiving_tds": 1,
+            },
+            {"pass_yd": 0.04, "pass_td": 4, "pass_int": -1, "rush_yd": 0.1, "rush_td": 6, "rec": 0.5, "bonus_rec_te": 0.2, "rec_yd": 0.1, "rec_td": 6},
+            "TE",
+        )
+
+        self.assertEqual(points, 41.5)
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
         frames = refresh_external_sources({"source_policy": "open_legal_only", "external_sources": {"enabled": []}})
@@ -499,6 +528,66 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"source": "sleeper_trending", "dataset": "trending_add", "status": "cached", "source_url": "https://api.sleeper.app/v1/players/nfl/trending/add", "cache_path": "data/raw_external/sleeper/2026/trending_add.json", "checked_at": "2026-06-06T00:00:00+00:00", "row_count": 1}]
         ).to_csv(processed / "news_source_freshness.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "season": "2026",
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "position": "QB",
+                    "team": "WAS",
+                    "roster_id": 2,
+                    "team_name": "Melkor Lord of Light",
+                    "projected_games": 17,
+                    "projected_passing_yards": 3800,
+                    "projected_passing_tds": 25,
+                    "projected_interceptions": 8,
+                    "projected_rushing_yards": 700,
+                    "projected_rushing_tds": 6,
+                    "projected_receptions": 0,
+                    "projected_receiving_yards": 0,
+                    "projected_receiving_tds": 0,
+                    "projected_fantasy_points": 350,
+                    "projected_ppg": 20.59,
+                    "projection_method": "fixture",
+                    "projection_confidence": "high",
+                    "source_trace": "test",
+                    "projection_note": "fixture projection",
+                }
+            ]
+        ).to_csv(processed / "player_projection_season.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "season": "2026",
+                    "week": 1,
+                    "player_id": "1",
+                    "player_name": "Jayden Daniels",
+                    "position": "QB",
+                    "team": "WAS",
+                    "roster_id": 2,
+                    "team_name": "Melkor Lord of Light",
+                    "projected_fantasy_points": 20.59,
+                    "projected_snap_or_usage_note": "fixture",
+                    "projection_method": "fixture",
+                    "projection_confidence": "high",
+                    "source_trace": "test",
+                }
+            ]
+        ).to_csv(processed / "player_projection_weekly.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "source": "nflverse",
+                    "dataset": "player_stats_projection_input",
+                    "status": "cached",
+                    "source_url": "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv",
+                    "cache_path": "data/raw_external/nflverse/2026/player_stats.csv",
+                    "checked_at": "2026-06-06T00:00:00+00:00",
+                    "row_count": 1,
+                }
+            ]
+        ).to_csv(processed / "projection_source_freshness.csv", index=False)
         pd.DataFrame(columns=["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"]).to_csv(
             processed / "player_usage_weekly.csv", index=False
         )

@@ -9,6 +9,7 @@ DEFAULT_URL = "https://fantasy-dominator-production.up.railway.app/"
 REQUIRED_MARKERS = [
     "Today's Board",
     "brief-card",
+    "Projection Board",
     "News Desk",
     "Market Gaps",
     "Data Diagnostics",

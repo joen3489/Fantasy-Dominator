@@ -37,6 +37,9 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR) ->
         "player_news_matches": _records(processed_dir / "player_news_matches.csv"),
         "league_news_impact": _records(processed_dir / "league_news_impact.csv"),
         "news_source_freshness": _records(processed_dir / "news_source_freshness.csv"),
+        "player_projection_season": _records(processed_dir / "player_projection_season.csv"),
+        "player_projection_weekly": _records(processed_dir / "player_projection_weekly.csv"),
+        "projection_source_freshness": _records(processed_dir / "projection_source_freshness.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -251,6 +254,7 @@ def _page(
     <a href="#decision-board">Decision Board</a>
     <a href="#team-overview">Team Overview</a>
     <a href="#roster-value">Roster Value</a>
+    <a href="#projection-board">Projection Board</a>
     <a href="#market-gaps">Market Gaps</a>
     <a href="#asset-ledger">Asset Ledger</a>
     <a href="#opportunity-board">Opportunity Board</a>
@@ -319,6 +323,16 @@ def _page(
       </div>
       <p class="note">Value tags are planned as a strategy overlay. For now this board uses Sleeper roster/player data only.</p>
       <div id="roster-table"></div>
+    </section>
+
+    <section id="projection-board">
+      <h2>Projection Board</h2>
+      <div class="controls">
+        <button class="projection-scope active" data-projection-scope="team" type="button">Active Team</button>
+        <button class="projection-scope" data-projection-scope="league" type="button">League</button>
+        <label>Confidence<select id="projection-confidence-filter"></select></label>
+      </div>
+      <div id="projection-table"></div>
     </section>
 
     <section id="market-gaps">
@@ -420,6 +434,8 @@ def _page(
       waiverStatus: 'ALL',
       gapScope: 'targets',
       newsScope: 'league-impact'
+      , projectionScope: 'team',
+      projectionConfidence: 'ALL'
     }};
 
     const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
@@ -439,12 +455,14 @@ def _page(
     const todayOpportunityColumns = ['opportunity_type', 'target_team', 'asset_name', 'position', 'market_gap_score', 'evidence', 'risk', 'confidence'];
     const todayNewsColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
     const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
+    const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'projected_fantasy_points', 'projected_ppg', 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
 
     function init() {{
       populateTeamFilter();
       populateSelect('position-filter', ['ALL', ...unique(tables.roster_players.map(row => row.position)).sort()]);
       populateSelect('status-filter', ['ALL', ...unique(tables.roster_players.map(row => row.roster_status)).sort()]);
       populateSelect('waiver-status-filter', ['ALL', ...unique(tables.waivers.map(row => row.status)).sort()]);
+      populateSelect('projection-confidence-filter', ['ALL', ...unique(tables.player_projection_season.map(row => row.projection_confidence)).sort()]);
       bindControls();
       render();
     }}
@@ -485,6 +503,10 @@ def _page(
         state.waiverStatus = event.target.value;
         render();
       }});
+      document.getElementById('projection-confidence-filter').addEventListener('change', event => {{
+        state.projectionConfidence = event.target.value;
+        render();
+      }});
       document.getElementById('reset-filters').addEventListener('click', () => {{
         state.teamId = Number(app.myRosterId);
         state.query = '';
@@ -496,6 +518,8 @@ def _page(
         state.waiverStatus = 'ALL';
         state.gapScope = 'targets';
         state.newsScope = 'league-impact';
+        state.projectionScope = 'team';
+        state.projectionConfidence = 'ALL';
         syncControls();
         render();
       }});
@@ -534,6 +558,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.projection-scope').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.projectionScope = button.dataset.projectionScope;
+          setActive('.projection-scope', button);
+          render();
+        }});
+      }});
     }}
 
     function syncControls() {{
@@ -542,11 +573,13 @@ def _page(
       document.getElementById('position-filter').value = state.position;
       document.getElementById('status-filter').value = state.status;
       document.getElementById('waiver-status-filter').value = state.waiverStatus;
+      document.getElementById('projection-confidence-filter').value = state.projectionConfidence;
       document.querySelectorAll('.pick-filter').forEach(button => button.classList.toggle('active', button.dataset.pickFilter === state.pickFilter));
       document.querySelectorAll('.scope-filter').forEach(button => button.classList.toggle('active', button.dataset.scope === state.tradeScope));
       document.querySelectorAll('.waiver-scope').forEach(button => button.classList.toggle('active', button.dataset.waiverScope === state.waiverScope));
       document.querySelectorAll('.gap-scope').forEach(button => button.classList.toggle('active', button.dataset.gapScope === state.gapScope));
       document.querySelectorAll('.news-scope').forEach(button => button.classList.toggle('active', button.dataset.newsScope === state.newsScope));
+      document.querySelectorAll('.projection-scope').forEach(button => button.classList.toggle('active', button.dataset.projectionScope === state.projectionScope));
     }}
 
     function render() {{
@@ -597,6 +630,7 @@ def _page(
         tables.manager_behavior_signals.filter(row => Number(row.roster_id) === state.teamId),
         managerSignalColumns
       );
+      document.getElementById('projection-table').innerHTML = table(filteredProjections(), projectionColumns);
       document.getElementById('market-gap-table').innerHTML = table(filteredMarketGaps(), marketGapColumns);
       document.getElementById('asset-ledger-table').innerHTML = table(
         sortRows(applySearch(tables.team_asset_inventory.filter(row => Number(row.roster_id) === state.teamId)), ['asset_type', 'market_value']).reverse(),
@@ -638,6 +672,13 @@ def _page(
       if (state.newsScope !== 'unmatched') rows = rows.filter(row => String(row.match_method) !== 'no_match' && !truthy(row.is_ambiguous));
       if (state.newsScope === 'unmatched') rows = rows.filter(row => String(row.match_method) === 'no_match' || truthy(row.is_ambiguous));
       return applySearch(rows).slice(0, 80);
+    }}
+
+    function filteredProjections() {{
+      let rows = tables.player_projection_season.slice();
+      if (state.projectionScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.projectionConfidence !== 'ALL') rows = rows.filter(row => row.projection_confidence === state.projectionConfidence);
+      return sortRows(applySearch(rows), ['projected_fantasy_points']).reverse().slice(0, 120);
     }}
 
     function legacyManagerRenderPlaceholder() {{
@@ -713,8 +754,10 @@ def _page(
         {{ item: 'Economic asset rows', value: tables.team_asset_inventory.length }},
         {{ item: 'News event rows', value: tables.news_events.length }},
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
+        {{ item: 'Projection season rows', value: tables.player_projection_season.length }},
+        {{ item: 'Projection weekly rows', value: tables.player_projection_weekly.length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
-      ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns);
+      ], ['item', 'value']) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
 
     function opportunityCards(rows, mode) {{

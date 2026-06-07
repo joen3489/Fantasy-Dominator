@@ -121,6 +121,9 @@ The first deliverable exports:
 - `player_news_matches.csv`
 - `league_news_impact.csv`
 - `news_source_freshness.csv`
+- `player_projection_season.csv`
+- `player_projection_weekly.csv`
+- `projection_source_freshness.csv`
 - `refresh_metadata.csv`
 
 ## Notes
