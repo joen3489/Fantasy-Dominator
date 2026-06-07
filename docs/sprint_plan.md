@@ -250,24 +250,70 @@ Non-goals:
 
 ### Sprint 6: Analysis Layer V1
 
-Goal: Add Codex as an interpretation layer over processed facts.
+Goal: Add an auditable analyst layer that explains deterministic projection and signal outputs without changing facts.
+
+This sprint turns the app from "shows signals" into "explains why the signal matters." The core product move is a clean separation between the deterministic model and the analyst voice:
+
+- Data layer says what happened or what is projected.
+- Transform layer says what the model flags.
+- Analysis layer says why a dynasty manager should care.
+
+The analysis layer must be useful even before fully automated Codex hooks exist. V1 can generate deterministic template-backed analyst artifacts from processed tables, while preserving a contract that later Codex runs can fill or improve the prose.
 
 Key deliverables:
 
 - Add `data/analysis/` as a separate generated artifact layer.
-- Build analyst context packets from projection, signal, news, market, and manager behavior outputs.
-- Add controlled prompts for daily GM brief, trade desk, manager dossiers, and news impact memo.
+- Build analyst context packets from projection, signal, news, market, roster, and manager behavior outputs.
+- Generate V1 analyst artifacts from deterministic templates, with fields shaped for future Codex-authored prose.
+- Add controlled prompt specs for daily GM brief, trade desk, manager dossiers, target theses, sell theses, and news impact memo.
 - Validate analyst artifacts before browser display.
+- Add browser sections that clearly label analysis as interpretation.
+- Keep canonical and derived CSV outputs immutable from analyst generation.
+
+Implementation plan:
+
+1. Create `src/analysis.py`.
+2. Read only from `data/processed/` tables.
+3. Build compact context packets for the active team and league-wide watchlist.
+4. Generate analyst artifacts into `data/analysis/`.
+5. Add artifact validation before rendering.
+6. Render analysis into the browser from `data/analysis/`, not from ad hoc browser logic.
+7. Add tests proving artifacts cite deterministic rows and do not mutate processed facts.
 
 Data contracts:
 
+- Add `analysis_context_packets.json`.
+  - Purpose: machine-readable packets built from processed facts for analyst generation.
+  - Required fields: `packet_id`, `packet_type`, `roster_id`, `team_name`, `subject_id`, `subject_name`, `source_tables`, `evidence`, `risk`, `confidence`, `created_at`.
 - Add `daily_gm_brief.md`.
-- Add `trade_theses.json`.
+  - Purpose: readable summary of the active team's best opportunities and risks.
+  - Required front matter: `artifact_type`, `generated_at`, `roster_id`, `team_name`, `model_mode`, `source_tables`.
 - Add `target_theses.json`.
+  - Purpose: explained buy/breakout targets.
+  - Required fields: `thesis_id`, `roster_id`, `player_id`, `player_name`, `position`, `team_name`, `signal_label`, `approach`, `evidence`, `risk`, `confidence`, `source_trace`, `analysis_text`, `generated_at`.
 - Add `sell_theses.json`.
+  - Purpose: explained sell/trim candidates.
+  - Required fields: `thesis_id`, `roster_id`, `player_id`, `player_name`, `position`, `team_name`, `signal_label`, `sell_window`, `evidence`, `risk`, `confidence`, `source_trace`, `analysis_text`, `generated_at`.
+- Add `trade_theses.json`.
+  - Purpose: manager-aware thesis packets combining target/sell assets with manager tendencies.
+  - Required fields: `thesis_id`, `roster_id`, `target_manager_roster_id`, `target_manager_name`, `approach_type`, `assets_to_discuss`, `manager_signal`, `evidence`, `risk`, `confidence`, `source_trace`, `analysis_text`, `generated_at`.
 - Add `manager_dossiers.md`.
+  - Purpose: plain-language manager profiles grounded in behavior tables and event logs.
+  - Required front matter: `artifact_type`, `generated_at`, `source_tables`, `manager_count`.
 - Add `news_impact_brief.md`.
+  - Purpose: readable summary of recent news rows and possible league impact.
+  - Required front matter: `artifact_type`, `generated_at`, `source_tables`, `news_event_count`.
 - Add prompt/version metadata to each artifact.
+  - Required metadata: `analysis_version`, `generation_mode`, `prompt_version`, `source_tables`, `generated_at`.
+
+Analysis rules:
+
+- Every thesis must cite at least one deterministic source row through `source_trace`.
+- Every thesis must include `evidence`, `risk`, and `confidence`.
+- `analysis_text` may summarize and interpret, but must not invent stats, injuries, offers, accepted trades, messages, or ownership changes.
+- Analyst artifacts must be replace-on-refresh generated files.
+- Missing analysis artifacts must fail soft in the browser with a diagnostics row, not break Sleeper-generic views.
+- If future Codex prompt output is unavailable, deterministic template text is acceptable for V1.
 
 Browser changes:
 
@@ -275,12 +321,30 @@ Browser changes:
 - Add Target Thesis and Sell Thesis sections.
 - Add Manager Dossiers section.
 - Label all Codex-generated content as analyst interpretation.
+- Add analysis diagnostics:
+  - analysis artifact status
+  - generated timestamp
+  - target thesis count
+  - sell thesis count
+  - trade thesis count
+  - source tables used
+- Add filters:
+  - active team vs league
+  - thesis type
+  - confidence
+  - position
+- Keep the visual treatment simple and readable: thesis cards with headline, why it matters, evidence, risk, and confidence.
 
 Tests:
 
 - Analyst artifact shape validation.
 - Required evidence/risk/confidence fields.
 - Guardrail test that analyst output cannot claim a trade was sent, accepted, or executed.
+- Context packet tests confirming packets are built from processed tables only.
+- Source trace tests confirming every thesis points to deterministic source tables.
+- Browser tests confirming Analyst Brief, Target Thesis, Sell Thesis, Manager Dossiers, and analysis diagnostics render.
+- Missing-artifact tests confirming the browser still loads when `data/analysis/` is absent.
+- Idempotency test confirming regenerated artifacts replace prior output.
 
 Acceptance criteria:
 
@@ -288,11 +352,18 @@ Acceptance criteria:
 - Codex explanations cite signal/projection rows rather than inventing player takes.
 - Canonical tables are not mutated by Codex.
 - Browser clearly separates facts from interpretation.
+- The live app shows usable analysis for the active team after `python scripts/refresh_all.py`.
+- Each target/sell thesis has a source trace, risk note, confidence label, and concise explanation.
+- The browser remains useful if analysis artifacts are missing or stale.
+- Tests pass and production smoke passes after deploy.
 
 Non-goals:
 
 - No autonomous outbound messages.
 - No hidden prompt runs that write into canonical data.
+- No automated trade proposals.
+- No claims that a recommendation was sent, accepted, negotiated, or executed.
+- No new external data source ingestion in this sprint.
 
 ### Sprint 7: Automation And Hooks
 
