@@ -129,6 +129,7 @@ The first deliverable exports:
 - `sell_candidates.csv`
 - `projection_market_gaps.csv`
 - `team_fit_scores.csv`
+- `action_recommendations.csv`
 - `refresh_metadata.csv`
 
 Analysis artifacts are generated separately under `data/analysis/`:

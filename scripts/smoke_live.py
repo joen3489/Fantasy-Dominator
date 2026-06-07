@@ -8,6 +8,7 @@ import requests
 DEFAULT_URL = "https://fantasy-dominator-production.up.railway.app/"
 REQUIRED_MARKERS = [
     "Today's Board",
+    "Action Board",
     "brief-card",
     "Projection Board",
     "Signal Board",

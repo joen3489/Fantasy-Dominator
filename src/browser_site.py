@@ -45,6 +45,7 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
         "sell_candidates": _records(processed_dir / "sell_candidates.csv"),
         "projection_market_gaps": _records(processed_dir / "projection_market_gaps.csv"),
         "team_fit_scores": _records(processed_dir / "team_fit_scores.csv"),
+        "action_recommendations": _records(processed_dir / "action_recommendations.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -317,7 +318,7 @@ def _page(
     <section id="todays-board">
       <h2>Today's Board</h2>
       <div class="grid">
-        <div class="panel"><h3>Buy-Low Targets</h3><div id="today-buy-low"></div></div>
+        <div class="panel"><h3>Action Board</h3><div id="today-action-board"></div></div>
         <div class="panel"><h3>Sell Windows</h3><div id="today-sell-window"></div></div>
         <div class="panel"><h3>My Roster News</h3><div id="today-my-news"></div></div>
         <div class="panel"><h3>Trade Target News</h3><div id="today-target-news"></div></div>
@@ -547,6 +548,7 @@ def _page(
     const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'projected_fantasy_points', 'projected_ppg', 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
     const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
+    const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'action_score', 'projected_ppg', 'market_value', 'why', 'risk', 'confidence'];
     const analysis = app.analysis || {{}};
 
     function init() {{
@@ -732,8 +734,9 @@ def _page(
       const rankedGaps = sortRows(applySearch(tables.asset_market_gaps), ['market_gap_score']).reverse();
       const breakoutRows = signalBreakoutRows();
       const sellRows = signalSellRows();
-      const buyLowTargets = breakoutRows.length ? breakoutRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) !== state.teamId && String(row.opportunity_type).includes('buy')).slice(0, 5);
-      const sellWindows = sellRows.length ? sellRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
+      const actionRows = actionRecommendationRows();
+      const actionSellRows = actionRows.filter(row => row.action_label === 'sell_window');
+      const sellWindows = actionSellRows.length ? actionSellRows.slice(0, 5) : sellRows.length ? sellRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
       const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 5);
       const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 5);
       const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 5);
@@ -746,7 +749,7 @@ def _page(
       setText('metric-team-trades', teamTrades.length);
 
       document.getElementById('my-pick-alerts').innerHTML = list(myPicksAway.map(row => `${{row.pick_season}} round ${{row.round}}: ${{row.current_owner}}`));
-      document.getElementById('today-buy-low').innerHTML = opportunityCards(buyLowTargets, 'buy');
+      document.getElementById('today-action-board').innerHTML = actionCards(actionRows.slice(0, 8));
       document.getElementById('today-sell-window').innerHTML = opportunityCards(sellWindows, 'sell');
       document.getElementById('today-my-news').innerHTML = newsCards(myNews);
       document.getElementById('today-target-news').innerHTML = newsCards(targetNews);
@@ -959,6 +962,7 @@ def _page(
         {{ item: 'Projection season rows', value: tables.player_projection_season.length }},
         {{ item: 'Projection weekly rows', value: tables.player_projection_weekly.length }},
         {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
+        {{ item: 'Action recommendation rows', value: tables.action_recommendations.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
         {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},
         {{ item: 'Analysis artifacts', value: metadata.analysis_artifacts_status || analysis.status || 'missing' }},
@@ -983,6 +987,25 @@ def _page(
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         evidence: row.evidence || row.timeline_fit || row.source_trace || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function actionRecommendationRows() {{
+      const active = tables.action_recommendations.filter(row => Number(row.roster_id) === state.teamId);
+      return sortRows(applySearch(active), ['action_rank', 'action_score']).slice(0, 20);
+    }}
+
+    function actionCards(rows) {{
+      if (!rows.length) return '<p class="note">No action-ready recommendations found.</p>';
+      return `<div class="brief-list">${{rows.map(row => briefCard({{
+        title: `${{row.consumer_label || 'Monitor'}} - ${{row.player_name || 'Unknown player'}}`,
+        chips: [
+          row.position,
+          row.team_name,
+          row.action_score ? `score ${{row.action_score}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: `${{row.why || ''}} Evidence: ${{row.evidence || ''}} Risk: ${{row.risk || ''}}`
       }})).join('')}}</div>`;
     }}
 

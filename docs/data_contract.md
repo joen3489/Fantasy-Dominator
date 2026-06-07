@@ -115,6 +115,7 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `data/site/index.html` | Browser generation code | Primary browser workflow | Presentation only; reads processed tables |
 | `data/reports/weekly_hinkie_report.md` | Report generation code | Markdown strategy report | Presentation only; strategy overlay is allowed |
 | `data/processed/sleeper_dynasty.sqlite` | Refresh process | SQLite mirror of processed CSVs | Generated artifact; tables replaced on refresh |
+| `action_recommendations` | Deterministic signal code | Consumer-facing action labels from calibrated signal rows | Derived table; must include why, risk, confidence, evidence, and source trace |
 | `data/analysis/analysis_context_packets.json` | Analysis layer | Machine-readable context packets for analyst generation | Interpretation input only; built from processed tables |
 | `data/analysis/target_theses.json` | Codex analyst layer | Explained target theses from signal outputs | Interpretation only; must cite signal/projection evidence |
 | `data/analysis/sell_theses.json` | Codex analyst layer | Explained sell theses from signal outputs | Interpretation only; must cite signal/projection evidence |

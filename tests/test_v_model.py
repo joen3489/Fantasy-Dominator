@@ -49,6 +49,7 @@ EXPECTED_TABLE_COLUMNS = {
     "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "projection_market_gaps": ["player_id", "player_name", "position", "projected_fantasy_points", "projected_ppg", "market_value", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
     "team_fit_scores": ["roster_id", "team_name", "player_id", "player_name", "position", "timeline_fit_score", "need_fit_score", "liquidity_fit_score", "fit_label", "evidence", "risk", "confidence", "source_trace"],
+    "action_recommendations": ["roster_id", "team_name", "player_id", "player_name", "position", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"],
     "manager_profiles": ["roster_id", "display_name", "team_name", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
@@ -108,6 +109,7 @@ class VModelTests(unittest.TestCase):
             "sell_candidates": ["evidence", "risk", "confidence", "source_trace"],
             "projection_market_gaps": ["evidence", "risk", "confidence", "source_trace"],
             "team_fit_scores": ["evidence", "risk", "confidence", "source_trace"],
+            "action_recommendations": ["consumer_label", "why", "evidence", "risk", "confidence", "source_trace"],
         }
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
         for table, required_columns in expected.items():
@@ -206,7 +208,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Today's Board", html)
         self.assertIn("brief-card", html)
         self.assertIn("brief-list", html)
-        self.assertIn("Buy-Low Targets", html)
+        self.assertIn("Action Board", html)
+        self.assertNotIn("Buy-Low Targets", html)
         self.assertIn("Sell Windows", html)
         self.assertIn("My Roster News", html)
         self.assertIn("Trade Target News", html)
@@ -243,6 +246,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Projection season rows", html)
         self.assertIn("Projection Source Freshness", html)
         self.assertIn("Signal score rows", html)
+        self.assertIn("Action recommendation rows", html)
         self.assertIn("Breakout candidate rows", html)
         self.assertIn("Analysis artifacts", html)
         self.assertIn("Target thesis rows", html)
@@ -258,6 +262,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Projection Board", text)
         self.assertIn("Signal Board", text)
         self.assertIn("Analyst Brief", text)
+        self.assertIn("Action Board", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Diagnostics", text)
 
@@ -319,6 +324,53 @@ class VModelTests(unittest.TestCase):
         self.assertGreater(len(tables["breakout_candidates"]), 0)
         self.assertGreater(len(tables["sell_candidates"]), 0)
         self.assertIn("evidence", tables["player_signal_scores"].columns)
+        self.assertIn("action_recommendations", tables)
+        self.assertIn("consumer_label", tables["action_recommendations"].columns)
+
+    def test_action_labels_are_consumer_calibrated(self) -> None:
+        projections = pd.DataFrame(
+            [
+                {"player_id": "elite", "player_name": "Elite QB", "position": "QB", "roster_id": 2, "team_name": "Melkor Lord of Light", "projected_fantasy_points": 360, "projected_ppg": 21.2, "projection_confidence": "high", "source_trace": "projection"},
+                {"player_id": "rb", "player_name": "Aging RB", "position": "RB", "roster_id": 2, "team_name": "Melkor Lord of Light", "projected_fantasy_points": 240, "projected_ppg": 14.1, "projection_confidence": "high", "source_trace": "projection"},
+                {"player_id": "wr", "player_name": "Young WR", "position": "WR", "roster_id": 8, "team_name": "The Clapper", "projected_fantasy_points": 170, "projected_ppg": 10.0, "projection_confidence": "high", "source_trace": "projection"},
+                {"player_id": "noise", "player_name": "Rookie Noise", "position": "WR", "roster_id": 2, "team_name": "Melkor Lord of Light", "projected_fantasy_points": 0, "projected_ppg": 0, "projection_confidence": "low", "source_trace": "projection"},
+            ]
+        )
+        roster = pd.DataFrame(
+            [
+                {"player_id": "elite", "age": 25, "roster_id": 2, "team_name": "Melkor Lord of Light"},
+                {"player_id": "rb", "age": 29, "roster_id": 2, "team_name": "Melkor Lord of Light"},
+                {"player_id": "wr", "age": 23, "roster_id": 8, "team_name": "The Clapper"},
+                {"player_id": "noise", "age": 21, "roster_id": 2, "team_name": "Melkor Lord of Light"},
+            ]
+        )
+        market = pd.DataFrame(
+            [
+                {"player_id": "elite", "player_name": "Elite QB", "market_value": 8000, "source_trace": "market"},
+                {"player_id": "rb", "player_name": "Aging RB", "market_value": 1200, "source_trace": "market"},
+                {"player_id": "wr", "player_name": "Young WR", "market_value": 20, "source_trace": "market"},
+                {"player_id": "noise", "player_name": "Rookie Noise", "market_value": 60, "source_trace": "market"},
+            ]
+        )
+        needs = pd.DataFrame([{"roster_id": 2, "team_name": "Melkor Lord of Light", "team_shape": "rebuild_asset_bank"}])
+        behavior = pd.DataFrame(columns=["roster_id", "plain_language_label"])
+        news = pd.DataFrame(columns=["player_id", "impact_type"])
+
+        tables = build_signal_tables(
+            projections,
+            roster,
+            market,
+            needs,
+            behavior,
+            news,
+            {"current_team": {"roster_id": 2}, "strategy_profile": {"team_direction": "deep_rebuild"}},
+        )
+        actions = tables["action_recommendations"].set_index("player_id")
+
+        self.assertEqual(actions.loc["elite", "action_label"], "core_hold")
+        self.assertEqual(actions.loc["rb", "action_label"], "sell_window")
+        self.assertEqual(actions.loc["wr", "action_label"], "true_buy_low")
+        self.assertEqual(actions.loc["noise", "action_label"], "avoid_noise")
 
     def test_analysis_artifacts_explain_signals_without_mutating_facts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -374,6 +426,12 @@ class VModelTests(unittest.TestCase):
                 "league_news_impact": pd.DataFrame(
                     [
                         {"player_name": "Young WR", "evidence": "trending add", "risk": "medium", "confidence": "medium", "source_trace": "league_news_impact"}
+                    ]
+                ),
+                "action_recommendations": pd.DataFrame(
+                    [
+                        {"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Young WR", "position": "WR", "age": 23, "action_label": "true_buy_low", "consumer_label": "True Buy Low", "action_rank": 1, "action_score": 72, "projected_ppg": 10, "market_value": 25, "why": "Projection and market inputs suggest the price may lag the role or production.", "evidence": "ppg=12; market=25", "risk": "medium: verify role", "confidence": "high", "source_trace": "action_recommendations;player_projection_season"},
+                        {"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "2", "player_name": "Aging RB", "position": "RB", "age": 29, "action_label": "sell_window", "consumer_label": "Sell Window", "action_rank": 1, "action_score": 61, "projected_ppg": 12, "market_value": 40, "why": "Aging RB production is more valuable to contenders than to a rebuild timeline.", "evidence": "age=29; ppg=8", "risk": "medium: timing matters", "confidence": "medium", "source_trace": "action_recommendations;player_projection_season"},
                     ]
                 ),
             }
@@ -777,6 +835,9 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "timeline_fit_score": 85, "need_fit_score": 55, "liquidity_fit_score": 53, "fit_label": "strong_fit", "evidence": "fixture signal", "risk": "medium", "confidence": "high", "source_trace": "test"}]
         ).to_csv(processed / "team_fit_scores.csv", index=False)
+        pd.DataFrame(
+            [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "age": 25, "action_label": "core_hold", "consumer_label": "Core Hold", "action_rank": 2, "action_score": 148, "projected_ppg": 20.59, "market_value": 53, "why": "Keep this player as a roster pillar unless another manager overpays.", "evidence": "fixture signal", "risk": "medium", "confidence": "high", "source_trace": "test"}]
+        ).to_csv(processed / "action_recommendations.csv", index=False)
         pd.DataFrame(columns=["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"]).to_csv(
             processed / "player_usage_weekly.csv", index=False
         )

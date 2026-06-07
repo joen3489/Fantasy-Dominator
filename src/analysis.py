@@ -73,7 +73,14 @@ def build_context_packets(
     generated_at: str,
 ) -> list[dict[str, Any]]:
     packets: list[dict[str, Any]] = []
-    for row in _rows(dataframes.get("breakout_candidates", pd.DataFrame()).head(12)):
+    actions = dataframes.get("action_recommendations", pd.DataFrame())
+    target_rows = _analysis_action_rows(actions, {"true_buy_low", "deep_watch"})
+    sell_rows = _analysis_action_rows(actions, {"sell_window"})
+    if not target_rows:
+        target_rows = _rows(dataframes.get("breakout_candidates", pd.DataFrame()).head(12))
+    if not sell_rows:
+        sell_rows = _rows(dataframes.get("sell_candidates", pd.DataFrame()).head(12))
+    for row in target_rows[:12]:
         packets.append(
             {
                 "packet_id": f"target:{row.get('player_id', row.get('player_name', 'unknown'))}",
@@ -82,14 +89,14 @@ def build_context_packets(
                 "team_name": active_team_name,
                 "subject_id": str(row.get("player_id", "")),
                 "subject_name": row.get("player_name", ""),
-                "source_tables": "breakout_candidates;player_signal_scores;player_projection_season",
+                "source_tables": "action_recommendations;player_signal_scores;player_projection_season",
                 "evidence": row.get("evidence", ""),
                 "risk": row.get("risk", ""),
                 "confidence": row.get("confidence", ""),
                 "created_at": generated_at,
             }
         )
-    for row in _rows(dataframes.get("sell_candidates", pd.DataFrame()).head(12)):
+    for row in sell_rows[:12]:
         packets.append(
             {
                 "packet_id": f"sell:{row.get('player_id', row.get('player_name', 'unknown'))}",
@@ -98,7 +105,7 @@ def build_context_packets(
                 "team_name": active_team_name,
                 "subject_id": str(row.get("player_id", "")),
                 "subject_name": row.get("player_name", ""),
-                "source_tables": "sell_candidates;player_signal_scores;player_projection_season",
+                "source_tables": "action_recommendations;sell_candidates;player_signal_scores;player_projection_season",
                 "evidence": row.get("evidence", ""),
                 "risk": row.get("risk", ""),
                 "confidence": row.get("confidence", ""),
@@ -115,13 +122,13 @@ def build_target_theses(
     generated_at: str,
 ) -> list[dict[str, Any]]:
     theses: list[dict[str, Any]] = []
-    breakouts = dataframes.get("breakout_candidates", pd.DataFrame())
-    for index, row in enumerate(_rows(breakouts.head(16)), start=1):
+    actions = _analysis_action_rows(dataframes.get("action_recommendations", pd.DataFrame()), {"true_buy_low", "deep_watch"})
+    for index, row in enumerate(actions[:16], start=1):
         player = row.get("player_name", "Unknown player")
-        team = row.get("current_team_name", "")
-        score = row.get("breakout_score", "")
+        team = row.get("team_name") or row.get("current_team_name", "")
         evidence = str(row.get("evidence", ""))
         risk = str(row.get("risk", "medium"))
+        label = row.get("consumer_label", "Price Check")
         theses.append(
             {
                 "thesis_id": f"target-{index:03d}",
@@ -130,15 +137,15 @@ def build_target_theses(
                 "player_name": player,
                 "position": row.get("position", ""),
                 "team_name": team,
-                "signal_label": "breakout_target",
+                "signal_label": row.get("action_label", "price_check"),
                 "approach": _target_approach(row),
                 "evidence": evidence,
                 "risk": risk,
                 "confidence": row.get("confidence", "medium"),
                 "source_trace": row.get("source_trace", ""),
                 "analysis_text": (
-                    f"{player} is a target because the signal layer found a breakout score of {score}. "
-                    f"The clean angle is to price the player before the league fully reacts, while checking the evidence row for projection, market, and news inputs."
+                    f"Action: {label}. Why: {row.get('why', 'The calibrated action model sees a decision point.')} "
+                    f"Evidence: {evidence}. Risk: {risk}."
                 ),
                 "generated_at": generated_at,
             }
@@ -153,10 +160,9 @@ def build_sell_theses(
     generated_at: str,
 ) -> list[dict[str, Any]]:
     theses: list[dict[str, Any]] = []
-    sells = dataframes.get("sell_candidates", pd.DataFrame())
-    for index, row in enumerate(_rows(sells.head(16)), start=1):
+    sells = _analysis_action_rows(dataframes.get("action_recommendations", pd.DataFrame()), {"sell_window"})
+    for index, row in enumerate(sells[:16], start=1):
         player = row.get("player_name", "Unknown player")
-        score = row.get("sell_score", "")
         theses.append(
             {
                 "thesis_id": f"sell-{index:03d}",
@@ -164,16 +170,16 @@ def build_sell_theses(
                 "player_id": str(row.get("player_id", "")),
                 "player_name": player,
                 "position": row.get("position", ""),
-                "team_name": row.get("current_team_name", active_team_name),
-                "signal_label": "sell_candidate",
+                "team_name": row.get("team_name") or row.get("current_team_name", active_team_name),
+                "signal_label": row.get("action_label", "sell_window"),
                 "sell_window": _sell_window(row),
                 "evidence": row.get("evidence", ""),
                 "risk": row.get("risk", "medium"),
                 "confidence": row.get("confidence", "medium"),
                 "source_trace": row.get("source_trace", ""),
                 "analysis_text": (
-                    f"{player} is a sell-window candidate because the model assigned a sell score of {score}. "
-                    f"The thesis is about exploring market price and timing, not forcing a move."
+                    f"Action: Sell Window. Why: {row.get('why', 'The calibrated action model sees market-timing risk.')} "
+                    f"Evidence: {row.get('evidence', '')}. Risk: {row.get('risk', 'medium')}."
                 ),
                 "generated_at": generated_at,
             }
@@ -408,6 +414,7 @@ def _bullets(rows: list[dict[str, Any]], title_key: str, text_key: str) -> list[
 
 def _source_tables() -> list[str]:
     return [
+        "action_recommendations",
         "player_projection_season",
         "player_signal_scores",
         "breakout_candidates",
@@ -418,6 +425,12 @@ def _source_tables() -> list[str]:
     ]
 
 
+def _analysis_action_rows(frame: pd.DataFrame, labels: set[str]) -> list[dict[str, Any]]:
+    rows = _rows(frame)
+    filtered = [row for row in rows if str(row.get("action_label", "")) in labels]
+    return sorted(filtered, key=lambda row: (_int(row.get("action_rank")), -_num(row.get("action_score"))))
+
+
 def _int(value: Any) -> int:
     try:
         if value in ("", None) or pd.isna(value):
@@ -425,6 +438,15 @@ def _int(value: Any) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _num(value: Any) -> float:
+    try:
+        if value in ("", None) or pd.isna(value):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def build_default_analysis_artifacts(dataframes: dict[str, pd.DataFrame], config: dict[str, Any], active_roster_id: int | None) -> dict[str, Any]:

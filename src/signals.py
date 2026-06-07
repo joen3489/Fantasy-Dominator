@@ -30,12 +30,14 @@ def build_signal_tables(
     breakouts = build_breakout_candidates(scores)
     sells = build_sell_candidates(scores, config)
     fits = build_team_fit_scores(scores, team_needs_df, config)
+    actions = build_action_recommendations(scores, config)
     return {
         "player_signal_scores": scores,
         "breakout_candidates": breakouts,
         "sell_candidates": sells,
         "projection_market_gaps": gaps,
         "team_fit_scores": fits,
+        "action_recommendations": actions,
     }
 
 
@@ -214,6 +216,82 @@ def build_team_fit_scores(scores_df: pd.DataFrame, team_needs_df: pd.DataFrame, 
                 }
             )
     return pd.DataFrame(rows, columns=_fit_columns()).sort_values(["roster_id", "timeline_fit_score"], ascending=[True, False])
+
+
+def build_action_recommendations(scores_df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if scores_df.empty:
+        return pd.DataFrame(rows, columns=_action_columns())
+    current_roster = _int((config.get("current_team") or {}).get("roster_id"))
+    for _, row in scores_df.fillna("").iterrows():
+        action = _classify_action(row, current_roster)
+        rows.append(
+            {
+                "roster_id": row.get("roster_id", 0),
+                "team_name": row.get("team_name", ""),
+                "player_id": row.get("player_id", ""),
+                "player_name": row.get("player_name", ""),
+                "position": row.get("position", ""),
+                "age": row.get("age", 0),
+                "action_label": action["action_label"],
+                "consumer_label": action["consumer_label"],
+                "action_rank": action["action_rank"],
+                "action_score": action["action_score"],
+                "projected_ppg": row.get("projected_ppg", 0),
+                "market_value": row.get("market_value", 0),
+                "why": action["why"],
+                "evidence": row.get("evidence", ""),
+                "risk": action["risk"] or row.get("risk", ""),
+                "confidence": action["confidence"] or row.get("confidence", ""),
+                "source_trace": row.get("source_trace", ""),
+            }
+        )
+    return pd.DataFrame(rows, columns=_action_columns()).sort_values(["action_rank", "action_score"], ascending=[True, False])
+
+
+def _classify_action(row: pd.Series, current_roster: int) -> dict[str, Any]:
+    roster_id = _int(row.get("roster_id"))
+    own_player = bool(current_roster and roster_id == current_roster)
+    position = str(row.get("position", ""))
+    age = _num(row.get("age"))
+    ppg = _num(row.get("projected_ppg"))
+    market = _num(row.get("market_value"))
+    normalized_market = _normalize_market(market)
+    gap = _num(row.get("market_gap_score"))
+    breakout = _num(row.get("breakout_score"))
+    sell = _num(row.get("sell_score"))
+    timeline = _num(row.get("timeline_fit_score"))
+    confidence = str(row.get("confidence", "low")) or "low"
+
+    if confidence == "low" and ppg == 0:
+        return _action("avoid_noise", "Avoid / Noise", 6, normalized_market, "The row lacks enough projection support to deserve action now.", "high: sparse projection evidence", "low")
+    if own_player and sell >= 45:
+        return _action("sell_window", "Sell Window", 1, sell, "Shop this asset while the model sees timing or age-based value risk.", "medium: do not force a weak offer", confidence)
+    if own_player and position == "RB" and age >= 27:
+        return _action("sell_window", "Sell Window", 1, max(45.0, sell), "Aging RB production is more valuable to contenders than to a rebuild timeline.", "medium: market may discount age already", confidence)
+    if own_player and ppg >= 12 and (position == "QB" or age <= 28) and sell < 40:
+        return _action("core_hold", "Core Hold", 2, ppg * 3 + timeline, "Keep this player as a roster pillar unless another manager overpays.", row.get("risk", ""), confidence)
+    if own_player and ppg >= 10:
+        return _action("price_check", "Price Check", 3, ppg * 3 + sell, "Useful production, but the best move is to learn the market price before deciding.", row.get("risk", ""), confidence)
+    if not own_player and confidence != "low" and position in {"QB", "WR", "TE"} and age and age <= 25 and gap >= 30 and 0 < market <= 1500 and ppg >= 8:
+        return _action("true_buy_low", "True Buy Low", 1, gap + breakout, "Projection and market inputs suggest the price may lag the role or production.", row.get("risk", ""), confidence)
+    if not own_player and confidence != "low" and (gap >= 18 or breakout >= 60):
+        return _action("price_check", "Price Check", 3, gap + breakout * 0.4, "The player is interesting, but the market may already be efficient.", row.get("risk", ""), confidence)
+    if position in {"QB", "WR", "TE"} and age and age <= 25 and confidence != "high":
+        return _action("deep_watch", "Deep Watch", 4, max(breakout, timeline), "Young timeline fit, but the evidence is not strong enough for a confident move.", row.get("risk", ""), "low" if confidence == "low" else confidence)
+    return _action("monitor", "Monitor", 5, max(gap, breakout, ppg), "Track this player, but do not treat the current signal as action-ready.", row.get("risk", ""), confidence)
+
+
+def _action(action_label: str, consumer_label: str, rank: int, score: float, why: str, risk: Any, confidence: Any) -> dict[str, Any]:
+    return {
+        "action_label": action_label,
+        "consumer_label": consumer_label,
+        "action_rank": rank,
+        "action_score": round(float(score or 0), 2),
+        "why": why,
+        "risk": risk,
+        "confidence": confidence,
+    }
 
 
 def _projection_edge_score(ppg: float, confidence: str) -> float:
@@ -441,3 +519,7 @@ def _gap_columns() -> list[str]:
 
 def _fit_columns() -> list[str]:
     return ["roster_id", "team_name", "player_id", "player_name", "position", "timeline_fit_score", "need_fit_score", "liquidity_fit_score", "fit_label", "evidence", "risk", "confidence", "source_trace"]
+
+
+def _action_columns() -> list[str]:
+    return ["roster_id", "team_name", "player_id", "player_name", "position", "age", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"]
