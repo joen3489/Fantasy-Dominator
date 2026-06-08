@@ -18,10 +18,25 @@ CACHE_DIR = DATA_DIR / "cache"
 REPORTS_DIR = DATA_DIR / "reports"
 SITE_DIR = DATA_DIR / "site"
 ANALYSIS_DIR = DATA_DIR / "analysis"
+OPERATOR_DIR = DATA_DIR / "operator"
+OPERATOR_INBOX_DIR = OPERATOR_DIR / "inbox"
+OPERATOR_OUTBOX_DIR = OPERATOR_DIR / "outbox"
+OPERATOR_STATUS_DIR = OPERATOR_DIR / "status"
 
 
 def ensure_dirs() -> None:
-    for path in (RAW_DIR, RAW_EXTERNAL_DIR, PROCESSED_DIR, CACHE_DIR, REPORTS_DIR, SITE_DIR, ANALYSIS_DIR):
+    for path in (
+        RAW_DIR,
+        RAW_EXTERNAL_DIR,
+        PROCESSED_DIR,
+        CACHE_DIR,
+        REPORTS_DIR,
+        SITE_DIR,
+        ANALYSIS_DIR,
+        OPERATOR_INBOX_DIR,
+        OPERATOR_OUTBOX_DIR,
+        OPERATOR_STATUS_DIR,
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
 

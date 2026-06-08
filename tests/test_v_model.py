@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
+from src import operator
 from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
@@ -85,6 +88,130 @@ class VModelTests(unittest.TestCase):
 
         self.assertIn("Fantasy Dominator", html)
         self.assertIn("Data refresh is running", html)
+
+    def test_operator_token_is_required_for_write_actions(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(operator.operator_enabled())
+            self.assertFalse(operator.token_valid({"x-front-office-token": "anything"}))
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "secret"}, clear=True):
+            self.assertTrue(operator.operator_enabled())
+            self.assertTrue(operator.token_valid({"x-front-office-token": "secret"}))
+            self.assertFalse(operator.token_valid({"x-front-office-token": "wrong"}))
+
+    def test_operator_packet_loop_validates_insight_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            inbox = root / "operator" / "inbox"
+            outbox = root / "operator" / "outbox"
+            status_dir = root / "operator" / "status"
+            analysis.mkdir(parents=True)
+            (analysis / "manager_dossiers.json").write_text(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "roster_id": 2,
+                                "team_name": "Melkor Lord of Light",
+                                "tags": "rebuilder, pick accumulator",
+                                "confidence": "high",
+                                "risk": "medium",
+                                "analysis_text": "Manager shows rebuild signals.",
+                                "evidence": "future firsts owned=4",
+                                "source_trace": "manager_cycle_profiles",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (analysis / "player_dossiers.json").write_text(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "player_id": "1",
+                                "player_name": "Jayden Daniels",
+                                "tags": "franchise cornerstone, breakout candidate",
+                                "confidence": "high",
+                                "risk": "medium",
+                                "analysis_text": "Player has strong projection and market profile.",
+                                "evidence": "ppg=20.5; market=53",
+                                "source_trace": "player_dossiers",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.multiple(
+                operator,
+                ANALYSIS_DIR=analysis,
+                OPERATOR_INBOX_DIR=inbox,
+                OPERATOR_OUTBOX_DIR=outbox,
+                OPERATOR_STATUS_DIR=status_dir,
+                STATUS_PATH=status_dir / "operator_status.json",
+                INSIGHT_PACKET_PATH=inbox / "front_office_insight_packet.json",
+                INSIGHT_OUTPUT_PATH=outbox / "front_office_insight_cards.json",
+                VALIDATED_INSIGHTS_PATH=analysis / "validated_insight_cards.json",
+                INSIGHT_VALIDATION_PATH=analysis / "insight_card_validation.json",
+            ):
+                packet_result = operator.build_insight_packet()
+                packet = json.loads(operator.INSIGHT_PACKET_PATH.read_text(encoding="utf-8"))
+                self.assertEqual(packet_result["evidence_count"], 2)
+                self.assertIn("Do not claim manager intent as fact.", packet["instructions"]["forbidden"])
+
+                operator.INSIGHT_OUTPUT_PATH.parent.mkdir(parents=True)
+                operator.INSIGHT_OUTPUT_PATH.write_text(
+                    json.dumps(
+                        {
+                            "generation_mode": "operator_packet_loop",
+                            "items": [
+                                {
+                                    "card_id": "manager-2",
+                                    "entity_type": "manager",
+                                    "entity_id": "2",
+                                    "headline": "Rebuild-leaning manager with pick leverage",
+                                    "one_line_read": "Treat this team as a pick-rich counterparty, not a mystery box.",
+                                    "why_it_matters": "The evidence supports a trade approach built around timeline fit.",
+                                    "watchouts": "Confidence is an estimate from observed behavior.",
+                                    "confidence": "high",
+                                    "cited_evidence_ids": ["manager:2:1"],
+                                }
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                validation = operator.validate_insight_output()
+                self.assertTrue(validation["valid"])
+                self.assertTrue(operator.VALIDATED_INSIGHTS_PATH.exists())
+
+                operator.INSIGHT_OUTPUT_PATH.write_text(
+                    json.dumps(
+                        {
+                            "items": [
+                                {
+                                    "card_id": "bad-player",
+                                    "entity_type": "player",
+                                    "entity_id": "1",
+                                    "headline": "Guaranteed breakout",
+                                    "one_line_read": "This will happen.",
+                                    "why_it_matters": "Unsupported certainty.",
+                                    "watchouts": "",
+                                    "confidence": "high",
+                                    "cited_evidence_ids": ["missing"],
+                                }
+                            ]
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                invalid = operator.validate_insight_output()
+                self.assertFalse(invalid["valid"])
+                self.assertGreaterEqual(len(invalid["errors"]), 2)
 
     def test_processed_table_contract_columns_exist(self) -> None:
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"
@@ -473,6 +600,13 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Analysis artifacts", html)
         self.assertIn("Target thesis rows", html)
         self.assertIn("Recommendation packets", html)
+        self.assertIn("Operator Mode", html)
+        self.assertIn("FRONT_OFFICE_OPERATOR_TOKEN", html)
+        self.assertIn("Build Insight Packet", html)
+        self.assertIn("Import Insight JSON", html)
+        self.assertIn("evidence-drawer", html)
+        self.assertIn("topTags('manager'", html)
+        self.assertIn("insightFor('player'", html)
         self.assertEqual(manifest["appName"], "The Front Office")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
         self.assertIn("players", manifest["auditTables"])

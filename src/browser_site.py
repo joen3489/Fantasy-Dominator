@@ -89,6 +89,8 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "dailyGmBrief": _text_or_empty(analysis_dir / "daily_gm_brief.md"),
         "managerDossiers": _text_or_empty(analysis_dir / "manager_dossiers.md"),
         "newsImpactBrief": _text_or_empty(analysis_dir / "news_impact_brief.md"),
+        "insightCards": _json_items(analysis_dir / "validated_insight_cards.json"),
+        "insightValidation": _json_items(analysis_dir / "insight_card_validation.json"),
     }
 
 
@@ -283,6 +285,17 @@ def _page(
       font-size: 12px;
     }}
     select, input {{ min-height: 34px; padding: 6px 9px; min-width: 150px; }}
+    textarea {{
+      width: 100%;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      color: var(--ink);
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      resize: vertical;
+    }}
     input[type="search"] {{ min-width: min(420px, 100%); }}
     button {{ min-height: 34px; padding: 6px 10px; cursor: pointer; }}
     button.active {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
@@ -347,6 +360,22 @@ def _page(
       color: var(--muted);
       font-size: 13px;
       line-height: 1.4;
+    }}
+    .brief-card-summary {{
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--ink);
+    }}
+    .evidence-drawer {{
+      border-top: 1px solid var(--line);
+      margin-top: 4px;
+      padding-top: 7px;
+    }}
+    .evidence-drawer summary {{
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
     }}
     .lens-preset-row {{
       display: flex;
@@ -460,6 +489,7 @@ def _page(
       <div class="nav-group">
         <div class="nav-group-title">Data Room</div>
         <nav>
+          <a href="#operator-mode">Operator Mode</a>
           <a href="#diagnostics">Diagnostics</a>
           <a href="#draft">Draft</a>
         </nav>
@@ -574,6 +604,24 @@ def _page(
       <div class="grid">
         <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossiers"></div></div>
         <div class="panel"><h3>News Impact Brief</h3><div id="news-impact-brief"></div></div>
+      </div>
+    </section>
+
+    <section id="operator-mode">
+      <h2>Operator Mode</h2>
+      <p class="note">Personal-use update loop. These controls refresh facts, build Codex packets, validate insight output, and rebuild the browser. They require the operator token and never execute league transactions.</p>
+      <div class="panel">
+        <div class="controls">
+          <label>Operator token<input id="operator-token" type="password" placeholder="FRONT_OFFICE_OPERATOR_TOKEN"></label>
+          <button id="operator-refresh" type="button">Refresh Data</button>
+          <button id="operator-build-packet" type="button">Build Insight Packet</button>
+          <button id="operator-import" type="button">Import Insight JSON</button>
+          <button id="operator-validate" type="button">Validate Insights</button>
+          <button id="operator-rebuild" type="button">Rebuild Browser</button>
+          <button id="operator-reload" type="button">Reload Latest</button>
+        </div>
+        <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
+        <div id="operator-status-panel"></div>
       </div>
     </section>
 
@@ -764,7 +812,9 @@ def _page(
       analysisScope: 'team',
       analysisConfidence: 'ALL',
       lensPreset: 'Balanced Market',
-      lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }}
+      lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }},
+      operatorToken: '',
+      operatorStatus: null
     }};
 
     const marketLensPresets = {{
@@ -826,6 +876,7 @@ def _page(
       populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
       renderMarketLensPresetButtons();
       bindControls();
+      await refreshOperatorStatus();
       document.getElementById('loading-state').hidden = true;
       document.querySelector('main').hidden = false;
       render();
@@ -835,6 +886,79 @@ def _page(
       const response = await fetch(path, {{ cache: 'no-store' }});
       if (!response.ok) throw new Error(`${{response.status}} ${{response.statusText}}`);
       return response.json();
+    }}
+
+    async function refreshOperatorStatus() {{
+      try {{
+        state.operatorStatus = await fetchJson('/api/operator/status');
+      }} catch (error) {{
+        state.operatorStatus = {{ state: 'unavailable', message: `Operator API unavailable: ${{error.message}}`, operator_enabled: false }};
+      }}
+    }}
+
+    async function runOperatorAction(path) {{
+      if (!state.operatorToken) {{
+        state.operatorStatus = {{ state: 'blocked', message: 'Enter the operator token before running write actions.' }};
+        render();
+        return;
+      }}
+      try {{
+        const response = await fetch(path, {{
+          method: 'POST',
+          cache: 'no-store',
+          headers: {{ 'X-Front-Office-Token': state.operatorToken }}
+        }});
+        state.operatorStatus = await response.json();
+      }} catch (error) {{
+        state.operatorStatus = {{ state: 'failed', message: `Operator action failed: ${{error.message}}` }};
+      }}
+      render();
+      pollOperatorStatus();
+    }}
+
+    async function runOperatorImport() {{
+      if (!state.operatorToken) {{
+        state.operatorStatus = {{ state: 'blocked', message: 'Enter the operator token before importing insights.' }};
+        render();
+        return;
+      }}
+      let payload = {{}};
+      try {{
+        payload = JSON.parse(document.getElementById('operator-insight-json').value || '{{}}');
+      }} catch (error) {{
+        state.operatorStatus = {{ state: 'failed', message: `Insight JSON is invalid: ${{error.message}}` }};
+        render();
+        return;
+      }}
+      try {{
+        const response = await fetch('/api/operator/import-insights', {{
+          method: 'POST',
+          cache: 'no-store',
+          headers: {{
+            'Content-Type': 'application/json',
+            'X-Front-Office-Token': state.operatorToken
+          }},
+          body: JSON.stringify(payload)
+        }});
+        state.operatorStatus = await response.json();
+      }} catch (error) {{
+        state.operatorStatus = {{ state: 'failed', message: `Insight import failed: ${{error.message}}` }};
+      }}
+      render();
+      pollOperatorStatus();
+    }}
+
+    async function pollOperatorStatus() {{
+      for (let index = 0; index < 30; index += 1) {{
+        await sleep(2000);
+        await refreshOperatorStatus();
+        render();
+        if (!state.operatorStatus || state.operatorStatus.state !== 'running') return;
+      }}
+    }}
+
+    function sleep(ms) {{
+      return new Promise(resolve => setTimeout(resolve, ms));
     }}
 
     function ensureTables() {{
@@ -997,6 +1121,15 @@ def _page(
           render();
         }});
       }});
+      document.getElementById('operator-token').addEventListener('input', event => {{
+        state.operatorToken = event.target.value.trim();
+      }});
+      document.getElementById('operator-refresh').addEventListener('click', () => runOperatorAction('/api/operator/refresh'));
+      document.getElementById('operator-build-packet').addEventListener('click', () => runOperatorAction('/api/operator/build-packet'));
+      document.getElementById('operator-import').addEventListener('click', () => runOperatorImport());
+      document.getElementById('operator-validate').addEventListener('click', () => runOperatorAction('/api/operator/validate-insights'));
+      document.getElementById('operator-rebuild').addEventListener('click', () => runOperatorAction('/api/operator/rebuild-browser'));
+      document.getElementById('operator-reload').addEventListener('click', () => window.location.reload());
     }}
 
     function renderMarketLensPresetButtons() {{
@@ -1137,6 +1270,7 @@ def _page(
       document.getElementById('pick-table').innerHTML = table(filteredPicks(), pickColumns);
       document.getElementById('trade-table').innerHTML = table(filteredTrades(), tradeColumns);
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
+      document.getElementById('operator-status-panel').innerHTML = operatorPanel();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
     }}
@@ -1265,6 +1399,26 @@ def _page(
       const summary = `Preset: ${{state.lensPreset}}. Weight total: ${{total}}. Scenario rows: ${{rows.length}}. Degraded rows: ${{degraded}}.`;
       const warning = total === 100 ? 'Weights are valid.' : 'Weights should sum to 100 before treating rankings as comparable.';
       return `${{escapeHtml(summary)}}<br>${{escapeHtml(warning)}}<br><span class="joke">This is the argument simulator. It changes rankings, not reality.</span>`;
+    }}
+
+    function operatorPanel() {{
+      const status = state.operatorStatus || {{ state: 'unknown', message: 'Operator status has not loaded yet.' }};
+      const rows = [
+        {{ item: 'State', value: status.state || 'unknown' }},
+        {{ item: 'Job', value: status.job || 'none' }},
+        {{ item: 'Message', value: status.message || '' }},
+        {{ item: 'Updated at', value: status.updated_at || status.generated_at || '' }},
+        {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
+        {{ item: 'Packet path', value: status.packet_path || '' }},
+        {{ item: 'Output path', value: status.output_path || '' }},
+        {{ item: 'Validated path', value: status.validated_path || '' }},
+        {{ item: 'Evidence count', value: status.evidence_count || '' }}
+      ];
+      const validation = status.validation || {{}};
+      const errors = validation.errors || status.errors || [];
+      return table(rows, ['item', 'value']) + (errors.length
+        ? `<details class="evidence-drawer" open><summary>Validation Errors</summary><div class="brief-card-evidence">${{escapeHtml(errors.join('; '))}}</div></details>`
+        : '<p class="note">No operator validation errors reported.</p>');
     }}
 
     function filteredNewsImpact() {{
@@ -1621,20 +1775,38 @@ def _page(
       }})).join('')}}</div>`;
     }}
 
+    function insightFor(entityType, entityId) {{
+      const id = String(entityId || '');
+      return (analysis.insightCards || []).find(row => String(row.entity_type || '') === entityType && String(row.entity_id || '') === id) || {{}};
+    }}
+
+    function topTags(entityType, entityId, limit) {{
+      const id = String(entityId || '');
+      const table = entityType === 'manager' ? tables.manager_profile_tags : tables.player_profile_tags;
+      return table
+        .filter(row => String(row.entity_id || '') === id)
+        .sort((a, b) => num(b.score) - num(a.score))
+        .slice(0, limit);
+    }}
+
     function activeManagerDossier() {{
       const cycle = tables.manager_cycle_profiles.find(row => Number(row.roster_id) === state.teamId) || {{}};
-      const tags = tables.manager_profile_tags.filter(row => Number(row.entity_id) === state.teamId).slice(0, 8);
+      const tags = topTags('manager', state.teamId, 5);
+      const insight = insightFor('manager', state.teamId);
       if (!cycle.team_name && !tags.length) return '<p class="note">No manager profile found.</p>';
       return briefCard({{
-        title: cycle.team_name || activeTeamName(),
+        title: insight.headline || cycle.team_name || activeTeamName(),
         chips: [
           cycle.dynasty_cycle,
           cycle.trade_temperature,
           cycle.pick_posture,
           cycle.waiver_posture,
+          ...tags.map(row => row.tag),
           cycle.confidence ? `confidence ${{cycle.confidence}}` : ''
         ],
-        evidence: `${{cycle.evidence || ''}} Tags: ${{tags.map(row => row.tag).join(', ') || 'none'}}. Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`
+        summary: insight.one_line_read || `Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`,
+        watchouts: insight.watchouts || 'Treat this as a tendency estimate, not manager intent.',
+        evidence: `${{cycle.evidence || ''}} Tags: ${{tags.map(row => `${{row.tag}} (${{row.score}})`).join(', ') || 'none'}}. Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`
       }});
     }}
 
@@ -1647,7 +1819,8 @@ def _page(
           row.score ? `score ${{row.score}}` : '',
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
-        evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
+        summary: row.risk || 'Evidence-backed tag.',
+        evidence: row.evidence || 'No evidence provided.'
       }})).join('')}}</div>`;
     }}
 
@@ -1661,15 +1834,17 @@ def _page(
         tagsByPlayer.set(key, list);
       }});
       return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: row.player_name || 'Unknown player',
+        title: (insightFor('player', row.player_id).headline || row.player_name || 'Unknown player'),
         chips: [
           row.position,
           row.market_value ? `market ${{row.market_value}}` : '',
           row.projected_ppg ? `ppg ${{row.projected_ppg}}` : '',
           row.projection_confidence ? `projection ${{row.projection_confidence}}` : '',
-          (tagsByPlayer.get(String(row.player_id || '')) || []).slice(0, 2).join(', ')
+          ...(topTags('player', row.player_id, 4).map(tag => tag.tag))
         ],
-        evidence: `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
+        summary: insightFor('player', row.player_id).one_line_read || `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}.`,
+        watchouts: insightFor('player', row.player_id).watchouts || 'Player tags are prompts for review, not outcome guarantees.',
+        evidence: `Market: ${{row.market_value || 'unknown'}}. PPG: ${{row.projected_ppg || 'unknown'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
       }})).join('')}}</div>`;
     }}
 
@@ -1765,10 +1940,15 @@ def _page(
 
     function briefCard(card) {{
       const chips = (card.chips || []).filter(value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0');
+      const summary = card.summary || card.oneLine || '';
+      const watchouts = card.watchouts ? `<div class="brief-card-evidence"><strong>Watch:</strong> ${{escapeHtml(card.watchouts)}}</div>` : '';
+      const details = card.details || card.evidence || '';
       return `<article class="brief-card">
         <div class="brief-card-title">${{escapeHtml(card.title || 'Untitled')}}</div>
         <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
-        <div class="brief-card-evidence">${{escapeHtml(card.evidence || '')}}</div>
+        ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
+        ${{watchouts}}
+        ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
       </article>`;
     }}
 
