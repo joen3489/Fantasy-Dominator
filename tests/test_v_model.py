@@ -782,6 +782,13 @@ class VModelTests(unittest.TestCase):
         self.assertIn("evidence-drawer", html)
         self.assertIn("topTags('manager'", html)
         self.assertIn("insightFor('player'", html)
+        # Sprint 15 visual system: color-by-category, rank/headshot media, and
+        # delta/score table cells all route through these shared helpers -- guard
+        # against an accidental deletion the way the other function-name checks do.
+        self.assertIn("function categoryFor", html)
+        self.assertIn("function playerHeadshotUrl", html)
+        self.assertIn("function renderCell", html)
+        self.assertIn("cat-${bucket}", html)
         self.assertEqual(manifest["appName"], "The Front Office")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
         self.assertIn("players", manifest["auditTables"])

@@ -745,6 +745,30 @@ Non-goals:
 - News Desk's own relevance ranking (it's a reference/browse log, not a priority surface; the tables feeding Today's Board already filter correctly).
 - Any change to Sprint 11's Market Lens Lab, which was already found to genuinely work as specced.
 
+### Sprint 15: Dense-Terminal Visual System
+
+Goal: fix a presentation problem Sprint 14 didn't touch -- every card and table on the page looked visually identical regardless of meaning (a buy signal, a sell signal, and a news item all rendered the same way; you had to read the title text to tell them apart), and zero player imagery existed anywhere despite `player_id` already being present on nearly every row. Scoped after the user asked for the site to "feel good to use," referencing other fantasy products (KeepTradeCut's rank-forward ranked-list layout, FantasyPros' tiered color-banding, Sleeper's avatar-first identification, ESPN/Yahoo's directional delta arrows, PFF's coarse score-tile treatment) rather than reinventing UI patterns from scratch. Chose "dense pro terminal" posture over a mobile-casual redesign, matching actual usage (desktop, Tuesday/Wednesday decision-making) and preserving the existing "Dynasty Command" brand identity.
+
+Key deliverables:
+
+- Two shared JS rendering primitives (`briefCard()`, `table()`) upgraded once, uplifting all ~19 sections that use them rather than a section-by-section rewrite. `briefCard()` gained three backward-compatible optional fields: `category` (drives a `cat-${bucket}` class and 4px left-border accent color), `rank` (KeepTradeCut-style dominant ordinal number), `playerId` (44px Sleeper headshot via `https://sleepercdn.com/content/nfl/players/thumb/{player_id}.jpg`, with an `onerror` fallback to a text-initials avatar so a missing photo never shows a broken image). `table()` gained an optional per-column `{ field, kind: 'delta' | 'score' }` config for genuinely signed gap/edge columns (directional arrow, colored by sign) and 0-100 level scores (PFF-style color-filled tile, banded at 70/40 against this app's existing high/medium/low confidence vocabulary).
+- New `categoryFor(sourceHint, rawValue)` helper normalizes every categorical vocabulary already used across the app (`action_label`, `edge_type`, `signal_label`, `scenario_label`, `dynasty_cycle`, manager tags, player tags) into six consistent buckets (buy/sell/hold/watch/info/alert), reusing the existing brand palette for three of them (`--accent` green = buy, `--accent-2` rust = sell, `--gold` = watch) and adding two new low-saturation tokens for the two buckets with no existing analog (`--hold` steel blue, `--alert` plum).
+- All 8 `briefCard`-calling functions and 7 `table` column arrays with meaningful gap/score columns migrated to the new fields; identity/reference tables (roster, picks, trades, waivers, diagnostics, draft) intentionally left as plain tables.
+
+Tests:
+
+- New assertions in `test_browser_surface_contains_workflow_and_diagnostics` guard the new shared helper function names (`categoryFor`, `playerHeadshotUrl`, `renderCell`) and the `cat-${bucket}` class construction, mirroring the existing `"function priorityCards"` pattern.
+
+Acceptance criteria:
+
+- Verified against real production data via live browser DOM inspection (not just HTML-string assertions, per the Sprint 14 lesson that runtime JS bugs are invisible to the test suite): category colors resolve correctly from real rows (a `rebuild`-cycle manager's dossier card renders `cat-sell`, a `true_buy_low` action renders `cat-buy`), rank numbers render sequentially, headshots load real images keyed by real `player_id` values, the broken-image fallback renders initials instead of a broken-image icon, score tiles band correctly, delta arrows point the correct direction, and zero console errors occur on load or after a filter/scope interaction.
+- Existing table/card contracts are unchanged -- this is presentation-layer only, no Python data tables were added, removed, or restructured.
+
+Non-goals:
+
+- Scheduled/automatic refresh cadence (still the same standing follow-on from Sprint 14, not touched here either).
+- Cleanup of the `todayManagerColumns`/`todayOpportunityColumns`/`todayNewsColumns` dead constants left over from Sprint 14's board consolidation -- unused but harmless, out of scope for a visual-only pass.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

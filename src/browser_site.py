@@ -205,6 +205,34 @@ def _page(
       --accent-2: #a23f2d;
       --rail: #202722;
       --gold: #c49b44;
+
+      --buy: var(--accent);
+      --buy-bg: #e4efe9;
+      --sell: var(--accent-2);
+      --sell-bg: #f4e3dd;
+      --watch: var(--gold);
+      --watch-bg: #f6ecd8;
+      --hold: #35506b;
+      --hold-bg: #e2e8ee;
+      --info: var(--muted);
+      --info-bg: #eceeec;
+      --alert: #8a2f5c;
+      --alert-bg: #f1e0ea;
+
+      --rank-size-lg: 28px;
+      --rank-size-md: 22px;
+      --rank-weight: 800;
+      --rank-color: var(--ink);
+      --rank-muted: var(--muted);
+
+      --headshot-size: 44px;
+      --headshot-radius: 6px;
+      --headshot-fallback-bg: var(--rail);
+      --headshot-fallback-ink: #f8f4ea;
+
+      --tile-size: 30px;
+      --tile-radius: 6px;
+      --tile-font-size: 12px;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -333,12 +361,86 @@ def _page(
     }}
     .brief-card {{
       border: 1px solid var(--line);
+      border-left: 4px solid var(--info);
       border-radius: 8px;
       background: #fbfcf8;
       padding: 11px 12px;
       display: grid;
-      gap: 7px;
+      grid-template-columns: minmax(0, auto) 1fr;
+      gap: 10px;
+      align-items: start;
     }}
+    .brief-card.cat-buy {{ border-left-color: var(--buy); }}
+    .brief-card.cat-sell {{ border-left-color: var(--sell); }}
+    .brief-card.cat-hold {{ border-left-color: var(--hold); }}
+    .brief-card.cat-watch {{ border-left-color: var(--watch); }}
+    .brief-card.cat-info {{ border-left-color: var(--info); }}
+    .brief-card.cat-alert {{ border-left-color: var(--alert); }}
+    .brief-card-media {{
+      display: grid;
+      gap: 6px;
+      justify-items: center;
+      align-content: start;
+    }}
+    .brief-card-body {{
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }}
+    .brief-card-rank {{
+      font-size: var(--rank-size-md);
+      font-weight: var(--rank-weight);
+      color: var(--rank-muted);
+      line-height: 1;
+      text-align: center;
+    }}
+    .brief-card-rank.brief-card-rank-top {{
+      font-size: var(--rank-size-lg);
+      color: var(--rank-color);
+    }}
+    .brief-card-headshot {{
+      width: var(--headshot-size);
+      height: var(--headshot-size);
+    }}
+    .headshot-img {{
+      width: var(--headshot-size);
+      height: var(--headshot-size);
+      object-fit: cover;
+      border-radius: var(--headshot-radius);
+      background: var(--headshot-fallback-bg);
+      display: block;
+    }}
+    .headshot-fallback {{
+      width: var(--headshot-size);
+      height: var(--headshot-size);
+      border-radius: var(--headshot-radius);
+      background: var(--headshot-fallback-bg);
+      color: var(--headshot-fallback-ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 800;
+    }}
+    .delta-cell {{ font-variant-numeric: tabular-nums; }}
+    .delta-up {{ color: var(--buy); font-weight: 700; }}
+    .delta-down {{ color: var(--sell); font-weight: 700; }}
+    .delta-flat {{ color: var(--muted); }}
+    .score-tile {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: var(--tile-size);
+      height: var(--tile-size);
+      border-radius: var(--tile-radius);
+      padding: 0 6px;
+      font-size: var(--tile-font-size);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }}
+    .score-tile.score-high {{ background: var(--buy-bg); color: var(--buy); }}
+    .score-tile.score-mid {{ background: var(--watch-bg); color: #7a5f28; }}
+    .score-tile.score-low {{ background: var(--sell-bg); color: var(--sell); }}
     .brief-card-title {{
       font-weight: 700;
       line-height: 1.25;
@@ -831,13 +933,13 @@ def _page(
     const tradeColumns = ['week', 'created_datetime', 'team_a_name', 'team_a_players_received', 'team_a_picks_received', 'team_a_faab_received', 'team_b_name', 'team_b_players_received', 'team_b_picks_received', 'team_b_faab_received'];
     const waiverColumns = ['week', 'team_name', 'player_added', 'player_dropped', 'waiver_bid', 'status', 'failure_reason'];
     const draftColumns = ['pick_no', 'round', 'roster_id', 'player_name', 'position', 'nfl_team'];
-    const marketGapColumns = ['opportunity_type', 'target_team', 'asset_type', 'asset_name', 'position', 'market_value', 'market_gap_score', 'timeline_fit', 'evidence', 'risk', 'confidence'];
-    const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', 'our_value_score', 'market_consensus_value', 'estimated_owner_value_score', 'trade_edge_score', 'evidence', 'risk', 'confidence'];
-    const scenarioColumns = ['scenario_label', 'target_team', 'player_name', 'position', 'scenario_score', 'canonical_model', 'market_component', 'projection_component', 'manager_component', 'timeline_component', 'news_component', 'scenario_warning', 'confidence'];
+    const marketGapColumns = ['opportunity_type', 'target_team', 'asset_type', 'asset_name', 'position', 'market_value', {{ field: 'market_gap_score', kind: 'delta' }}, 'timeline_fit', 'evidence', 'risk', 'confidence'];
+    const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', {{ field: 'our_value_score', kind: 'score' }}, {{ field: 'market_consensus_value', kind: 'score' }}, {{ field: 'estimated_owner_value_score', kind: 'score' }}, {{ field: 'trade_edge_score', kind: 'delta' }}, 'evidence', 'risk', 'confidence'];
+    const scenarioColumns = ['scenario_label', 'target_team', 'player_name', 'position', {{ field: 'scenario_score', kind: 'score' }}, 'canonical_model', {{ field: 'market_component', kind: 'score' }}, {{ field: 'projection_component', kind: 'score' }}, {{ field: 'manager_component', kind: 'score' }}, {{ field: 'timeline_component', kind: 'score' }}, {{ field: 'news_component', kind: 'score' }}, 'scenario_warning', 'confidence'];
     const assetLedgerColumns = ['asset_type', 'asset_name', 'position', 'market_value', 'liquidity_tier', 'timeline_fit', 'source_trace'];
     const opportunityColumns = ['action_type', 'target_team', 'asset_in', 'asset_out', 'manager_signal', 'evidence', 'risk', 'confidence', 'source_trace'];
     const marketConsensusColumns = ['player_name', 'position', 'consensus_value', 'source_count', 'disagreement_score', 'best_source', 'confidence', 'source_trace'];
-    const managerSignalColumns = ['team_name', 'trade_activity_score', 'pick_buyer_score', 'pick_seller_score', 'faab_aggression_score', 'waiver_activity_score', 'plain_language_label', 'evidence'];
+    const managerSignalColumns = ['team_name', {{ field: 'trade_activity_score', kind: 'score' }}, {{ field: 'pick_buyer_score', kind: 'score' }}, {{ field: 'pick_seller_score', kind: 'score' }}, {{ field: 'faab_aggression_score', kind: 'score' }}, {{ field: 'waiver_activity_score', kind: 'score' }}, 'plain_language_label', 'evidence'];
     const managerValuationColumns = ['team_name', 'asset_type', 'position_group', 'preference_score', 'evidence_count', 'confidence', 'label', 'evidence'];
     const managerEventColumns = ['event_type', 'week', 'team_name', 'counterparty', 'players_in', 'picks_in', 'faab_in', 'players_out', 'picks_out', 'faab_out', 'evidence'];
     const sourceColumns = ['source', 'dataset', 'status', 'row_count', 'checked_at', 'source_url', 'cache_path'];
@@ -846,9 +948,9 @@ def _page(
     const todayOpportunityColumns = ['opportunity_type', 'target_team', 'asset_name', 'position', 'market_gap_score', 'evidence', 'risk', 'confidence'];
     const todayNewsColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
     const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
-    const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'projected_fantasy_points', 'projected_ppg', 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
-    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', 'gap_score', 'gap_label', 'risk', 'confidence', 'evidence'];
-    const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', 'timeline_fit_score', 'need_fit_score', 'liquidity_fit_score', 'risk', 'confidence', 'evidence'];
+    const projectionColumns = ['player_name', 'position', 'team', 'team_name', {{ field: 'projected_fantasy_points', kind: 'score' }}, {{ field: 'projected_ppg', kind: 'score' }}, 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
+    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', {{ field: 'gap_score', kind: 'delta' }}, 'gap_label', 'risk', 'confidence', 'evidence'];
+    const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', {{ field: 'timeline_fit_score', kind: 'score' }}, {{ field: 'need_fit_score', kind: 'score' }}, {{ field: 'liquidity_fit_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
     const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'action_score', 'projected_ppg', 'market_value', 'why', 'risk', 'confidence'];
     const managerCycleColumns = ['team_name', 'dynasty_cycle', 'trade_temperature', 'pick_posture', 'waiver_posture', 'likely_needs', 'likely_sells', 'confidence', 'evidence'];
     const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
@@ -1266,11 +1368,11 @@ def _page(
       document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
       document.getElementById('active-manager-dossier').innerHTML = activeManagerDossier();
-      document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16));
+      document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16), false);
       document.getElementById('manager-cycle-table').innerHTML = table(filteredManagerCycles(), managerCycleColumns);
       document.getElementById('manager-profile-tag-table').innerHTML = table(filteredManagerTags(), profileTagColumns);
       document.getElementById('player-dossier-cards').innerHTML = playerDossierCards(filteredPlayerDossiers().slice(0, 12));
-      document.getElementById('player-tag-cards').innerHTML = profileTagCards(filteredPlayerTags().slice(0, 18));
+      document.getElementById('player-tag-cards').innerHTML = profileTagCards(filteredPlayerTags().slice(0, 18), true);
       document.getElementById('player-dossier-table').innerHTML = table(filteredPlayerDossiers(), playerDossierColumns);
       document.getElementById('player-transaction-history-table').innerHTML = table(filteredPlayerHistory(), playerHistoryColumns);
       document.getElementById('manager-valuation-table').innerHTML = table(applySearch(tables.manager_valuation_profiles), managerValuationColumns);
@@ -1393,8 +1495,11 @@ def _page(
 
     function scenarioCards(rows) {{
       if (!rows.length) return '<p class="note">No scenario rows found for this lens.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
+      return `<div class="brief-list">${{rows.map((row, index) => briefCard({{
         title: `${{row.player_name || 'Unknown asset'}} - ${{row.target_team || 'Unknown team'}}`,
+        category: categoryFor('scenario_label', row.scenario_label),
+        rank: index + 1,
+        playerId: row.player_id,
         chips: [
           row.scenario_label,
           row.position,
@@ -1664,8 +1769,11 @@ def _page(
 
     function priorityCards(rows) {{
       if (!rows.length) return '<p class="note">No high-priority items right now.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
+      return `<div class="brief-list">${{rows.map((row, index) => briefCard({{
         title: `${{row.item_type_label || 'Item'}} - ${{row.entity_name || 'Unknown'}}`,
+        category: categoryFor('item_type', row.item_type),
+        rank: index + 1,
+        playerId: row.entity_type === 'player' ? row.entity_id : null,
         chips: [
           row.team_name,
           row.priority_score !== undefined && row.priority_score !== null && row.priority_score !== '' ? `priority ${{row.priority_score}}` : '',
@@ -1678,8 +1786,11 @@ def _page(
 
     function counterpartyCards(rows) {{
       if (!rows.length) return '<p class="note">No counterparty edge rows found.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
+      return `<div class="brief-list">${{rows.map((row, index) => briefCard({{
         title: `${{row.player_name || 'Unknown player'}} - ${{row.target_team || 'Unknown manager'}}`,
+        category: categoryFor('edge_type', row.edge_type),
+        rank: index + 1,
+        playerId: row.player_id,
         chips: [
           row.edge_type,
           row.position,
@@ -1692,8 +1803,12 @@ def _page(
 
     function signalCards(rows, mode) {{
       if (!rows.length) return '<p class="note">No signal rows found.</p>';
-      return `<div class="brief-list">${{rows.slice(0, 8).map(row => briefCard({{
+      const bucket = categoryFor('mode', mode);
+      return `<div class="brief-list">${{rows.slice(0, 8).map((row, index) => briefCard({{
         title: `${{row.player_name || 'Unknown player'}}${{row.current_team_name ? ` - ${{row.current_team_name}}` : ''}}`,
+        category: bucket,
+        rank: index + 1,
+        playerId: row.player_id,
         chips: [
           mode,
           row.position,
@@ -1708,8 +1823,11 @@ def _page(
 
     function thesisCards(rows, mode) {{
       if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
+      const bucket = categoryFor('mode', mode);
       return `<div class="brief-list">${{rows.map(row => briefCard({{
         title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',
+        category: categoryFor('signal_label', row.signal_label) !== 'info' ? categoryFor('signal_label', row.signal_label) : bucket,
+        playerId: row.player_id,
         chips: [
           mode,
           row.position,
@@ -1748,6 +1866,7 @@ def _page(
       if (!cycle.team_name && !tags.length) return '<p class="note">No manager profile found.</p>';
       return briefCard({{
         title: insight.headline || cycle.team_name || activeTeamName(),
+        category: categoryFor('dynasty_cycle', cycle.dynasty_cycle),
         chips: [
           cycle.dynasty_cycle,
           cycle.trade_temperature,
@@ -1762,10 +1881,12 @@ def _page(
       }});
     }}
 
-    function profileTagCards(rows) {{
+    function profileTagCards(rows, isPlayer) {{
       if (!rows.length) return '<p class="note">No profile tags found.</p>';
       return `<div class="brief-list">${{rows.map(row => briefCard({{
         title: row.entity_name || 'Unknown',
+        category: categoryFor('tag', row.tag),
+        playerId: isPlayer ? row.entity_id : null,
         chips: [
           row.tag,
           row.score ? `score ${{row.score}}` : '',
@@ -1787,6 +1908,8 @@ def _page(
       }});
       return `<div class="brief-list">${{rows.map(row => briefCard({{
         title: (insightFor('player', row.player_id).headline || row.player_name || 'Unknown player'),
+        category: categoryFor('signal_label', row.signal_label),
+        playerId: row.player_id,
         chips: [
           row.position,
           row.market_value ? `market ${{row.market_value}}` : '',
@@ -1891,23 +2014,40 @@ def _page(
     }}
 
     function briefCard(card) {{
+      const bucket = card.category || 'info';
+      const rankNum = Number(card.rank);
+      const rank = card.rank && Number.isFinite(rankNum) ? rankNum : null;
+      const playerId = card.playerId || null;
+
       const chips = (card.chips || []).filter(value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0');
       const summary = card.summary || card.oneLine || '';
       const watchouts = card.watchouts ? `<div class="brief-card-evidence"><strong>Watch:</strong> ${{escapeHtml(card.watchouts)}}</div>` : '';
       const details = card.details || card.evidence || '';
-      return `<article class="brief-card">
-        <div class="brief-card-title">${{escapeHtml(card.title || 'Untitled')}}</div>
-        <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
-        ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
-        ${{watchouts}}
-        ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
+
+      const rankBlock = rank
+        ? `<div class="brief-card-rank ${{rank <= 3 ? 'brief-card-rank-top' : ''}}">${{rank}}</div>`
+        : '';
+      const headshotBlock = playerId
+        ? `<div class="brief-card-headshot">${{headshotImg(playerId, card.title || '')}}</div>`
+        : '';
+      const mediaBlock = `<div class="brief-card-media">${{rankBlock}}${{headshotBlock}}</div>`;
+
+      return `<article class="brief-card cat-${{bucket}}">
+        ${{mediaBlock}}
+        <div class="brief-card-body">
+          <div class="brief-card-title">${{escapeHtml(card.title || 'Untitled')}}</div>
+          <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
+          ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
+          ${{watchouts}}
+          ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
+        </div>
       </article>`;
     }}
 
     function table(rows, columns) {{
       if (!rows.length) return '<p class="note">No rows found.</p>';
-      const head = columns.map(column => `<th>${{escapeHtml(label(column))}}</th>`).join('');
-      const body = rows.map(row => `<tr>${{columns.map(column => `<td>${{formatCell(row[column])}}</td>`).join('')}}</tr>`).join('');
+      const head = columns.map(column => `<th>${{escapeHtml(columnLabel(column))}}</th>`).join('');
+      const body = rows.map(row => `<tr>${{columns.map(column => `<td>${{renderCell(row, column)}}</td>`).join('')}}</tr>`).join('');
       return `<div class="table-wrap"><table><thead><tr>${{head}}</tr></thead><tbody>${{body}}</tbody></table></div>`;
     }}
 
@@ -1961,6 +2101,92 @@ def _page(
     function label(value) {{
       if (value === 'ALL') return 'All';
       return String(value).replaceAll('_', ' ').replace(/\\b\\w/g, letter => letter.toUpperCase());
+    }}
+
+    const CATEGORY_BUCKETS = {{
+      true_buy_low: 'buy', breakout_target: 'buy', we_may_value_more: 'buy', buy_or_watch: 'buy',
+      breakout: 'buy', target: 'buy', contender: 'buy', 'pick spender': 'buy', 'veteran buyer': 'buy',
+      'breakout candidate': 'buy', 'post-hype sleeper': 'buy', 'emerging role': 'buy', 'injury discount': 'buy',
+      scenario_target: 'buy',
+
+      sell_window: 'sell', sell_candidate: 'sell', owner_may_overvalue: 'sell', do_not_chase: 'sell',
+      sell: 'sell', rebuild: 'sell', rebuilder: 'sell', 'declining asset': 'sell', 'roster clogger': 'sell',
+      'market overheat': 'sell', scenario_sell: 'sell',
+
+      core_hold: 'hold', mutual_fit: 'hold', productive_hold: 'hold', trade: 'hold', transition: 'hold',
+      'pick accumulator': 'hold', 'liquidity chip': 'hold', 'franchise cornerstone': 'hold',
+
+      price_check: 'watch', deep_watch: 'watch', monitor: 'watch', missing_projection_watch: 'watch',
+      insufficient_signal: 'watch', 'waiver aggressor': 'watch', 'trade grinder': 'watch',
+      'depth churner': 'watch', 'hype train': 'watch', scenario_watch: 'watch',
+
+      news: 'info', avoid_noise: 'info', fair_or_unclear: 'info', market_rich: 'info',
+      balanced_or_unclear: 'info', 'pass-catcher collector': 'info', 'low-signal manager': 'info',
+
+      pick_alert: 'alert', manager_angle: 'alert', projection_value_gap: 'alert'
+    }};
+
+    function categoryFor(sourceHint, rawValue) {{
+      const value = String(rawValue || '').toLowerCase();
+      return CATEGORY_BUCKETS[value] || 'info';
+    }}
+
+    function categoryLabel(bucket) {{
+      return {{ buy: 'Buy', sell: 'Sell', hold: 'Hold', watch: 'Watch', info: 'Info', alert: 'Alert' }}[bucket] || 'Info';
+    }}
+
+    function playerHeadshotUrl(playerId) {{
+      const id = String(playerId || '').trim();
+      if (!id) return '';
+      return `https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(id)}}.jpg`;
+    }}
+
+    function playerInitials(name) {{
+      const parts = String(name || '').trim().split(/\\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      return (parts[0][0] + (parts[parts.length - 1][0] || '')).toUpperCase();
+    }}
+
+    function headshotImg(playerId, displayName) {{
+      const url = playerHeadshotUrl(playerId);
+      const initials = escapeHtml(playerInitials(displayName));
+      if (!url) return `<div class="headshot-fallback">${{initials}}</div>`;
+      return `<img class="headshot-img" src="${{escapeHtml(url)}}" alt="" loading="lazy" onerror="this.outerHTML='<div class=&quot;headshot-fallback&quot;>${{initials}}</div>'">`;
+    }}
+
+    function columnField(column) {{
+      return typeof column === 'string' ? column : column.field;
+    }}
+
+    function columnKind(column) {{
+      return typeof column === 'string' ? 'text' : (column.kind || 'text');
+    }}
+
+    function columnLabel(column) {{
+      return typeof column === 'string' ? label(column) : (column.label || label(column.field));
+    }}
+
+    function renderCell(row, column) {{
+      const kind = columnKind(column);
+      const value = row[columnField(column)];
+      if (kind === 'delta') return deltaCell(value);
+      if (kind === 'score') return scoreCell(value);
+      return formatCell(value);
+    }}
+
+    function deltaCell(value) {{
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed === 0) return `<span class="delta-cell delta-flat">${{escapeHtml(formatCell(value))}}</span>`;
+      const arrow = parsed > 0 ? '\\u25B2' : '\\u25BC';
+      const cls = parsed > 0 ? 'delta-up' : 'delta-down';
+      return `<span class="delta-cell ${{cls}}">${{arrow}} ${{escapeHtml(String(Math.abs(parsed)))}}</span>`;
+    }}
+
+    function scoreCell(value) {{
+      const parsed = Number(value);
+      const score = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0;
+      const band = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+      return `<span class="score-tile ${{band}}">${{escapeHtml(formatCell(value))}}</span>`;
     }}
 
     function formatCell(value) {{
