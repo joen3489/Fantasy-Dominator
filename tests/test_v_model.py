@@ -19,7 +19,8 @@ from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.profile_intelligence import build_profile_intelligence_tables
-from src.projections import calculate_fantasy_points
+from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
+from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
 from src.signals import build_signal_tables
 from scripts.refresh_all import _discover_league_history
 from scripts.serve import RailwayHTTPRequestHandler
@@ -51,6 +52,9 @@ EXPECTED_TABLE_COLUMNS = {
     "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
     "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
     "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
+    "fantasy_nerds_projection_source": ["source", "fn_player_id", "player_name", "normalized_name", "position", "team", "projected_fantasy_points", "source_confidence", "source_trace", "checked_at"],
+    "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
+    "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
     "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
     "breakout_candidates": ["player_id", "player_name", "position", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
@@ -73,7 +77,7 @@ EXPECTED_TABLE_COLUMNS = {
     "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
     "player_transaction_history": ["player_id", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
     "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
+    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
 }
 
 
@@ -244,6 +248,8 @@ class VModelTests(unittest.TestCase):
             "player_projection_season": ["projection_method", "projection_confidence", "source_trace"],
             "player_projection_weekly": ["projection_method", "projection_confidence", "source_trace"],
             "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
+            "projection_source_components": ["source", "source_confidence", "source_trace", "checked_at"],
+            "source_accuracy_scores": ["sample_size", "accuracy_confidence", "source_trace"],
             "player_signal_scores": ["evidence", "risk", "confidence", "source_trace"],
             "breakout_candidates": ["evidence", "risk", "confidence", "source_trace"],
             "sell_candidates": ["evidence", "risk", "confidence", "source_trace"],
@@ -652,6 +658,113 @@ class VModelTests(unittest.TestCase):
         )
 
         self.assertEqual(points, 41.5)
+
+    def test_projection_consensus_blends_two_sources_and_flags_disagreement(self) -> None:
+        components = [
+            {
+                "source": "nflverse_history",
+                "projected_fantasy_points": 200.0,
+                "projected_ppg": 11.76,
+                "projected_games": 17,
+                "source_confidence": "high",
+                "source_trace": "nflverse",
+                "projection_method": "recent_nflverse_per_game_2yr",
+            },
+            {
+                "source": "fantasy_nerds",
+                "projected_fantasy_points": 260.0,
+                "projected_ppg": 15.29,
+                "projected_games": 17,
+                "source_confidence": "high",
+                "source_trace": "fantasy_nerds",
+                "projection_method": "fantasy_nerds_weekly_projection",
+            },
+        ]
+
+        blended = _blend_projection_components(components, {})
+
+        self.assertEqual(blended["source_count"], 2)
+        self.assertEqual(blended["disagreement_score"], 60.0)
+        self.assertEqual(blended["projected_fantasy_points"], 230.0)
+        self.assertIn("consensus_2src_", blended["projection_method"])
+        self.assertIn("nflverse", blended["source_trace"])
+        self.assertIn("fantasy_nerds", blended["source_trace"])
+
+    def test_projection_tables_degrade_to_single_source_when_fantasy_nerds_absent(self) -> None:
+        raw_stats = pd.DataFrame(
+            [
+                {"player_display_name": "Solo Source WR", "position": "WR", "recent_team": "AAA", "season": 2025, "week": week, "season_type": "REG", "receptions": 6, "receiving_yards": 80, "receiving_tds": 1, "passing_yards": 0, "passing_tds": 0, "interceptions": 0, "rushing_yards": 0, "rushing_tds": 0}
+                for week in range(1, 6)
+            ]
+        )
+        roster_players = pd.DataFrame(
+            [{"season": "2026", "player_id": "sw1", "player_name": "Solo Source WR", "position": "WR", "nfl_team": "AAA", "roster_id": 2, "team_name": "Melkor Lord of Light"}]
+        )
+        leagues = pd.DataFrame([{"scoring_settings": json.dumps({"rec": 1, "rec_yd": 0.1, "rec_td": 6})}])
+        config = {"current_season": "2026"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stats_path = Path(tmp) / "raw_external" / "nflverse" / "2026" / "player_stats.csv"
+            stats_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_stats.to_csv(stats_path, index=False)
+            with patch("src.projections.RAW_EXTERNAL_DIR", Path(tmp) / "raw_external"):
+                tables = build_projection_tables(config, leagues, roster_players)
+
+        self.assertEqual(list(tables["player_projection_season"].columns), EXPECTED_TABLE_COLUMNS["player_projection_season"])
+        row = tables["player_projection_season"].iloc[0]
+        self.assertEqual(row["projection_method"], "recent_nflverse_per_game_1yr")
+        self.assertEqual(len(tables["projection_source_components"]), 1)
+        self.assertEqual(tables["projection_source_components"].iloc[0]["source"], "nflverse_history")
+
+    def test_fantasy_nerds_source_is_disabled_without_api_key(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            frames = refresh_external_sources({"source_policy": "open_legal_only", "external_sources": {"enabled": ["fantasy_nerds"]}})
+
+        self.assertTrue(frames["fantasy_nerds_projection_source"].empty)
+        freshness = frames["source_freshness"]
+        fn_rows = freshness[freshness["source"] == "fantasy_nerds"]
+        self.assertEqual(len(fn_rows), 1)
+        self.assertEqual(fn_rows.iloc[0]["status"], "disabled:fantasy_nerds_api_key_missing")
+
+    def test_source_accuracy_scores_grade_nflverse_against_actuals(self) -> None:
+        rows = []
+        for week in range(1, 6):
+            rows.append({"player_display_name": "Backtest WR", "position": "WR", "recent_team": "AAA", "season": 2025, "week": week, "season_type": "REG", "receptions": 6, "receiving_yards": 80, "receiving_tds": 1, "passing_yards": 0, "passing_tds": 0, "interceptions": 0, "rushing_yards": 0, "rushing_tds": 0})
+        for week in range(1, 6):
+            rows.append({"player_display_name": "Backtest WR", "position": "WR", "recent_team": "AAA", "season": 2026, "week": week, "season_type": "REG", "receptions": 7, "receiving_yards": 90, "receiving_tds": 1, "passing_yards": 0, "passing_tds": 0, "interceptions": 0, "rushing_yards": 0, "rushing_tds": 0})
+        raw_stats = pd.DataFrame(rows)
+        leagues = pd.DataFrame([{"scoring_settings": json.dumps({"rec": 1, "rec_yd": 0.1, "rec_td": 6})}])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            history_path = Path(tmp) / "projection_snapshot_history.csv"
+            accuracy = build_projection_accuracy_table(raw_stats, leagues, {"current_season": "2027"}, history_path)
+
+        self.assertEqual(len(accuracy), 1)
+        row = accuracy.iloc[0]
+        self.assertEqual(row["source"], "nflverse_history")
+        self.assertEqual(row["mean_absolute_error"], 2.0)
+        self.assertEqual(row["accuracy_confidence"], "low")  # sample_size (5) < 8 floor, same games-matched gating precedent as _project_player
+
+    def test_signal_tables_still_consume_blended_projection_contract_unmodified(self) -> None:
+        projections = pd.DataFrame(
+            [
+                {"player_id": "1", "player_name": "Young WR", "position": "WR", "roster_id": 8, "team_name": "The Clapper", "projected_fantasy_points": 180, "projected_ppg": 10.6, "projection_confidence": "high", "source_trace": "consensus_2src_fantasy_nerds_nflverse_history"},
+            ]
+        )
+        roster = pd.DataFrame([{"player_id": "1", "player_name": "Young WR", "age": 23, "roster_id": 8, "team_name": "The Clapper"}])
+        market = pd.DataFrame([{"player_id": "1", "player_name": "Young WR", "market_value": 15, "source_trace": "market"}])
+        needs = pd.DataFrame([{"roster_id": 2, "team_name": "Melkor Lord of Light", "need_qb": "low", "need_rb": "low", "need_pass_catcher": "high", "team_shape": "rebuild_asset_bank"}])
+        behavior = pd.DataFrame([{"roster_id": 8, "plain_language_label": "trade active"}])
+        news = pd.DataFrame([{"player_id": "1", "impact_type": "market_heat"}])
+
+        tables = build_signal_tables(
+            projections, roster, market, needs, behavior, news,
+            {"current_team": {"roster_id": 2}, "strategy_profile": {"team_direction": "deep_rebuild"}},
+        )
+
+        self.assertIn("player_signal_scores", tables)
+        self.assertEqual(len(tables["player_signal_scores"]), 1)
+        self.assertIn("evidence", tables["player_signal_scores"].columns)
 
     def test_signal_tables_create_breakouts_and_sell_candidates(self) -> None:
         projections = pd.DataFrame(

@@ -5,6 +5,17 @@ external_sources:
     - sleeper
     - nflverse
     - dynastyprocess
+    - fantasy_nerds
+# Fantasy Nerds is a paid, explicitly user-configured source (Source Policy: allowed
+# independent of source_policy above, which only governs the open/legal free-source
+# set). Gated on the FANTASY_NERDS_API_KEY env var -- without it, this source is
+# skipped with a disabled:fantasy_nerds_api_key_missing freshness row, no error.
+projection_sources:
+  enabled:
+    - nflverse_history
+    - fantasy_nerds
+  accuracy_grading:
+    lookback_weeks: 4
 news_sources:
   enabled:
     - rotowire_rss

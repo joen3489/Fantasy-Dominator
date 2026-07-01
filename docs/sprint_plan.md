@@ -204,7 +204,7 @@ Non-goals:
 
 - No Codex-written player takes.
 - No target/sell recommendations from projections yet.
-- No paid projection source dependency.
+- No paid projection source dependency. (Lifted in Sprint 12 per the Source Policy's "Paid/API-key sources explicitly configured by the user" allowance below — this was a V1-scope boundary, not a permanent ban.)
 
 ### Sprint 5: Transform Signal Layer V1
 
@@ -634,6 +634,43 @@ Non-goals:
 - No KTC automation.
 - No Codex analyst rewriting based on slider state.
 - No transaction execution, outbound messages, or Sleeper mutation.
+
+### Sprint 12: Multi-Source Projection Consensus
+
+Goal: Fix the single-source trust gap Sprint 4 deliberately deferred -- `player_projection_season` was nflverse-only, with no cross-source blending, weighting, or accuracy grading. Extends Sprint 4 (paid source allowance, per Source Policy) plus a minimal slice of Sprint 10 (append-only dated snapshot pattern, applied narrowly to projection history rather than the full market/signal/outcome snapshot set).
+
+Key deliverables:
+
+- Fantasy Nerds added as a second live, paid, API-key-gated weekly projection source (`FANTASY_NERDS_API_KEY`; disabled with a clear freshness row, not an error, when absent).
+- `player_projection_season`/`player_projection_weekly` become a consensus across whatever sources are present (equal-weighted at cold start, accuracy-weighted once `source_accuracy_scores` has history) -- the column contract is unchanged, so `player_signal_scores` and everything downstream needed zero changes.
+- Retrospective accuracy grading for `nflverse_history` (backtested against its own held-out prior-season actuals, no snapshot needed) and for `fantasy_nerds` (graded against `data/processed/projection_snapshot_history.csv`, a new append-only, dated-key-idempotent log -- the minimal Sprint 10 slice).
+
+Data contracts:
+
+- Add `fantasy_nerds_projection_source`.
+- Add `projection_source_components`.
+- Add `source_accuracy_scores`.
+- Add `data/processed/projection_snapshot_history.csv` (append-only; deliberately not part of the overwrite-every-refresh export loop).
+
+Tests:
+
+- Consensus blending flags disagreement and derives confidence from source count/agreement.
+- Degrade-to-single-source path is byte-identical to pre-Sprint-12 output when Fantasy Nerds is absent (regression guard).
+- Fantasy Nerds fails soft (disabled, not erroring) without an API key.
+- Accuracy grading matches a hand-computed mean absolute error against synthetic actuals.
+- `player_signal_scores` needs zero code changes against the blended contract (guard test).
+
+Acceptance criteria:
+
+- With only nflverse available, output is unchanged from before this sprint.
+- With two sources available, the consensus is a real blend, never silent last-write-wins.
+- Numeric accuracy (mean absolute error) stays diagnostic-only; every contract-facing confidence field stays the existing `high`/`medium`/`low` categorical vocabulary, consistent with the rest of this codebase.
+
+Non-goals:
+
+- Multi-league support (config/identity model stays single-league-shaped).
+- Position-tier-segmented weighting beyond a simple per-position lookup.
+- The rest of Sprint 10 (market/signal snapshots, `recommendation_outcomes`, `manager_prediction_history`).
 
 ## Source And Ownership Contracts
 

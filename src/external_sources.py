@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -7,12 +9,13 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .utils import RAW_EXTERNAL_DIR
+from .utils import RAW_EXTERNAL_DIR, dump_json, load_json
 
 
 DYNASTYPROCESS_VALUES_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values.csv"
 DYNASTYPROCESS_PICKS_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/picks.csv"
 NFLVERSE_USAGE_URL = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv"
+FANTASY_NERDS_BASE_URL = "https://api.fantasynerds.com/v1/nfl"
 
 
 def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dict[str, pd.DataFrame]:
@@ -25,9 +28,29 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
         "player_market_values": pd.DataFrame(columns=_player_market_columns()),
         "pick_market_values": pd.DataFrame(columns=_pick_market_columns()),
         "player_usage_weekly": pd.DataFrame(columns=_usage_columns()),
+        "fantasy_nerds_projection_source": pd.DataFrame(columns=_fantasy_nerds_projection_source_columns()),
         "source_freshness": pd.DataFrame(columns=_freshness_columns()),
     }
     freshness_rows: list[dict[str, Any]] = []
+
+    # Fantasy Nerds is a paid, explicitly user-configured source (Source Policy: "Paid/API-key
+    # sources explicitly configured by the user" are allowed independent of source_policy, which
+    # only governs the open/legal free-source set below).
+    if "fantasy_nerds" in sources:
+        api_key = os.environ.get("FANTASY_NERDS_API_KEY", "")
+        if not api_key:
+            freshness_rows.append(
+                _freshness(
+                    "fantasy_nerds",
+                    "weekly_projections",
+                    "disabled:fantasy_nerds_api_key_missing",
+                    f"{FANTASY_NERDS_BASE_URL}/weekly-projections",
+                )
+            )
+        else:
+            fn_df, row = _fetch_fantasy_nerds(season, api_key, force)
+            frames["fantasy_nerds_projection_source"] = fn_df
+            freshness_rows.append(row | {"row_count": len(fn_df)})
 
     if source_policy != "open_legal_only":
         freshness_rows.append(_freshness("external_sources", "disabled", "source_policy_not_open_legal_only", ""))
@@ -99,6 +122,92 @@ def _load_csv_source(source: str, dataset: str, url: str, cache_path: Path, forc
             except Exception:
                 pass
         return pd.DataFrame(), _freshness(source, dataset, f"unavailable:{type(exc).__name__}", url, cache_path)
+
+
+def _load_json_source(source: str, dataset: str, url: str, cache_path: Path, force: bool) -> tuple[Any, dict[str, Any]]:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    if cache_path.exists() and not force:
+        try:
+            return load_json(cache_path), _freshness(source, dataset, "cached", url, cache_path)
+        except Exception as exc:
+            return {}, _freshness(source, dataset, f"cache_error:{type(exc).__name__}", url, cache_path)
+
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        dump_json(cache_path, payload)
+        return payload, _freshness(source, dataset, "refreshed", url, cache_path)
+    except Exception as exc:
+        if cache_path.exists():
+            try:
+                return load_json(cache_path), _freshness(source, dataset, f"cached_after_refresh_error:{type(exc).__name__}", url, cache_path)
+            except Exception:
+                pass
+        return {}, _freshness(source, dataset, f"unavailable:{type(exc).__name__}", url, cache_path)
+
+
+def _fetch_fantasy_nerds(season: str, api_key: str, force: bool) -> tuple[pd.DataFrame, dict[str, Any]]:
+    cache_path = RAW_EXTERNAL_DIR / "fantasy_nerds" / season / "weekly_projections.json"
+    url = f"{FANTASY_NERDS_BASE_URL}/weekly-projections?apikey={api_key}"
+    payload, row = _load_json_source("fantasy_nerds", "weekly_projections", url, cache_path, force)
+    # Never leak the API key into an audit artifact (freshness rows are written to CSV/SQLite).
+    row["source_url"] = f"{FANTASY_NERDS_BASE_URL}/weekly-projections?apikey=REDACTED"
+    frame = _normalize_fantasy_nerds_projections(payload)
+    return frame, row
+
+
+def _extract_fantasy_nerds_players(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        if isinstance(payload.get("players"), list):
+            return [item for item in payload["players"] if isinstance(item, dict)]
+        # Fantasy Nerds sometimes groups projections by position key (qb/rb/wr/te/k/def).
+        flattened: list[dict[str, Any]] = []
+        for value in payload.values():
+            if isinstance(value, list):
+                flattened.extend(item for item in value if isinstance(item, dict))
+        if flattened:
+            return flattened
+    return []
+
+
+def _normalize_fantasy_nerds_projections(payload: Any) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for player in _extract_fantasy_nerds_players(payload):
+        name = str(player.get("name") or player.get("playerName") or "")
+        if not name:
+            continue
+        rows.append(
+            {
+                "source": "fantasy_nerds",
+                "fn_player_id": str(player.get("playerId") or player.get("player_id") or ""),
+                "player_name": name,
+                "normalized_name": _normalize_fn_name(name),
+                "position": str(player.get("position", "")),
+                "team": str(player.get("team", "")),
+                "projected_fantasy_points": _number(
+                    _first_key(player, ["projectedPts", "fanPts", "fantasyPoints", "points"])
+                ),
+                "source_confidence": "high",
+                "source_trace": f"{FANTASY_NERDS_BASE_URL}/weekly-projections",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    return pd.DataFrame(rows, columns=_fantasy_nerds_projection_source_columns())
+
+
+def _first_key(mapping: dict[str, Any], keys: list[str]) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def _normalize_fn_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
 
 def _normalize_dynastyprocess_market_sources(frame: pd.DataFrame) -> pd.DataFrame:
@@ -354,3 +463,18 @@ def _usage_columns() -> list[str]:
 
 def _freshness_columns() -> list[str]:
     return ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"]
+
+
+def _fantasy_nerds_projection_source_columns() -> list[str]:
+    return [
+        "source",
+        "fn_player_id",
+        "player_name",
+        "normalized_name",
+        "position",
+        "team",
+        "projected_fantasy_points",
+        "source_confidence",
+        "source_trace",
+        "checked_at",
+    ]

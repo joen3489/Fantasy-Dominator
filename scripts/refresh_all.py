@@ -31,11 +31,12 @@ from src.normalize import (
 from src.pick_ownership import build_pick_ownership
 from src.players import load_players, players_table
 from src.profile_intelligence import build_profile_intelligence_tables
-from src.projections import build_projection_tables
+from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
+from src.projections import _load_raw_stats, build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
 from src.signals import build_signal_tables
-from src.utils import PROCESSED_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
+from src.utils import PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
 
 
 def main(force: bool = False) -> None:
@@ -130,7 +131,26 @@ def main(force: bool = False) -> None:
     dataframes["pick_ownership"] = pick_ownership
     dataframes.update(external_frames)
     dataframes.update(build_news_tables(config, api, players, dataframes["teams"], dataframes["roster_players"], force=force))
-    dataframes.update(build_projection_tables(config, dataframes["leagues"], dataframes["roster_players"]))
+
+    nflverse_stats_path = RAW_EXTERNAL_DIR / "nflverse" / str(config.get("current_season", "")) / "player_stats.csv"
+    raw_stats_for_grading = _load_raw_stats(nflverse_stats_path)
+    accuracy_history_path = PROCESSED_DIR / "projection_snapshot_history.csv"
+    accuracy_df = build_projection_accuracy_table(raw_stats_for_grading, dataframes["leagues"], config, accuracy_history_path)
+    dataframes["source_accuracy_scores"] = accuracy_df
+
+    dataframes.update(
+        build_projection_tables(
+            config,
+            dataframes["leagues"],
+            dataframes["roster_players"],
+            dataframes.get("fantasy_nerds_projection_source", pd.DataFrame()),
+            accuracy_df,
+        )
+    )
+    # Append-only projection history log (Sprint 10 pattern) -- deliberately not part
+    # of the overwrite-every-refresh export loop below.
+    append_projection_accuracy_snapshot(accuracy_history_path, dataframes["projection_source_components"], config)
+
     dataframes.update(
         build_economic_tables(
             dataframes["teams"],
@@ -203,6 +223,8 @@ def main(force: bool = False) -> None:
                 "trade_thesis_count": analysis_metadata.get("trade_thesis_count", 0),
                 "market_source_rows": len(dataframes.get("market_value_sources", pd.DataFrame())),
                 "market_consensus_rows": len(dataframes.get("market_consensus_values", pd.DataFrame())),
+                "projection_source_rows": len(dataframes.get("projection_source_components", pd.DataFrame())),
+                "projection_accuracy_rows": len(dataframes.get("source_accuracy_scores", pd.DataFrame())),
                 "manager_valuation_profile_rows": len(dataframes.get("manager_valuation_profiles", pd.DataFrame())),
                 "counterparty_edge_rows": len(dataframes.get("counterparty_trade_edges", pd.DataFrame())),
                 "manager_profile_tag_rows": len(dataframes.get("manager_profile_tags", pd.DataFrame())),
