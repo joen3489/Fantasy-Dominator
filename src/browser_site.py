@@ -88,11 +88,20 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "contextPackets": _json_items(analysis_dir / "analysis_context_packets.json"),
         "validation": _json_items(analysis_dir / "analysis_validation.json"),
         "dailyGmBrief": _text_or_empty(analysis_dir / "daily_gm_brief.md"),
+        "dailyGmBriefMode": _front_matter_field(analysis_dir / "daily_gm_brief.md", "model_mode"),
         "managerDossiers": _text_or_empty(analysis_dir / "manager_dossiers.md"),
         "newsImpactBrief": _text_or_empty(analysis_dir / "news_impact_brief.md"),
         "insightCards": _json_items(analysis_dir / "validated_insight_cards.json"),
         "insightValidation": _json_items(analysis_dir / "insight_card_validation.json"),
     }
+
+
+def _front_matter_field(path: Path, key: str) -> str:
+    text = _text_or_empty(path)
+    for line in text.splitlines():
+        if line.startswith(f"{key}:"):
+            return line.split(":", 1)[1].strip()
+    return ""
 
 
 def _json_items(path: Path) -> list[dict[str, Any]]:
@@ -279,6 +288,7 @@ def _page(
       font-size: 14px;
     }}
     nav a:hover {{ background: rgba(255,255,255,0.08); }}
+    nav a.active {{ background: var(--accent); color: #fff; }}
     header {{
       border-bottom: 1px solid var(--line);
       background: #fbfcf8;
@@ -577,6 +587,8 @@ def _page(
           <a href="#asset-ledger">Asset Ledger</a>
           <a href="#opportunity-board">Opportunity Board</a>
           <a href="#pick-ledger">Pick Ledger</a>
+          <a href="#trade-market">Trade Market</a>
+          <a href="#waiver-market">Waiver Market</a>
         </nav>
       </div>
       <div class="nav-group">
@@ -693,7 +705,7 @@ def _page(
         <label>Confidence<select id="analysis-confidence-filter"></select></label>
       </div>
       <div class="grid">
-        <div class="panel"><h3>Daily GM Brief</h3><div id="daily-gm-brief"></div></div>
+        <div class="panel"><h3>Daily GM Brief <span id="daily-gm-brief-mode" class="tag"></span></h3><div id="daily-gm-brief"></div></div>
         <div class="panel"><h3>Target Theses</h3><div id="target-theses"></div></div>
         <div class="panel"><h3>Sell Theses</h3><div id="sell-theses"></div></div>
         <div class="panel"><h3>Trade Theses</h3><div id="trade-theses"></div></div>
@@ -880,7 +892,7 @@ def _page(
     </section>
 
     <section id="diagnostics">
-      <h2>Data Room</h2>
+      <h2>Diagnostics</h2>
       <p class="note">Data Diagnostics, source freshness, and audit payloads. This is where the facts live before anyone starts doing victory laps.</p>
       <div id="diagnostics-panel"></div>
     </section>
@@ -895,6 +907,7 @@ def _page(
     let tables = {{}};
     let analysis = {{}};
     const state = {{
+      activeSection: 'todays-board',
       teamId: 0,
       query: '',
       position: 'ALL',
@@ -981,6 +994,7 @@ def _page(
       document.getElementById('loading-state').hidden = true;
       document.querySelector('main').hidden = false;
       render();
+      showSection(location.hash.replace('#', ''));
     }}
 
     async function fetchJson(path) {{
@@ -1258,6 +1272,13 @@ def _page(
       document.getElementById('operator-rebuild').addEventListener('click', () => runOperatorAction('/api/operator/rebuild-browser'));
       document.getElementById('operator-reload').addEventListener('click', () => window.location.reload());
       document.getElementById('operator-copy-chat-context').addEventListener('click', () => copyChatContext());
+      document.querySelectorAll('.side-rail nav a').forEach(link => {{
+        link.addEventListener('click', event => {{
+          event.preventDefault();
+          showSection(link.getAttribute('href').slice(1));
+        }});
+      }});
+      window.addEventListener('hashchange', () => showSection(location.hash.replace('#', '')));
     }}
 
     function renderMarketLensPresetButtons() {{
@@ -1343,6 +1364,7 @@ def _page(
       document.getElementById('signal-gap-table').innerHTML = table(filteredSignalGaps(), signalGapColumns);
       document.getElementById('team-fit-table').innerHTML = table(filteredTeamFits(), teamFitColumns);
       document.getElementById('daily-gm-brief').innerHTML = markdownBrief(analysis.dailyGmBrief);
+      document.getElementById('daily-gm-brief-mode').textContent = analysis.dailyGmBriefMode === 'automatic_llm' ? 'LLM-written' : 'Deterministic';
       document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
       document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
       document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
@@ -1841,7 +1863,8 @@ def _page(
 
     function markdownBrief(text) {{
       if (!text) return '<p class="note">Analysis artifact is missing. Refresh can regenerate this without blocking the fact tables.</p>';
-      const lines = String(text).split('\\n').filter(line => line.trim() && !line.startsWith('---') && !line.includes(': deterministic_template')).slice(0, 18);
+      const withoutFrontMatter = String(text).replace(/^---[\\s\\S]*?---\\n/, '');
+      const lines = withoutFrontMatter.split('\\n').filter(line => line.trim()).slice(0, 18);
       return `<div class="brief-list">${{lines.map(line => `<div class="brief-card-evidence">${{escapeHtml(line.replace(/^#+\\s*/, '').replace(/^-\\s*/, ''))}}</div>`).join('')}}</div>`;
     }}
 
@@ -2079,6 +2102,28 @@ def _page(
 
     function setActive(selector, activeButton) {{
       document.querySelectorAll(selector).forEach(button => button.classList.toggle('active', button === activeButton));
+    }}
+
+    const SECTION_IDS = [
+      'todays-board', 'decision-board', 'team-overview', 'roster-value', 'projection-board',
+      'signal-board', 'analyst-brief', 'operator-mode', 'market-gaps', 'counterparty-edges',
+      'market-lens-lab', 'asset-ledger', 'opportunity-board', 'news-desk', 'manager-room',
+      'player-room', 'manager-map', 'manager-behavior', 'pick-ledger', 'trade-market',
+      'waiver-market', 'diagnostics', 'draft'
+    ];
+
+    function showSection(sectionId) {{
+      const targetId = SECTION_IDS.includes(sectionId) ? sectionId : 'todays-board';
+      document.querySelectorAll('main > section').forEach(section => {{
+        section.hidden = section.id !== targetId;
+      }});
+      document.querySelectorAll('.side-rail nav a').forEach(link => {{
+        link.classList.toggle('active', link.getAttribute('href') === `#${{targetId}}`);
+      }});
+      state.activeSection = targetId;
+      if (location.hash !== `#${{targetId}}`) {{
+        history.pushState(null, '', `#${{targetId}}`);
+      }}
     }}
 
     function setText(id, value) {{

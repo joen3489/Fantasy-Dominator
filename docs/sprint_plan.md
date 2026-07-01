@@ -769,6 +769,33 @@ Non-goals:
 - Scheduled/automatic refresh cadence (still the same standing follow-on from Sprint 14, not touched here either).
 - Cleanup of the `todayManagerColumns`/`todayOpportunityColumns`/`todayNewsColumns` dead constants left over from Sprint 14's board consolidation -- unused but harmless, out of scope for a visual-only pass.
 
+### Sprint 16: Section Navigation And Narrative GM Brief
+
+Goal: fix the two problems the user raised after Sprint 15's visual pass -- the side-rail was a table of contents for one endless scroll, not real navigation; and the Sprint 13 LLM pipeline only ever touched Manager Room/Player Room dossier one-liners, leaving the Analyst Brief's Daily GM Brief (the section actually labeled as analysis) 100% deterministic bullet-point boilerplate with zero personality.
+
+Key deliverables:
+
+- Client-side "page-swap" navigation: new `state.activeSection` field, `showSection(sectionId)` toggles the `hidden` property on every `<section>` so only the clicked one is visible, syncs `location.hash` via `history.pushState`, and toggles `.active` on the matching nav link (new `nav a.active` CSS rule mirroring the existing `button.active`). Click handlers bound in `bindControls()` following the file's existing per-element `addEventListener` idiom; a `hashchange` listener keeps browser back/forward working; initial load resolves from the current hash, defaulting to `todays-board`. `render()` is untouched -- this is a pure visibility layer on top of the existing always-computed sections. Fixed two orphan sections (`trade-market`, `waiver-market`) that existed but had no nav link at all, and a `#diagnostics` `<h2>` copy-paste bug ("Data Room" instead of "Diagnostics").
+- Narrative Daily GM Brief: a new sibling to the Sprint 13 entity-card pipeline in `operator.py` -- `generate_daily_gm_brief_via_llm()` (same tool-forced request shape as `generate_insight_output_via_llm()`, new `emit_daily_gm_brief` tool and a persona-carrying system prompt distinct from the constraint-only entity-card prompt) and `validate_daily_gm_brief_output()` (same `FORBIDDEN_TERMS` scan and evidence-ID-subset citation check as `validate_insight_output()`, plus a structural check unique to a narrative -- the three required section headers must be present). On success, overwrites `daily_gm_brief.md` directly, the same file the deterministic template already freshly regenerates on every `refresh_all.py` run. `generate_insights_automatically()` extended to run both sub-pipelines in one action (each independently wrapped so one failing never hides the other's result), reporting a three-state outcome (`complete`/`partial`/`failed`) -- no new button, the existing "Generate Insights (LLM)" click now does more.
+- Fixed a real latent bug found while wiring the transparency badge: `markdownBrief()`'s front-matter filter hardcoded a literal match against `deterministic_template`'s exact string, so any other `model_mode` value would leak a stray front-matter line into the rendered brief. Now strips the whole `---`...`---` block generically. A small `.tag`-styled badge next to the "Daily GM Brief" heading now shows "LLM-written" vs. "Deterministic" so it's always clear which version is showing.
+
+Tests:
+
+- `test_daily_gm_brief_validates_and_writes_narrative`, `test_daily_gm_brief_rejects_forbidden_language`, `test_daily_gm_brief_rejects_unknown_evidence_ids` -- mirror the existing `validate_insight_output()` test pattern for the new narrative validator.
+- `test_generate_insights_automatically_reports_partial_success` -- one sub-pipeline succeeds, one fails, asserts the combined `state` is `partial` and both sub-results are independently present.
+- Existing `test_generate_insights_automatically_imports_and_validates_llm_output`/`test_generate_insights_automatically_fails_loud_on_api_error` updated for the new two-pipeline return shape (a dispatching mock `requests.post` returns different tool responses depending on which tool was forced).
+
+Acceptance criteria:
+
+- Verified live: clicking every side-rail link shows only that section, nav `.active` highlight follows, `location.hash` updates, browser back/forward switches sections, a hard reload with an existing hash opens directly to that section, zero console errors throughout -- confirmed via direct DOM inspection (`main > section[hidden]` counts, `nav a.active` href), not just the string-presence test suite, per the same discipline Sprint 14/15 established.
+- Existing entity-card pipeline (`generate_insight_output_via_llm`, `validate_insight_output`, `import_insight_output`) is unchanged -- this sprint adds a sibling, it does not modify Sprint 13's working code.
+
+Non-goals:
+
+- Scheduled/automatic refresh cadence (still the same standing follow-on, not touched again).
+- Any change to `build_chat_context_markdown()` -- a separate, already-working manual export feature.
+- A new landing-page narrative surface or multi-page routing -- deliberately deferred in favor of extending the existing Analyst Brief section and staying with one generated HTML file/one data bundle.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

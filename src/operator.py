@@ -28,6 +28,8 @@ INSIGHT_PACKET_PATH = OPERATOR_INBOX_DIR / "front_office_insight_packet.json"
 INSIGHT_OUTPUT_PATH = OPERATOR_OUTBOX_DIR / "front_office_insight_cards.json"
 VALIDATED_INSIGHTS_PATH = ANALYSIS_DIR / "validated_insight_cards.json"
 INSIGHT_VALIDATION_PATH = ANALYSIS_DIR / "insight_card_validation.json"
+DAILY_GM_BRIEF_PATH = ANALYSIS_DIR / "daily_gm_brief.md"
+DAILY_GM_BRIEF_VALIDATION_PATH = ANALYSIS_DIR / "daily_gm_brief_validation.json"
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_API_VERSION = "2023-06-01"
@@ -43,6 +45,60 @@ FORBIDDEN_TERMS = (
     "submitted",
     "will overpay",
 )
+
+DAILY_GM_BRIEF_HEADERS = ("## Target Theses", "## Sell Windows", "## Manager Angles")
+
+_SHARED_SAFETY_RULES = (
+    "Forbidden language (do not use these words or their forms, in any tense, anywhere in your output): "
+    "accepted, executed, guaranteed, messaged, offered, sent, submitted, will overpay. "
+    "Never claim a trade, waiver, or roster move was proposed, sent, accepted, or executed -- this app is "
+    "read-only and has never contacted another manager or platform on the user's behalf. Never state a "
+    "player's future performance as certain. Never invent a fact, name, score, or event that is not present "
+    "in the evidence provided to you. If evidence is thin for a section, say so plainly rather than filling "
+    "the gap with invented specifics. State manager tendencies as estimated patterns, not proven intent."
+)
+
+DAILY_GM_BRIEF_SYSTEM_PROMPT = (
+    "You are the daily-brief writer for The Front Office, a dynasty fantasy football command surface for a "
+    "single team manager. Your job is to turn the evidence packet into a short, sharp, entertaining morning "
+    "briefing that still respects the facts. Voice: dry, confident, a little smug about being right, like a "
+    "front-office analyst who has seen this exact roster-building mistake before and is trying not to smile "
+    "about it. The app's own tagline is \"Find the market leak, then pretend it was obvious all along\" -- "
+    "match that register: witty asides are welcome, but every claim must still trace back to the evidence.\n\n"
+    "Write flowing narrative prose in markdown, organized under exactly these three headers, in this order: "
+    "\"## Target Theses\", \"## Sell Windows\", \"## Manager Angles\". Under each header, write 2-4 sentences "
+    "of connected prose synthesizing the evidence for that section -- not a bare bullet restatement of the "
+    "input, and not one bullet per evidence row. Reference specific players, teams, or managers by name from "
+    "the evidence. Keep the whole brief under 400 words total. Do not add extra headers, a title, or a "
+    "sign-off.\n\n"
+    f"{_SHARED_SAFETY_RULES}\n\n"
+    "Every sentence containing a specific factual claim (a player's status, a manager's tendency, a market "
+    "signal) must be traceable to at least one evidence_id you cite in cited_evidence_ids. Do not cite "
+    "evidence you didn't actually use."
+)
+
+DAILY_GM_BRIEF_TOOL = {
+    "name": "emit_daily_gm_brief",
+    "description": "Emit the narrative Daily GM Brief as markdown prose with evidence citations.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "narrative_markdown": {
+                "type": "string",
+                "description": (
+                    "The full brief as markdown, with '## Target Theses', '## Sell Windows', and "
+                    "'## Manager Angles' headers in that order."
+                ),
+            },
+            "cited_evidence_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Every evidence_id referenced by a factual claim in narrative_markdown.",
+            },
+        },
+        "required": ["narrative_markdown", "cited_evidence_ids"],
+    },
+}
 
 _LOCK = threading.Lock()
 
@@ -265,26 +321,166 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
     raise ValueError("Anthropic response did not include an emit_insight_cards tool call.")
 
 
+def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model: str) -> dict[str, Any]:
+    """Sibling to generate_insight_output_via_llm() for a different output shape: one narrative
+    blob instead of a list of entity cards, so it gets its own persona-carrying system prompt and
+    its own forced tool rather than overloading the entity-card schema."""
+    response = requests.post(
+        ANTHROPIC_API_URL,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_API_VERSION,
+            "content-type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": 2048,
+            "system": DAILY_GM_BRIEF_SYSTEM_PROMPT,
+            "tools": [DAILY_GM_BRIEF_TOOL],
+            "tool_choice": {"type": "tool", "name": "emit_daily_gm_brief"},
+            "messages": [{"role": "user", "content": json.dumps({"evidence": packet.get("evidence", [])})}],
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    body = response.json()
+    for block in body.get("content", []):
+        if block.get("type") == "tool_use" and block.get("name") == "emit_daily_gm_brief":
+            return block.get("input", {})
+    raise ValueError("Anthropic response did not include an emit_daily_gm_brief tool call.")
+
+
+def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
+    """Sibling to validate_insight_output() for one narrative blob instead of a card list:
+    same forbidden-language scan and evidence-ID-subset citation check, plus a structural
+    check unique to a narrative (the three required section headers must be present)."""
+    generated_at = _now()
+    packet = _safe_json(INSIGHT_PACKET_PATH)
+    evidence_ids = {str(item.get("evidence_id")) for item in packet.get("evidence", []) if item.get("evidence_id")}
+    narrative = str(output.get("narrative_markdown", "")) if isinstance(output, dict) else ""
+    cited = {str(value) for value in output.get("cited_evidence_ids", [])} if isinstance(output, dict) else set()
+    errors: list[str] = []
+
+    if not evidence_ids:
+        errors.append("No insight packet evidence found. Build a packet before validating output.")
+    if not narrative.strip():
+        errors.append("Daily GM Brief narrative_markdown is empty.")
+    missing_headers = [header for header in DAILY_GM_BRIEF_HEADERS if header not in narrative]
+    if missing_headers:
+        errors.append(f"Narrative is missing required section headers: {','.join(missing_headers)}")
+    banned = [term for term in FORBIDDEN_TERMS if term in narrative.lower()]
+    if banned:
+        errors.append(f"Narrative contains forbidden language: {','.join(banned)}")
+    if not cited:
+        errors.append("Narrative has no cited evidence IDs")
+    elif not cited.issubset(evidence_ids):
+        errors.append(f"Narrative cites unknown evidence IDs: {','.join(sorted(cited - evidence_ids))}")
+
+    validation = {
+        "artifact_type": "daily_gm_brief_validation",
+        "generated_at": generated_at,
+        "valid": not errors,
+        "errors": errors,
+        "word_count": len(narrative.split()),
+    }
+    _write_json(DAILY_GM_BRIEF_VALIDATION_PATH, validation)
+    if not errors:
+        DAILY_GM_BRIEF_PATH.write_text(_render_daily_gm_brief_markdown(narrative, generated_at), encoding="utf-8")
+    return validation
+
+
+def _render_daily_gm_brief_markdown(narrative: str, generated_at: str) -> str:
+    existing = DAILY_GM_BRIEF_PATH.read_text(encoding="utf-8") if DAILY_GM_BRIEF_PATH.exists() else ""
+    roster_id = _front_matter_value(existing, "roster_id")
+    team_name = _front_matter_value(existing, "team_name") or "Unknown Team"
+    front_matter = "\n".join(
+        [
+            "---",
+            "artifact_type: daily_gm_brief",
+            f"generated_at: {generated_at}",
+            f"roster_id: {roster_id}",
+            f"team_name: {team_name}",
+            "model_mode: automatic_llm",
+            "---",
+        ]
+    )
+    return f"{front_matter}\n\n# Daily GM Brief: {team_name}\n\n{narrative.strip()}\n"
+
+
+def _front_matter_value(text: str, key: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(f"{key}:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 def generate_insights_automatically() -> dict[str, Any]:
     """Explicit, user-triggered, cost-incurring action -- fails loud on any problem
-    rather than degrading silently like the free read-only source fetches do."""
+    rather than degrading silently like the free read-only source fetches do. Runs both
+    the entity-card pipeline and the narrative-brief pipeline in one action; each is
+    independently wrapped so one failing never hides or blocks the other's result."""
+    generated_at = _now()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return {"state": "failed", "message": "ANTHROPIC_API_KEY is not set. Insight generation requires a real API key."}
+        return {
+            "state": "failed",
+            "message": "ANTHROPIC_API_KEY is not set. No LLM call was attempted.",
+            "generated_at": generated_at,
+            "insight_cards": {"state": "skipped"},
+            "daily_gm_brief": {"state": "skipped"},
+        }
     model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
 
     build_insight_packet()
     packet = _safe_json(INSIGHT_PACKET_PATH)
     if not packet.get("evidence"):
-        return {"state": "failed", "message": "No evidence available to generate insights from. Refresh data first."}
+        return {
+            "state": "failed",
+            "message": "No evidence available to generate insights from. Refresh data first.",
+            "generated_at": generated_at,
+            "insight_cards": {"state": "skipped"},
+            "daily_gm_brief": {"state": "skipped"},
+        }
+
+    results: dict[str, Any] = {"generated_at": generated_at}
 
     try:
-        output = generate_insight_output_via_llm(packet, api_key, model)
+        card_output = generate_insight_output_via_llm(packet, api_key, model)
+        card_output = dict(card_output) | {"generation_mode": "automatic_llm", "model": model}
+        import_result = import_insight_output(card_output)
+        results["insight_cards"] = {
+            "state": import_result["state"],
+            "message": import_result["message"],
+            "validation": import_result["validation"],
+        }
     except Exception as exc:
-        return {"state": "failed", "message": f"LLM insight generation failed: {exc}"}
+        results["insight_cards"] = {"state": "failed", "message": f"Insight card generation failed: {exc}"}
 
-    output = dict(output) | {"generation_mode": "automatic_llm", "model": model}
-    return import_insight_output(output)
+    try:
+        brief_output = generate_daily_gm_brief_via_llm(packet, api_key, model)
+        brief_validation = validate_daily_gm_brief_output(brief_output)
+        results["daily_gm_brief"] = {
+            "state": "complete" if brief_validation["valid"] else "failed",
+            "message": "Daily GM Brief written." if brief_validation["valid"] else "Daily GM Brief generation failed validation.",
+            "validation": brief_validation,
+        }
+    except Exception as exc:
+        results["daily_gm_brief"] = {"state": "failed", "message": f"Daily GM Brief generation failed: {exc}"}
+
+    both_ok = results["insight_cards"]["state"] == "complete" and results["daily_gm_brief"]["state"] == "complete"
+    any_ok = results["insight_cards"]["state"] == "complete" or results["daily_gm_brief"]["state"] == "complete"
+    results["state"] = "complete" if both_ok else ("partial" if any_ok else "failed")
+    results["message"] = (
+        "Both insight cards and Daily GM Brief generated."
+        if both_ok
+        else (
+            f"Partial success: insight_cards={results['insight_cards']['state']}, "
+            f"daily_gm_brief={results['daily_gm_brief']['state']}."
+            if any_ok
+            else "Both insight card and Daily GM Brief generation failed."
+        )
+    )
+    return results
 
 
 def build_chat_context_markdown() -> dict[str, Any]:

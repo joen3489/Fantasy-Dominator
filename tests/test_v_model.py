@@ -235,6 +235,8 @@ class VModelTests(unittest.TestCase):
             "INSIGHT_OUTPUT_PATH": outbox / "front_office_insight_cards.json",
             "VALIDATED_INSIGHTS_PATH": analysis / "validated_insight_cards.json",
             "INSIGHT_VALIDATION_PATH": analysis / "insight_card_validation.json",
+            "DAILY_GM_BRIEF_PATH": analysis / "daily_gm_brief.md",
+            "DAILY_GM_BRIEF_VALIDATION_PATH": analysis / "daily_gm_brief_validation.json",
         }
 
     def _seed_dossiers(self, analysis_dir: Path) -> None:
@@ -308,13 +310,9 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(kwargs["json"]["tools"][0]["name"], "emit_insight_cards")
         self.assertEqual(kwargs["headers"]["x-api-key"], "test-key")
 
-    def test_generate_insights_automatically_imports_and_validates_llm_output(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            dirs = self._operator_dirs(Path(tmp))
-            self._seed_dossiers(dirs["ANALYSIS_DIR"])
-
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
+    def _dispatching_llm_response(self, tool_name: str):
+        responses = {
+            "emit_insight_cards": {
                 "content": [
                     {
                         "type": "tool_use",
@@ -336,12 +334,40 @@ class VModelTests(unittest.TestCase):
                         },
                     }
                 ]
-            }
-            mock_response.raise_for_status.return_value = None
+            },
+            "emit_daily_gm_brief": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "emit_daily_gm_brief",
+                        "input": {
+                            "narrative_markdown": (
+                                "## Target Theses\nJayden Daniels remains the play here.\n\n"
+                                "## Sell Windows\nNothing urgent this week.\n\n"
+                                "## Manager Angles\nMelkor Lord of Light is stockpiling picks."
+                            ),
+                            "cited_evidence_ids": ["player:1:1"],
+                        },
+                    }
+                ]
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.json.return_value = responses[tool_name]
+        mock_response.raise_for_status.return_value = None
+        return mock_response
+
+    def test_generate_insights_automatically_imports_and_validates_llm_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+
+            def dispatching_post(*args, **kwargs):
+                return self._dispatching_llm_response(kwargs["json"]["tool_choice"]["name"])
 
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
                 with patch.multiple(operator, **dirs):
-                    with patch("src.operator.requests.post", return_value=mock_response):
+                    with patch("src.operator.requests.post", side_effect=dispatching_post):
                         result = operator.generate_insights_automatically()
 
                     self.assertEqual(result["state"], "complete")
@@ -349,6 +375,9 @@ class VModelTests(unittest.TestCase):
                     validated = json.loads(operator.VALIDATED_INSIGHTS_PATH.read_text(encoding="utf-8"))
                     self.assertEqual(validated["items"][0]["card_id"], "player-1")
                     self.assertEqual(validated["generation_mode"], "automatic_llm")
+                    brief_text = operator.DAILY_GM_BRIEF_PATH.read_text(encoding="utf-8")
+                    self.assertIn("## Target Theses", brief_text)
+                    self.assertIn("model_mode: automatic_llm", brief_text)
 
     def test_generate_insights_automatically_fails_loud_on_api_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -361,9 +390,87 @@ class VModelTests(unittest.TestCase):
                         result = operator.generate_insights_automatically()
 
                     self.assertEqual(result["state"], "failed")
-                    self.assertIn("network down", result["message"])
+                    self.assertIn("network down", result["insight_cards"]["message"])
+                    self.assertIn("network down", result["daily_gm_brief"]["message"])
                     self.assertFalse(operator.INSIGHT_OUTPUT_PATH.exists())
                     self.assertFalse(operator.VALIDATED_INSIGHTS_PATH.exists())
+
+    def test_generate_insights_automatically_reports_partial_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+
+            def cards_only_post(*args, **kwargs):
+                if kwargs["json"]["tool_choice"]["name"] == "emit_daily_gm_brief":
+                    raise RuntimeError("brief model overloaded")
+                return self._dispatching_llm_response("emit_insight_cards")
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+                with patch.multiple(operator, **dirs):
+                    with patch("src.operator.requests.post", side_effect=cards_only_post):
+                        result = operator.generate_insights_automatically()
+
+                    self.assertEqual(result["state"], "partial")
+                    self.assertEqual(result["insight_cards"]["state"], "complete")
+                    self.assertEqual(result["daily_gm_brief"]["state"], "failed")
+                    self.assertIn("brief model overloaded", result["daily_gm_brief"]["message"])
+                    self.assertTrue(operator.VALIDATED_INSIGHTS_PATH.exists())
+
+    def test_daily_gm_brief_validates_and_writes_narrative(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+            with patch.multiple(operator, **dirs):
+                operator.build_insight_packet()
+                output = {
+                    "narrative_markdown": (
+                        "## Target Theses\nJayden Daniels remains the play here.\n\n"
+                        "## Sell Windows\nNothing urgent this week.\n\n"
+                        "## Manager Angles\nMelkor Lord of Light is stockpiling picks."
+                    ),
+                    "cited_evidence_ids": ["player:1:1"],
+                }
+                validation = operator.validate_daily_gm_brief_output(output)
+                self.assertTrue(validation["valid"])
+                self.assertTrue(operator.DAILY_GM_BRIEF_PATH.exists())
+                brief_text = operator.DAILY_GM_BRIEF_PATH.read_text(encoding="utf-8")
+                self.assertIn("## Sell Windows", brief_text)
+                self.assertIn("model_mode: automatic_llm", brief_text)
+
+    def test_daily_gm_brief_rejects_forbidden_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+            with patch.multiple(operator, **dirs):
+                operator.build_insight_packet()
+                output = {
+                    "narrative_markdown": (
+                        "## Target Theses\nThe trade was sent and accepted already.\n\n"
+                        "## Sell Windows\nNothing urgent this week.\n\n"
+                        "## Manager Angles\nMelkor Lord of Light is stockpiling picks."
+                    ),
+                    "cited_evidence_ids": ["player:1:1"],
+                }
+                validation = operator.validate_daily_gm_brief_output(output)
+                self.assertFalse(validation["valid"])
+                self.assertTrue(any("forbidden language" in error for error in validation["errors"]))
+                self.assertFalse(operator.DAILY_GM_BRIEF_PATH.exists())
+
+    def test_daily_gm_brief_rejects_unknown_evidence_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+            with patch.multiple(operator, **dirs):
+                operator.build_insight_packet()
+                output = {
+                    "narrative_markdown": (
+                        "## Target Theses\nSome text.\n\n## Sell Windows\nSome text.\n\n## Manager Angles\nSome text."
+                    ),
+                    "cited_evidence_ids": ["player:999:1"],
+                }
+                validation = operator.validate_daily_gm_brief_output(output)
+                self.assertFalse(validation["valid"])
+                self.assertTrue(any("unknown evidence" in error for error in validation["errors"]))
 
     def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
