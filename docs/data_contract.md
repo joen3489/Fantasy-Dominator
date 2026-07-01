@@ -154,7 +154,7 @@ Strategy views are browser and markdown outputs that apply configurable team str
 - Fantasy Nerds owns paid, API-key-gated weekly fantasy point projections when explicitly configured by the user (Source Policy: "Paid/API-key sources explicitly configured by the user"). Disabled, not erroring, when the key is absent.
 - Source accuracy grading code owns historical mean-absolute-error and confidence per (source, position); it is a deterministic input to consensus weighting, never a stored opinion about which source is "best" beyond what the numbers show.
 - Transform code owns breakout/sell/watch labels and scores.
-- Codex and deterministic analysis templates own explanation of transform outputs only, not projection facts or signal scores.
+- Codex and deterministic analysis templates own explanation of transform outputs only, not projection facts or signal scores. As of Sprint 13, "Codex" may be a real Anthropic API call (paid, explicit, user-triggered, `ANTHROPIC_API_KEY`-gated, fails loud on error) instead of a manual copy-paste loop -- the packet/schema/validation contract from Sprint 6 is unchanged either way, and the API call still only ever produces `validated_insight_cards.json`-shaped interpretation, never facts.
 - Internal proxy values are continuity fallbacks only.
 - Config owns selected current team, strategy profile, tracked pick priorities, and source toggles.
 - Processed tables own normalized analysis state.

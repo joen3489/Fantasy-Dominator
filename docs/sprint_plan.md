@@ -258,7 +258,7 @@ This sprint turns the app from "shows signals" into "explains why the signal mat
 - Transform layer says what the model flags.
 - Analysis layer says why a dynasty manager should care.
 
-The analysis layer must be useful even before fully automated Codex hooks exist. V1 can generate deterministic template-backed analyst artifacts from processed tables, while preserving a contract that later Codex runs can fill or improve the prose.
+The analysis layer must be useful even before fully automated Codex hooks exist. V1 can generate deterministic template-backed analyst artifacts from processed tables, while preserving a contract that later Codex runs can fill or improve the prose. (The "later Codex runs" this section anticipates landed in Sprint 13 -- an automatic Anthropic API call replacing the manual copy-paste operator loop, reusing this sprint's packet/validate contract unchanged.)
 
 Key deliverables:
 
@@ -671,6 +671,43 @@ Non-goals:
 - Multi-league support (config/identity model stays single-league-shaped).
 - Position-tier-segmented weighting beyond a simple per-position lookup.
 - The rest of Sprint 10 (market/signal snapshots, `recommendation_outcomes`, `manager_prediction_history`).
+
+### Sprint 13: Automated Codex Insight Generation
+
+Goal: Replace the manual copy-paste operator loop (build packet -> paste into an external LLM chat by hand -> paste response back -> validate) with a real, automatic Anthropic API call, so insight generation requires one click instead of four manual steps. Confirmed the manual loop had never actually been used because of this friction.
+
+This is not new interpretation infrastructure -- Sprint 6's packet/schema/validation contract and Sprint 9's operator loop are reused unchanged. This sprint only replaces the human in the middle with a real API call.
+
+Key deliverables:
+
+- `generate_insight_output_via_llm()` in `src/operator.py`: calls the Anthropic Messages API (`claude-haiku-4-5-20251001` by default, overridable via `FRONT_OFFICE_INSIGHT_MODEL`) with a tool-forced request (`tool_choice` pinned to a synthetic `emit_insight_cards` tool matching `required_output_schema` exactly) for reliable structured output, rather than parsing freeform text.
+- `generate_insights_automatically()`: orchestrates build-packet -> LLM call -> `import_insight_output()` (Sprint 6's existing validator, unchanged) in one step. Requires `ANTHROPIC_API_KEY`; fails loud (clear `state: "failed"` + message) if the key is missing or the API call errors -- deliberately different from the fail-soft convention used for free read-only sources, since this is an explicit, cost-incurring, user-triggered action.
+- `build_chat_context_markdown()`: renders the evidence packet as clean markdown instead of raw JSON, for users who prefer pasting context into their own ad-hoc chat over reading generated cards -- addresses a real, separate value proposition surfaced by the user (a live conversation can be more useful than a canned summary; this makes the hand-off to that conversation effortless instead of building a full in-app chat).
+- New routes: `POST /api/operator/generate-insights`, `GET /api/operator/chat-context`. Both token-gated identically to every other operator route.
+- Two new browser buttons in the existing Operator Mode section, reusing the existing `runOperatorAction()` JS pattern for the first and a new small clipboard-write function for the second.
+
+Data contracts: none new. Output shape is identical to the existing `validated_insight_cards.json` contract from Sprint 6; `generation_mode` field distinguishes `"automatic_llm"` from the manual `"operator_packet_loop"` mode.
+
+Tests:
+
+- Fails loud (no HTTP call attempted) when `ANTHROPIC_API_KEY` is absent.
+- Tool-forced request shape (`tool_choice` pinned, schema matches `required_output_schema`).
+- Full pipeline test: mocked LLM response citing real packet evidence IDs -> validated and written correctly.
+- Fails loud on API error, with nothing written to the output/validated paths.
+- Chat-context markdown includes real evidence content, not raw JSON.
+
+Acceptance criteria:
+
+- One click generates real Claude-authored insight cards, replacing boilerplate template text, with zero manual copy-paste.
+- The existing manual loop (`build-packet`/`import-insights`/`validate-insights`) is untouched and still works for debugging or manual use.
+- Insight generation stays a separate, explicitly-triggered action -- never folded into the free/automatic data refresh -- so cost is only incurred when the user actually wants fresh insights.
+- "Copy Chat Context" produces markdown a person would actually want to paste into a chat, not a JSON dump.
+
+Non-goals:
+
+- No in-app chat UI (a much bigger, separate decision; the markdown export is the deliberately smaller alternative).
+- No scheduled/automatic insight regeneration (that is Sprint 7's automation scope, not attempted here).
+- No change to the manual operator loop's existing endpoints or validation rules.
 
 ## Source And Ownership Contracts
 

@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -216,6 +216,168 @@ class VModelTests(unittest.TestCase):
                 invalid = operator.validate_insight_output()
                 self.assertFalse(invalid["valid"])
                 self.assertGreaterEqual(len(invalid["errors"]), 2)
+
+    def _operator_dirs(self, root: Path) -> dict:
+        analysis = root / "analysis"
+        inbox = root / "operator" / "inbox"
+        outbox = root / "operator" / "outbox"
+        status_dir = root / "operator" / "status"
+        analysis.mkdir(parents=True)
+        return {
+            "ANALYSIS_DIR": analysis,
+            "OPERATOR_INBOX_DIR": inbox,
+            "OPERATOR_OUTBOX_DIR": outbox,
+            "OPERATOR_STATUS_DIR": status_dir,
+            "STATUS_PATH": status_dir / "operator_status.json",
+            "INSIGHT_PACKET_PATH": inbox / "front_office_insight_packet.json",
+            "INSIGHT_OUTPUT_PATH": outbox / "front_office_insight_cards.json",
+            "VALIDATED_INSIGHTS_PATH": analysis / "validated_insight_cards.json",
+            "INSIGHT_VALIDATION_PATH": analysis / "insight_card_validation.json",
+        }
+
+    def _seed_dossiers(self, analysis_dir: Path) -> None:
+        (analysis_dir / "manager_dossiers.json").write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "roster_id": 2,
+                            "team_name": "Melkor Lord of Light",
+                            "tags": "rebuilder, pick accumulator",
+                            "confidence": "high",
+                            "risk": "medium",
+                            "analysis_text": "Manager shows rebuild signals.",
+                            "evidence": "future firsts owned=4",
+                            "source_trace": "manager_cycle_profiles",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        (analysis_dir / "player_dossiers.json").write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "player_id": "1",
+                            "player_name": "Jayden Daniels",
+                            "tags": "franchise cornerstone, breakout candidate",
+                            "confidence": "high",
+                            "risk": "medium",
+                            "analysis_text": "Player has strong projection and market profile.",
+                            "evidence": "ppg=20.5; market=53",
+                            "source_trace": "player_dossiers",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_generate_insights_fails_loud_without_api_key(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("src.operator.requests.post") as mock_post:
+                result = operator.generate_insights_automatically()
+
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("ANTHROPIC_API_KEY", result["message"])
+        mock_post.assert_not_called()
+
+    def test_generate_insight_output_via_llm_uses_tool_forced_request(self) -> None:
+        packet = {
+            "instructions": {"role": "Test role.", "allowed": ["Say things."], "forbidden": ["Do not lie."]},
+            "evidence": [{"evidence_id": "player:1:1", "entity_type": "player", "entity_id": "1"}],
+        }
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "content": [
+                {"type": "tool_use", "name": "emit_insight_cards", "input": {"items": [{"card_id": "player-1"}]}}
+            ]
+        }
+        mock_response.raise_for_status.return_value = None
+
+        with patch("src.operator.requests.post", return_value=mock_response) as mock_post:
+            result = operator.generate_insight_output_via_llm(packet, "test-key", "claude-haiku-4-5-20251001")
+
+        self.assertEqual(result, {"items": [{"card_id": "player-1"}]})
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs["json"]["tool_choice"], {"type": "tool", "name": "emit_insight_cards"})
+        self.assertEqual(kwargs["json"]["tools"][0]["name"], "emit_insight_cards")
+        self.assertEqual(kwargs["headers"]["x-api-key"], "test-key")
+
+    def test_generate_insights_automatically_imports_and_validates_llm_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "emit_insight_cards",
+                        "input": {
+                            "items": [
+                                {
+                                    "card_id": "player-1",
+                                    "entity_type": "player",
+                                    "entity_id": "1",
+                                    "headline": "Cornerstone with strong projection",
+                                    "one_line_read": "Hold, do not shop.",
+                                    "why_it_matters": "Evidence supports continued investment.",
+                                    "watchouts": "Estimate only.",
+                                    "confidence": "high",
+                                    "cited_evidence_ids": ["player:1:1"],
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+            mock_response.raise_for_status.return_value = None
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+                with patch.multiple(operator, **dirs):
+                    with patch("src.operator.requests.post", return_value=mock_response):
+                        result = operator.generate_insights_automatically()
+
+                    self.assertEqual(result["state"], "complete")
+                    self.assertTrue(operator.VALIDATED_INSIGHTS_PATH.exists())
+                    validated = json.loads(operator.VALIDATED_INSIGHTS_PATH.read_text(encoding="utf-8"))
+                    self.assertEqual(validated["items"][0]["card_id"], "player-1")
+                    self.assertEqual(validated["generation_mode"], "automatic_llm")
+
+    def test_generate_insights_automatically_fails_loud_on_api_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+                with patch.multiple(operator, **dirs):
+                    with patch("src.operator.requests.post", side_effect=RuntimeError("network down")):
+                        result = operator.generate_insights_automatically()
+
+                    self.assertEqual(result["state"], "failed")
+                    self.assertIn("network down", result["message"])
+                    self.assertFalse(operator.INSIGHT_OUTPUT_PATH.exists())
+                    self.assertFalse(operator.VALIDATED_INSIGHTS_PATH.exists())
+
+    def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+
+            with patch.multiple(operator, **dirs):
+                result = operator.build_chat_context_markdown()
+
+        self.assertEqual(result["state"], "complete")
+        markdown = result["markdown"]
+        self.assertTrue(markdown.startswith("# Dynasty League Context"))
+        self.assertIn("## Managers", markdown)
+        self.assertIn("## Players", markdown)
+        self.assertIn("Melkor Lord of Light", markdown)
+        self.assertIn("Jayden Daniels", markdown)
 
     def test_processed_table_contract_columns_exist(self) -> None:
         processed = Path(__file__).resolve().parents[1] / "data" / "processed"

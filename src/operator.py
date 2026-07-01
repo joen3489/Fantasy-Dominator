@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import requests
+
 from .browser_site import build_browser_site
 from .utils import (
     ANALYSIS_DIR,
@@ -26,6 +28,10 @@ INSIGHT_PACKET_PATH = OPERATOR_INBOX_DIR / "front_office_insight_packet.json"
 INSIGHT_OUTPUT_PATH = OPERATOR_OUTBOX_DIR / "front_office_insight_cards.json"
 VALIDATED_INSIGHTS_PATH = ANALYSIS_DIR / "validated_insight_cards.json"
 INSIGHT_VALIDATION_PATH = ANALYSIS_DIR / "insight_card_validation.json"
+
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_API_VERSION = "2023-06-01"
+DEFAULT_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
 
 FORBIDDEN_TERMS = (
     "accepted",
@@ -190,6 +196,119 @@ def import_insight_output(payload: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(INSIGHT_OUTPUT_PATH.as_posix()),
         "validation": validation,
     }
+
+
+def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model: str) -> dict[str, Any]:
+    """Call the Anthropic Messages API with the packet's own instructions/evidence,
+    forcing a tool call so the response is reliably structured JSON matching
+    required_output_schema -- far more robust than parsing freeform text."""
+    instructions = packet.get("instructions", {})
+    system_prompt = (
+        f"{instructions.get('role', '')}\n\n"
+        "Allowed:\n" + "\n".join(f"- {item}" for item in instructions.get("allowed", [])) + "\n\n"
+        "Forbidden:\n" + "\n".join(f"- {item}" for item in instructions.get("forbidden", [])) + "\n\n"
+        "Only use the evidence provided below. Every card's cited_evidence_ids must be real "
+        "evidence_id values from that evidence list. Do not force a card for every evidence "
+        "item -- prioritize roughly 10-20 of the most decision-relevant managers/players. "
+        "Call emit_insight_cards exactly once with your complete set of cards."
+    )
+    tool = {
+        "name": "emit_insight_cards",
+        "description": "Emit validated fantasy football insight cards grounded in the provided evidence.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "card_id": {"type": "string"},
+                            "entity_type": {"type": "string", "enum": ["manager", "player"]},
+                            "entity_id": {"type": "string"},
+                            "headline": {"type": "string"},
+                            "one_line_read": {"type": "string"},
+                            "why_it_matters": {"type": "string"},
+                            "watchouts": {"type": "string"},
+                            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                            "cited_evidence_ids": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["card_id", "entity_type", "entity_id", "headline", "one_line_read", "why_it_matters", "confidence", "cited_evidence_ids"],
+                    },
+                }
+            },
+            "required": ["items"],
+        },
+    }
+    response = requests.post(
+        ANTHROPIC_API_URL,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_API_VERSION,
+            "content-type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "tools": [tool],
+            "tool_choice": {"type": "tool", "name": "emit_insight_cards"},
+            "messages": [{"role": "user", "content": json.dumps({"evidence": packet.get("evidence", [])})}],
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    body = response.json()
+    for block in body.get("content", []):
+        if block.get("type") == "tool_use" and block.get("name") == "emit_insight_cards":
+            return block.get("input", {})
+    raise ValueError("Anthropic response did not include an emit_insight_cards tool call.")
+
+
+def generate_insights_automatically() -> dict[str, Any]:
+    """Explicit, user-triggered, cost-incurring action -- fails loud on any problem
+    rather than degrading silently like the free read-only source fetches do."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"state": "failed", "message": "ANTHROPIC_API_KEY is not set. Insight generation requires a real API key."}
+    model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
+
+    build_insight_packet()
+    packet = _safe_json(INSIGHT_PACKET_PATH)
+    if not packet.get("evidence"):
+        return {"state": "failed", "message": "No evidence available to generate insights from. Refresh data first."}
+
+    try:
+        output = generate_insight_output_via_llm(packet, api_key, model)
+    except Exception as exc:
+        return {"state": "failed", "message": f"LLM insight generation failed: {exc}"}
+
+    output = dict(output) | {"generation_mode": "automatic_llm", "model": model}
+    return import_insight_output(output)
+
+
+def build_chat_context_markdown() -> dict[str, Any]:
+    """Renders the current evidence packet as clean markdown instead of raw JSON --
+    a better hand-off for pasting into an ad-hoc chat than the manual copy-paste loop."""
+    build_insight_packet()
+    packet = _safe_json(INSIGHT_PACKET_PATH)
+    evidence = packet.get("evidence", [])
+    managers = [item for item in evidence if item.get("entity_type") == "manager"]
+    players = [item for item in evidence if item.get("entity_type") == "player"]
+
+    lines = ["# Dynasty League Context", "", f"Generated {packet.get('generated_at', '')}", ""]
+    for label, items in (("Managers", managers), ("Players", players)):
+        if not items:
+            continue
+        lines.append(f"## {label}")
+        for item in items:
+            tags = item.get("tags", "")
+            text = item.get("analysis_text", "")
+            evidence_str = item.get("evidence", "")
+            lines.append(f"- **{item.get('entity_name', '')}**: {tags}. {text} (evidence: {evidence_str})")
+        lines.append("")
+
+    return {"state": "complete", "markdown": "\n".join(lines).strip(), "generated_at": packet.get("generated_at", "")}
 
 
 def rebuild_browser() -> dict[str, Any]:

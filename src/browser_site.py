@@ -615,13 +615,17 @@ def _page(
           <label>Operator token<input id="operator-token" type="password" placeholder="FRONT_OFFICE_OPERATOR_TOKEN"></label>
           <button id="operator-refresh" type="button">Refresh Data</button>
           <button id="operator-build-packet" type="button">Build Insight Packet</button>
+          <button id="operator-generate-insights" type="button">Generate Insights (LLM)</button>
           <button id="operator-import" type="button">Import Insight JSON</button>
           <button id="operator-validate" type="button">Validate Insights</button>
           <button id="operator-rebuild" type="button">Rebuild Browser</button>
           <button id="operator-reload" type="button">Reload Latest</button>
+          <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
         </div>
+        <p class="note">Generate Insights calls Claude directly (requires ANTHROPIC_API_KEY on the server) and skips the manual copy-paste loop below. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
         <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
         <div id="operator-status-panel"></div>
+        <div id="operator-chat-context-status"></div>
       </div>
     </section>
 
@@ -916,6 +920,31 @@ def _page(
       pollOperatorStatus();
     }}
 
+    async function copyChatContext() {{
+      const statusEl = document.getElementById('operator-chat-context-status');
+      if (!state.operatorToken) {{
+        statusEl.textContent = 'Enter the operator token before copying chat context.';
+        return;
+      }}
+      statusEl.textContent = 'Building chat context...';
+      try {{
+        const response = await fetch('/api/operator/chat-context', {{
+          method: 'GET',
+          cache: 'no-store',
+          headers: {{ 'X-Front-Office-Token': state.operatorToken }}
+        }});
+        const payload = await response.json();
+        if (!response.ok || payload.state !== 'complete') {{
+          statusEl.textContent = `Chat context failed: ${{payload.message || response.statusText}}`;
+          return;
+        }}
+        await navigator.clipboard.writeText(payload.markdown || '');
+        statusEl.textContent = 'Chat context copied to clipboard.';
+      }} catch (error) {{
+        statusEl.textContent = `Chat context failed: ${{error.message}}`;
+      }}
+    }}
+
     async function runOperatorImport() {{
       if (!state.operatorToken) {{
         state.operatorStatus = {{ state: 'blocked', message: 'Enter the operator token before importing insights.' }};
@@ -1126,10 +1155,12 @@ def _page(
       }});
       document.getElementById('operator-refresh').addEventListener('click', () => runOperatorAction('/api/operator/refresh'));
       document.getElementById('operator-build-packet').addEventListener('click', () => runOperatorAction('/api/operator/build-packet'));
+      document.getElementById('operator-generate-insights').addEventListener('click', () => runOperatorAction('/api/operator/generate-insights'));
       document.getElementById('operator-import').addEventListener('click', () => runOperatorImport());
       document.getElementById('operator-validate').addEventListener('click', () => runOperatorAction('/api/operator/validate-insights'));
       document.getElementById('operator-rebuild').addEventListener('click', () => runOperatorAction('/api/operator/rebuild-browser'));
       document.getElementById('operator-reload').addEventListener('click', () => window.location.reload());
+      document.getElementById('operator-copy-chat-context').addEventListener('click', () => copyChatContext());
     }}
 
     function renderMarketLensPresetButtons() {{

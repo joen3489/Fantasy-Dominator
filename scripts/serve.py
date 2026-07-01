@@ -35,6 +35,12 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             payload = operator._safe_json(operator.INSIGHT_PACKET_PATH)
             self._send_json(payload if payload else {"error": "packet not found"}, HTTPStatus.OK if payload else HTTPStatus.NOT_FOUND)
             return
+        if parsed.path == "/api/operator/chat-context":
+            if not self._authorized():
+                self._send_json({"error": "operator token required"}, HTTPStatus.UNAUTHORIZED)
+                return
+            self._send_json(operator.build_chat_context_markdown())
+            return
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -42,6 +48,7 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         routes = {
             "/api/operator/refresh": self._refresh,
             "/api/operator/build-packet": self._build_packet,
+            "/api/operator/generate-insights": self._generate_insights,
             "/api/operator/import-insights": self._import_insights,
             "/api/operator/validate-insights": self._validate_insights,
             "/api/operator/rebuild-browser": self._rebuild_browser,
@@ -70,6 +77,9 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def _build_packet(self) -> dict:
         return operator.start_job("build-packet", operator.build_insight_packet)
+
+    def _generate_insights(self) -> dict:
+        return operator.start_job("generate-insights", operator.generate_insights_automatically)
 
     def _validate_insights(self) -> dict:
         return operator.start_job("validate-insights", operator.validate_insight_output)
