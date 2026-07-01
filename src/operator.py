@@ -49,12 +49,14 @@ FORBIDDEN_TERMS = (
 
 DAILY_GM_BRIEF_HEADERS = ("## Target Theses", "## Sell Windows", "## Manager Angles")
 
-# The entity-card FORBIDDEN_TERMS list bans bare common words ("sent", "offered", "accepted"),
-# which is safe for short one-liner fields but produces false positives across 300-400 words of
-# free-flowing football prose, where those words routinely appear with no transactional meaning
-# ("the offense offered little resistance," "his role sent his value climbing"). The narrative
-# brief instead checks for the actual risk -- a transaction verb near trade/offer/deal vocabulary.
-DAILY_GM_BRIEF_FORBIDDEN_PATTERNS = (
+# FORBIDDEN_TERMS' bare-word substring scan produced real false positives in production on both
+# entity cards and the narrative brief ("sent", "offered", "accepted" are common English words
+# that show up constantly with no transactional meaning -- "his role sent his value climbing").
+# Every validator that scans LLM prose for banned language uses these phrase-proximity patterns
+# instead: a transaction verb only trips the check when it appears near trade/offer/deal
+# vocabulary, which is the actual risk (claiming a real transaction happened). Genuinely
+# unambiguous risk words ("guaranteed", "will overpay") stay banned outright.
+FORBIDDEN_LANGUAGE_PATTERNS = (
     re.compile(r"\b(trade|offer|deal)\w*\b(?:\W+\w+){0,4}?\W+\b(sent|offered|accepted|submitted|executed|messaged)\b", re.IGNORECASE),
     re.compile(r"\b(sent|offered|accepted|submitted|executed|messaged)\b(?:\W+\w+){0,4}?\W+\b(trade|offer|deal)\w*\b", re.IGNORECASE),
     re.compile(r"\bguaranteed\b", re.IGNORECASE),
@@ -86,8 +88,12 @@ DAILY_GM_BRIEF_SYSTEM_PROMPT = (
     "sign-off.\n\n"
     f"{_SHARED_SAFETY_RULES}\n\n"
     "Every sentence containing a specific factual claim (a player's status, a manager's tendency, a market "
-    "signal) must be traceable to at least one evidence_id you cite in cited_evidence_ids. Do not cite "
-    "evidence you didn't actually use."
+    "signal) must be traceable to at least one evidence_id you cite in cited_evidence_ids. Each item in the "
+    "evidence array below has its own \"evidence_id\" field, e.g. \"player:4984:12\" or \"manager:6:3\" -- "
+    "these exact values are what you must put in cited_evidence_ids. Copy each ID character-for-character "
+    "from the \"evidence_id\" field of an item you actually used. Never construct, reformat, or guess an ID "
+    "yourself, even if you know a player's or manager's real numeric ID -- only ever use the literal string "
+    "found in that item's evidence_id field."
 )
 
 DAILY_GM_BRIEF_TOOL = {
@@ -223,7 +229,7 @@ def validate_insight_output() -> dict[str, Any]:
         ]
         if missing:
             errors.append(f"{card_id} missing {','.join(missing)}")
-        banned = [term for term in FORBIDDEN_TERMS if term in text]
+        banned = [match.group(0) for pattern in FORBIDDEN_LANGUAGE_PATTERNS for match in pattern.finditer(text)]
         if banned:
             errors.append(f"{card_id} contains forbidden language: {','.join(banned)}")
         cited = {str(value) for value in item.get("cited_evidence_ids", [])}
@@ -276,10 +282,14 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
         f"{instructions.get('role', '')}\n\n"
         "Allowed:\n" + "\n".join(f"- {item}" for item in instructions.get("allowed", [])) + "\n\n"
         "Forbidden:\n" + "\n".join(f"- {item}" for item in instructions.get("forbidden", [])) + "\n\n"
-        "Only use the evidence provided below. Every card's cited_evidence_ids must be real "
-        "evidence_id values from that evidence list. Do not force a card for every evidence "
-        "item -- prioritize roughly 10-20 of the most decision-relevant managers/players. "
-        "Call emit_insight_cards exactly once with your complete set of cards."
+        "Only use the evidence provided below. Every evidence item has its own \"evidence_id\" "
+        "field, e.g. \"player:4984:12\" or \"manager:6:3\" -- copy that exact string "
+        "character-for-character into cited_evidence_ids for the item(s) a card is based on. "
+        "Never construct, reformat, or guess an ID yourself, even if you know a player's or "
+        "manager's real numeric ID -- only use the literal evidence_id string given to you. "
+        "Do not force a card for every evidence item -- prioritize roughly 10-20 of the most "
+        "decision-relevant managers/players. Call emit_insight_cards exactly once with your "
+        "complete set of cards."
     )
     tool = {
         "name": "emit_insight_cards",
@@ -368,17 +378,23 @@ def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model:
 
 
 def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
-    """Sibling to validate_insight_output() for one narrative blob instead of a card list:
-    same evidence-ID-subset citation check, plus a structural check unique to a narrative
-    (the three required section headers must be present). The forbidden-language check uses
-    phrase-proximity patterns rather than FORBIDDEN_TERMS' bare-word scan -- see
-    DAILY_GM_BRIEF_FORBIDDEN_PATTERNS for why."""
+    """Sibling to validate_insight_output() for one narrative blob instead of a card list, plus
+    a structural check unique to a narrative (the three required section headers must be
+    present). Citation checking is deliberately looser here than validate_insight_output()'s
+    full-subset requirement: a single-entity card only ever needs to cite its own one evidence_id,
+    but a narrative synthesizes dozens of evidence items across four sections, and in practice the
+    model sometimes drops or misformats one citation among several correct ones. Only reject if
+    NONE of the cited IDs are real -- that's the actual signal the model isn't grounded in the
+    evidence at all, not a single dropped citation."""
     generated_at = _now()
     packet = _safe_json(INSIGHT_PACKET_PATH)
     evidence_ids = {str(item.get("evidence_id")) for item in packet.get("evidence", []) if item.get("evidence_id")}
     narrative = str(output.get("narrative_markdown", "")) if isinstance(output, dict) else ""
     cited = {str(value) for value in output.get("cited_evidence_ids", [])} if isinstance(output, dict) else set()
+    valid_citations = cited & evidence_ids
+    unknown_citations = cited - evidence_ids
     errors: list[str] = []
+    warnings: list[str] = []
 
     if not evidence_ids:
         errors.append("No insight packet evidence found. Build a packet before validating output.")
@@ -387,19 +403,22 @@ def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
     missing_headers = [header for header in DAILY_GM_BRIEF_HEADERS if header not in narrative]
     if missing_headers:
         errors.append(f"Narrative is missing required section headers: {','.join(missing_headers)}")
-    banned_matches = [match.group(0) for pattern in DAILY_GM_BRIEF_FORBIDDEN_PATTERNS for match in pattern.finditer(narrative)]
+    banned_matches = [match.group(0) for pattern in FORBIDDEN_LANGUAGE_PATTERNS for match in pattern.finditer(narrative)]
     if banned_matches:
         errors.append(f"Narrative contains forbidden language: {','.join(banned_matches)}")
     if not cited:
         errors.append("Narrative has no cited evidence IDs")
-    elif not cited.issubset(evidence_ids):
-        errors.append(f"Narrative cites unknown evidence IDs: {','.join(sorted(cited - evidence_ids))}")
+    elif not valid_citations:
+        errors.append(f"Narrative cites unknown evidence IDs: {','.join(sorted(unknown_citations))}")
+    elif unknown_citations:
+        warnings.append(f"Narrative cited some unknown evidence IDs (kept, at least one real citation exists): {','.join(sorted(unknown_citations))}")
 
     validation = {
         "artifact_type": "daily_gm_brief_validation",
         "generated_at": generated_at,
         "valid": not errors,
         "errors": errors,
+        "warnings": warnings,
         "word_count": len(narrative.split()),
     }
     _write_json(DAILY_GM_BRIEF_VALIDATION_PATH, validation)

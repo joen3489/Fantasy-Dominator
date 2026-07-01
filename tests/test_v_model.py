@@ -219,6 +219,31 @@ class VModelTests(unittest.TestCase):
                 self.assertFalse(invalid["valid"])
                 self.assertGreaterEqual(len(invalid["errors"]), 2)
 
+                # Real production failure: an entity card was rejected for containing the bare
+                # word "sent" in an ordinary, non-transactional sentence about usage/role.
+                operator.INSIGHT_OUTPUT_PATH.write_text(
+                    json.dumps(
+                        {
+                            "items": [
+                                {
+                                    "card_id": "player-decline",
+                                    "entity_type": "player",
+                                    "entity_id": "1",
+                                    "headline": "Target share decline",
+                                    "one_line_read": "The scheme change sent his snap count down this month.",
+                                    "why_it_matters": "Role, not talent, explains the dip in production.",
+                                    "watchouts": "Confidence is an estimate only.",
+                                    "confidence": "medium",
+                                    "cited_evidence_ids": ["manager:2:1"],
+                                }
+                            ]
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                non_transactional = operator.validate_insight_output()
+                self.assertTrue(non_transactional["valid"], non_transactional["errors"])
+
     def _operator_dirs(self, root: Path) -> dict:
         analysis = root / "analysis"
         inbox = root / "operator" / "inbox"
@@ -493,6 +518,26 @@ class VModelTests(unittest.TestCase):
                 validation = operator.validate_daily_gm_brief_output(output)
                 self.assertFalse(validation["valid"])
                 self.assertTrue(any("unknown evidence" in error for error in validation["errors"]))
+
+    def test_daily_gm_brief_tolerates_partial_citation_mismatch(self) -> None:
+        # A narrative synthesizes dozens of evidence items across four sections; unlike a
+        # single-entity card, dropping or misformatting one citation among several correct ones
+        # shouldn't sink the whole brief. Only zero valid citations should be fatal.
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+            with patch.multiple(operator, **dirs):
+                operator.build_insight_packet()
+                output = {
+                    "narrative_markdown": (
+                        "## Target Theses\nSome text.\n\n## Sell Windows\nSome text.\n\n## Manager Angles\nSome text."
+                    ),
+                    "cited_evidence_ids": ["player:1:1", "player:999:1"],
+                }
+                validation = operator.validate_daily_gm_brief_output(output)
+                self.assertTrue(validation["valid"], validation["errors"])
+                self.assertTrue(any("player:999:1" in warning for warning in validation["warnings"]))
+                self.assertTrue(operator.DAILY_GM_BRIEF_PATH.exists())
 
     def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
