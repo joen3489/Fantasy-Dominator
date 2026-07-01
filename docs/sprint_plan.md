@@ -709,6 +709,42 @@ Non-goals:
 - No scheduled/automatic insight regeneration (that is Sprint 7's automation scope, not attempted here).
 - No change to the manual operator loop's existing endpoints or validation rules.
 
+### Sprint 14: Signal Calibration And Unified Priority Board
+
+Goal: Fix real calibration bugs found by inspecting the live deployed browser directly, and collapse Today's Board's six overlapping sub-sections into one deduplicated, ranked list. This was scoped after the user called the live browser "noisy" -- inspection showed the noise wasn't just presentation, it was undifferentiated math: manager behavior scores saturated at 100 for any manager past a low activity threshold, and the deterministic "why" text was a fixed string identical across every player clearing the same action threshold, before Sprint 13's LLM path even runs.
+
+Key deliverables:
+
+- `build_manager_behavior_signals()` rewritten to score managers by rank-based percentile within the current league's manager set, replacing the old hard-capped absolute multipliers (`min(100, trade_count * 18)` saturated at just 6 trades, making a 6-trade manager and a 46-trade manager indistinguishable). Reuses the percentile-ranking pattern already established in `profile_intelligence.py` for cross-season profiling, applied here to current-season behavior scores.
+- `_classify_action()`'s why-text for every action label now interpolates the player's actual computed numbers (gap score, PPG, age) into the sentence instead of returning one fixed string literal per label. Still fully deterministic -- this is parameterization, not prose generation, which stays Sprint 13's job.
+- New `src/priority_board.py`, `build_today_priority_board()`: merges `action_recommendations`, `league_news_impact`, `pick_ownership`, and `manager_behavior_signals` into one ranked list, deduplicated by `(entity_type, entity_id)` so a player who is both an action recommendation and a news item becomes one row, not two (the literal root cause of the same sell candidates rendering three times on one page load -- "Sell Windows" was re-filtering the same `action_recommendations` rows "Action Board" already showed). Priority is a percentile rank across the whole combined candidate pool for the week, not hand-tuned cross-type weights.
+- Today's Board in `src/browser_site.py` collapsed from six sub-sections (Action Board, Sell Windows, My Roster News, Trade Target News, Pick Alerts, Manager Angles) into one `today-priority-board` list rendered by one new `priorityCards()` function; the five now-orphaned per-type render functions (`actionCards`, `opportunityCards`, `newsCards`, `pickAlertCards`, `managerCards`) and `actionRecommendationRows()` were removed as dead code.
+
+Data contracts:
+
+- Add `today_priority_board`.
+
+Tests:
+
+- Two managers with clearly different real activity levels produce clearly different scores, neither pinned to the old saturation value.
+- Two players clearing the same action threshold by different margins produce different why-text.
+- A synthetic player present in both `action_recommendations` and `league_news_impact` collapses to one row in `today_priority_board`.
+- Higher-priority synthetic items rank above lower ones.
+- Browser HTML no longer contains the retired sub-section markup or render functions.
+
+Acceptance criteria:
+
+- Real production data (not synthetic) confirms two managers with genuinely different trade/FAAB activity no longer both show 100 across every score dimension.
+- The same "true buy low" / "sell window" reasoning is never repeated verbatim across different players.
+- The same player never appears twice in Today's Board.
+- Existing manager/action/news/pick table contracts are unchanged -- this only adds a new merged table and fixes math, it does not restructure `action_recommendations`, `league_news_impact`, `manager_behavior_signals`, or `pick_ownership`.
+
+Non-goals:
+
+- Scheduled/automatic refresh cadence (explicit separate follow-on plan, not bundled here).
+- News Desk's own relevance ranking (it's a reference/browse log, not a priority surface; the tables feeding Today's Board already filter correctly).
+- Any change to Sprint 11's Market Lens Lab, which was already found to genuinely work as specced.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

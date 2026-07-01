@@ -52,6 +52,7 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
         "projection_market_gaps": _records(processed_dir / "projection_market_gaps.csv"),
         "team_fit_scores": _records(processed_dir / "team_fit_scores.csv"),
         "action_recommendations": _records(processed_dir / "action_recommendations.csv"),
+        "today_priority_board": _records(processed_dir / "today_priority_board.csv"),
         "manager_profile_tags": _records(processed_dir / "manager_profile_tags.csv"),
         "manager_cycle_profiles": _records(processed_dir / "manager_cycle_profiles.csv"),
         "player_dossiers": _records(processed_dir / "player_dossiers.csv"),
@@ -504,14 +505,8 @@ def _page(
       <main hidden>
     <section id="todays-board">
       <h2>Today's Board</h2>
-      <div class="grid">
-        <div class="panel"><h3>Action Board</h3><div id="today-action-board"></div></div>
-        <div class="panel"><h3>Sell Windows</h3><div id="today-sell-window"></div></div>
-        <div class="panel"><h3>My Roster News</h3><div id="today-my-news"></div></div>
-        <div class="panel"><h3>Trade Target News</h3><div id="today-target-news"></div></div>
-        <div class="panel"><h3>Pick Alerts</h3><div id="today-pick-alerts"></div></div>
-        <div class="panel"><h3>Manager Angles</h3><div id="today-manager-angles"></div></div>
-      </div>
+      <p class="note">One ranked list, highest priority first. Each player/pick/manager appears once, whichever signal ranked it highest.</p>
+      <div class="panel"><div id="today-priority-board"></div></div>
     </section>
 
     <section id="decision-board">
@@ -1218,15 +1213,7 @@ def _page(
       const passCount = allTeamRoster.filter(row => row.position === 'WR' || row.position === 'TE').length;
       const teamTrades = tables.trades.filter(row => Number(row.team_a_roster_id) === state.teamId || Number(row.team_b_roster_id) === state.teamId);
       const myPicksAway = tables.pick_ownership.filter(row => truthy(row.is_my_original_pick) && !truthy(row.i_currently_own_it));
-      const rankedGaps = sortRows(applySearch(tables.asset_market_gaps), ['market_gap_score']).reverse();
-      const breakoutRows = signalBreakoutRows();
-      const sellRows = signalSellRows();
-      const actionRows = actionRecommendationRows();
-      const actionSellRows = actionRows.filter(row => row.action_label === 'sell_window');
-      const sellWindows = actionSellRows.length ? actionSellRows.slice(0, 5) : sellRows.length ? sellRows.slice(0, 5) : rankedGaps.filter(row => Number(row.target_roster_id) === state.teamId || String(row.opportunity_type).includes('sell')).slice(0, 5);
-      const myNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) === state.teamId), ['published_at']).reverse().slice(0, 5);
-      const targetNews = sortRows(tables.league_news_impact.filter(row => Number(row.roster_id) && Number(row.roster_id) !== state.teamId), ['published_at']).reverse().slice(0, 5);
-      const managerAngles = sortRows(tables.manager_behavior_signals.filter(row => Number(row.roster_id) !== state.teamId), ['trade_activity_score', 'pick_seller_score']).reverse().slice(0, 5);
+      const priorityRows = sortRows(applySearch(tables.today_priority_board), ['priority_score']).reverse().slice(0, 15);
 
       setText('metric-roster', allTeamRoster.length);
       setText('metric-qb', qbCount);
@@ -1236,12 +1223,7 @@ def _page(
       setText('metric-team-trades', teamTrades.length);
 
       document.getElementById('my-pick-alerts').innerHTML = list(myPicksAway.map(row => `${{row.pick_season}} round ${{row.round}}: ${{row.current_owner}}`));
-      document.getElementById('today-action-board').innerHTML = actionCards(actionRows.slice(0, 8));
-      document.getElementById('today-sell-window').innerHTML = opportunityCards(sellWindows, 'sell');
-      document.getElementById('today-my-news').innerHTML = newsCards(myNews);
-      document.getElementById('today-target-news').innerHTML = newsCards(targetNews);
-      document.getElementById('today-pick-alerts').innerHTML = pickAlertCards(myPicksAway.slice(0, 5));
-      document.getElementById('today-manager-angles').innerHTML = managerCards(managerAngles);
+      document.getElementById('today-priority-board').innerHTML = priorityCards(priorityRows);
       document.getElementById('team-overview-panel').innerHTML = teamOverview(activeTeam, allTeamRoster, teamTrades);
       document.getElementById('strategy-panel').innerHTML = strategyOverlay();
       document.getElementById('likely-traders').innerHTML = table(
@@ -1680,24 +1662,18 @@ def _page(
       ], ['item', 'value']) + '<h3>Market Consensus</h3>' + table(tables.market_consensus_values.slice(0, 40), marketConsensusColumns) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
 
-    function opportunityCards(rows, mode) {{
-      if (!rows.length) return '<p class="note">No high-signal items found.</p>';
+    function priorityCards(rows) {{
+      if (!rows.length) return '<p class="note">No high-priority items right now.</p>';
       return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: `${{row.asset_name || row.player_name || 'Unknown asset'}}${{row.target_team ? ` - ${{row.target_team}}` : row.current_team_name ? ` - ${{row.current_team_name}}` : ''}}`,
+        title: `${{row.item_type_label || 'Item'}} - ${{row.entity_name || 'Unknown'}}`,
         chips: [
-          row.opportunity_type || row.signal_label || mode,
-          row.position,
-          row.market_gap_score ? `score ${{row.market_gap_score}}` : row.breakout_score ? `breakout ${{row.breakout_score}}` : row.sell_score ? `sell ${{row.sell_score}}` : '',
-          row.risk ? `risk ${{row.risk}}` : '',
-          row.confidence ? `confidence ${{row.confidence}}` : ''
+          row.team_name,
+          row.priority_score !== undefined && row.priority_score !== null && row.priority_score !== '' ? `priority ${{row.priority_score}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : '',
+          row.risk ? `risk ${{row.risk}}` : ''
         ],
-        evidence: row.evidence || row.timeline_fit || row.source_trace || 'No evidence provided.'
+        evidence: `${{row.why || ''}} Evidence: ${{row.evidence || ''}}`
       }})).join('')}}</div>`;
-    }}
-
-    function actionRecommendationRows() {{
-      const active = tables.action_recommendations.filter(row => Number(row.roster_id) === state.teamId);
-      return sortRows(applySearch(active), ['action_rank', 'action_score']).slice(0, 20);
     }}
 
     function counterpartyCards(rows) {{
@@ -1711,20 +1687,6 @@ def _page(
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
-      }})).join('')}}</div>`;
-    }}
-
-    function actionCards(rows) {{
-      if (!rows.length) return '<p class="note">No action-ready recommendations found.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: `${{row.consumer_label || 'Monitor'}} - ${{row.player_name || 'Unknown player'}}`,
-        chips: [
-          row.position,
-          row.team_name,
-          row.action_score ? `score ${{row.action_score}}` : '',
-          row.confidence ? `confidence ${{row.confidence}}` : ''
-        ],
-        evidence: `${{row.why || ''}} Evidence: ${{row.evidence || ''}} Risk: ${{row.risk || ''}}`
       }})).join('')}}</div>`;
     }}
 
@@ -1763,47 +1725,6 @@ def _page(
       if (!text) return '<p class="note">Analysis artifact is missing. Refresh can regenerate this without blocking the fact tables.</p>';
       const lines = String(text).split('\\n').filter(line => line.trim() && !line.startsWith('---') && !line.includes(': deterministic_template')).slice(0, 18);
       return `<div class="brief-list">${{lines.map(line => `<div class="brief-card-evidence">${{escapeHtml(line.replace(/^#+\\s*/, '').replace(/^-\\s*/, ''))}}</div>`).join('')}}</div>`;
-    }}
-
-    function newsCards(rows) {{
-      if (!rows.length) return '<p class="note">No high-signal news found.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: `${{row.player_name || 'Unknown player'}}${{row.team_name ? ` - ${{row.team_name}}` : ''}}`,
-        chips: [
-          row.impact_type,
-          row.source,
-          row.risk ? `risk ${{row.risk}}` : '',
-          row.confidence ? `confidence ${{row.confidence}}` : ''
-        ],
-        evidence: row.evidence || row.source_trace || 'No evidence provided.'
-      }})).join('')}}</div>`;
-    }}
-
-    function pickAlertCards(rows) {{
-      if (!rows.length) return '<p class="note">No pick alerts found.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: `${{row.pick_season}} R${{row.round}} - ${{row.original_team || 'Original team unknown'}}`,
-        chips: [
-          row.current_owner ? `held by ${{row.current_owner}}` : '',
-          row.previous_owner ? `from ${{row.previous_owner}}` : '',
-          truthy(row.is_my_original_pick) ? 'my original pick' : ''
-        ],
-        evidence: `Current owner: ${{row.current_owner || 'unknown'}}. Previous owner: ${{row.previous_owner || 'unknown'}}.`
-      }})).join('')}}</div>`;
-    }}
-
-    function managerCards(rows) {{
-      if (!rows.length) return '<p class="note">No manager angles found.</p>';
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
-        title: row.team_name || 'Unknown manager',
-        chips: [
-          row.plain_language_label,
-          row.trade_activity_score ? `trade ${{row.trade_activity_score}}` : '',
-          row.pick_seller_score ? `pick sell ${{row.pick_seller_score}}` : '',
-          row.faab_aggression_score ? `faab ${{row.faab_aggression_score}}` : ''
-        ],
-        evidence: row.evidence || 'No evidence provided.'
-      }})).join('')}}</div>`;
     }}
 
     function insightFor(entityType, entityId) {{

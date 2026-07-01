@@ -322,22 +322,22 @@ def _classify_action(row: pd.Series, current_roster: int) -> dict[str, Any]:
     confidence = str(row.get("confidence", "low")) or "low"
 
     if confidence == "low" and ppg == 0:
-        return _action("avoid_noise", "Avoid / Noise", 6, normalized_market, "The row lacks enough projection support to deserve action now.", "high: sparse projection evidence", "low")
+        return _action("avoid_noise", "Avoid / Noise", 6, normalized_market, "The row lacks enough projection support to deserve action now (no projected PPG, low confidence).", "high: sparse projection evidence", "low")
     if own_player and sell >= 45:
-        return _action("sell_window", "Sell Window", 1, sell, "Shop this asset while the model sees timing or age-based value risk.", "medium: do not force a weak offer", confidence)
+        return _action("sell_window", "Sell Window", 1, sell, f"Sell score of {sell:.0f} (threshold 45) at age {age:.0f} signals timing or age-based value risk -- shop this asset before it decays further.", "medium: do not force a weak offer", confidence)
     if own_player and position == "RB" and age >= 27:
-        return _action("sell_window", "Sell Window", 1, max(45.0, sell), "Aging RB production is more valuable to contenders than to a rebuild timeline.", "medium: market may discount age already", confidence)
+        return _action("sell_window", "Sell Window", 1, max(45.0, sell), f"At age {age:.0f}, {ppg:.1f} PPG of RB production is worth more to a contender than to a rebuild timeline right now.", "medium: market may discount age already", confidence)
     if own_player and ppg >= 12 and (position == "QB" or age <= 28) and sell < 40:
-        return _action("core_hold", "Core Hold", 2, ppg * 3 + timeline, "Keep this player as a roster pillar unless another manager overpays.", row.get("risk", ""), confidence)
+        return _action("core_hold", "Core Hold", 2, ppg * 3 + timeline, f"{ppg:.1f} projected PPG with a {timeline:.0f} timeline-fit score makes this a roster pillar unless another manager overpays.", row.get("risk", ""), confidence)
     if own_player and ppg >= 10:
-        return _action("price_check", "Price Check", 3, ppg * 3 + sell, "Useful production, but the best move is to learn the market price before deciding.", row.get("risk", ""), confidence)
+        return _action("price_check", "Price Check", 3, ppg * 3 + sell, f"{ppg:.1f} PPG is useful production (sell pressure only {sell:.0f}), but the best move is to learn the market price before deciding.", row.get("risk", ""), confidence)
     if not own_player and confidence != "low" and position in {"QB", "WR", "TE"} and age and age <= 25 and gap >= 30 and 0 < market <= 1500 and ppg >= 8:
-        return _action("true_buy_low", "True Buy Low", 1, gap + breakout, "Projection and market inputs suggest the price may lag the role or production.", row.get("risk", ""), confidence)
+        return _action("true_buy_low", "True Buy Low", 1, gap + breakout, f"Market gap score of {gap:.0f} (threshold 30) at {ppg:.1f} projected PPG and age {age:.0f} suggests the price may lag the role or production.", row.get("risk", ""), confidence)
     if not own_player and confidence != "low" and (gap >= 18 or breakout >= 60):
-        return _action("price_check", "Price Check", 3, gap + breakout * 0.4, "The player is interesting, but the market may already be efficient.", row.get("risk", ""), confidence)
+        return _action("price_check", "Price Check", 3, gap + breakout * 0.4, f"Gap score of {gap:.0f} and breakout score of {breakout:.0f} make this interesting, but the market may already be pricing it efficiently.", row.get("risk", ""), confidence)
     if position in {"QB", "WR", "TE"} and age and age <= 25 and confidence != "high":
-        return _action("deep_watch", "Deep Watch", 4, max(breakout, timeline), "Young timeline fit, but the evidence is not strong enough for a confident move.", row.get("risk", ""), "low" if confidence == "low" else confidence)
-    return _action("monitor", "Monitor", 5, max(gap, breakout, ppg), "Track this player, but do not treat the current signal as action-ready.", row.get("risk", ""), confidence)
+        return _action("deep_watch", "Deep Watch", 4, max(breakout, timeline), f"Age {age:.0f} timeline fits (breakout score {breakout:.0f}), but {confidence} confidence isn't strong enough yet for a confident move.", row.get("risk", ""), "low" if confidence == "low" else confidence)
+    return _action("monitor", "Monitor", 5, max(gap, breakout, ppg), f"Gap {gap:.0f}, breakout {breakout:.0f}, {ppg:.1f} PPG -- track this player, but the current signal isn't action-ready.", row.get("risk", ""), confidence)
 
 
 def _action(action_label: str, consumer_label: str, rank: int, score: float, why: str, risk: Any, confidence: Any) -> dict[str, Any]:

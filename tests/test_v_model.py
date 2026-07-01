@@ -12,16 +12,17 @@ import pandas as pd
 from src import operator
 from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
-from src.economics import build_economic_tables
+from src.economics import build_economic_tables, build_manager_behavior_signals
 from src.external_sources import build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
+from src.priority_board import build_today_priority_board
 from src.profile_intelligence import build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
-from src.signals import build_signal_tables
+from src.signals import _classify_action, build_signal_tables
 from scripts.refresh_all import _discover_league_history
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
@@ -55,6 +56,7 @@ EXPECTED_TABLE_COLUMNS = {
     "fantasy_nerds_projection_source": ["source", "fn_player_id", "player_name", "normalized_name", "position", "team", "projected_fantasy_points", "source_confidence", "source_trace", "checked_at"],
     "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
     "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
+    "today_priority_board": ["item_type", "item_type_label", "entity_type", "entity_id", "entity_name", "roster_id", "team_name", "priority_score", "why", "evidence", "risk", "confidence", "source_trace"],
     "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
     "breakout_candidates": ["player_id", "player_name", "position", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
@@ -412,6 +414,7 @@ class VModelTests(unittest.TestCase):
             "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
             "projection_source_components": ["source", "source_confidence", "source_trace", "checked_at"],
             "source_accuracy_scores": ["sample_size", "accuracy_confidence", "source_trace"],
+            "today_priority_board": ["item_type", "priority_score", "why", "evidence", "source_trace"],
             "player_signal_scores": ["evidence", "risk", "confidence", "source_trace"],
             "breakout_candidates": ["evidence", "risk", "confidence", "source_trace"],
             "sell_candidates": ["evidence", "risk", "confidence", "source_trace"],
@@ -704,11 +707,15 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Today's Board", html)
         self.assertIn("brief-card", html)
         self.assertIn("brief-list", html)
-        self.assertIn("Action Board", html)
+        self.assertIn("today-priority-board", html)
+        self.assertIn("function priorityCards", html)
         self.assertNotIn("Buy-Low Targets", html)
-        self.assertIn("Sell Windows", html)
-        self.assertIn("My Roster News", html)
-        self.assertIn("Trade Target News", html)
+        # Today's Board collapsed into one deduplicated ranked list (Sprint 14) --
+        # these sub-headings and their per-type render functions no longer exist.
+        self.assertNotIn("today-action-board", html)
+        self.assertNotIn("today-sell-window", html)
+        self.assertNotIn("function actionCards", html)
+        self.assertNotIn("function opportunityCards", html)
         self.assertIn("Roster Value Board", html)
         self.assertIn("Projection Board", html)
         self.assertIn("Signal Board", html)
@@ -786,6 +793,12 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("scenario_rankings", bundle["tables"])
         self.assertFalse((processed / "scenario_rankings.csv").exists())
         self.assertTrue(players_audit_exists)
+        # Regression guard: today_priority_board.csv existing on disk is not enough --
+        # build_browser_site() bundles tables from an explicit dict, so a table the JS
+        # references must actually be added there or tables.today_priority_board is
+        # undefined client-side (this crashed render() until caught by manual browser
+        # verification, since HTML-string assertions alone don't execute the JS).
+        self.assertIn("today_priority_board", bundle["tables"])
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"
@@ -798,7 +811,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Projection Board", text)
         self.assertIn("Signal Board", text)
         self.assertIn("Analyst Brief", text)
-        self.assertIn("Action Board", text)
+        self.assertIn("today-priority-board", text)
         self.assertIn("News Desk", text)
         self.assertIn("Data Room", text)
         self.assertIn("Data Diagnostics", text)
@@ -1646,6 +1659,84 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"entity_id": "1", "entity_name": "Jayden Daniels", "tag": "franchise cornerstone", "score": 85, "confidence": "high", "evidence": "test", "risk": "medium", "source_trace": "player_dossiers", "generated_at": "2026-06-06T00:00:00+00:00"}]
         ).to_csv(processed / "player_profile_tags.csv", index=False)
+
+    def test_manager_behavior_scores_differentiate_by_activity(self) -> None:
+        teams = pd.DataFrame(
+            [
+                {"season": "2026", "roster_id": 1, "team_name": "Very Active"},
+                {"season": "2026", "roster_id": 2, "team_name": "Barely Active"},
+            ]
+        )
+        manager_profiles = pd.DataFrame(
+            [
+                {"roster_id": 1, "total_trades": 46, "future_1sts_acquired": 1, "future_1sts_sold": 7, "faab_spent_on_waivers": 234, "number_of_waiver_claims": 36},
+                {"roster_id": 2, "total_trades": 1, "future_1sts_acquired": 0, "future_1sts_sold": 0, "faab_spent_on_waivers": 5, "number_of_waiver_claims": 1},
+            ]
+        )
+        roster_players = pd.DataFrame(columns=["roster_id", "position", "season"])
+
+        result = build_manager_behavior_signals(teams, pd.DataFrame(), pd.DataFrame(), manager_profiles, roster_players)
+
+        active = result[result["roster_id"] == 1].iloc[0]
+        quiet = result[result["roster_id"] == 2].iloc[0]
+        self.assertGreater(active["trade_activity_score"], quiet["trade_activity_score"])
+        self.assertGreater(active["faab_aggression_score"], quiet["faab_aggression_score"])
+        # Neither manager should be pinned to the old hard-cap value of 100 --
+        # that was the saturation bug (any manager with >=6 trades used to cap
+        # identically regardless of how much more active they actually were).
+        self.assertLess(quiet["trade_activity_score"], 100)
+
+    def test_action_reasoning_varies_by_player_magnitude(self) -> None:
+        strong = pd.Series(
+            {"roster_id": 8, "position": "WR", "age": 22, "projected_ppg": 18.0, "market_value": 500, "market_gap_score": 80, "breakout_score": 90, "sell_score": 0, "timeline_fit_score": 70, "confidence": "high"}
+        )
+        marginal = pd.Series(
+            {"roster_id": 9, "position": "WR", "age": 25, "projected_ppg": 8.5, "market_value": 200, "market_gap_score": 31, "breakout_score": 40, "sell_score": 0, "timeline_fit_score": 50, "confidence": "medium"}
+        )
+
+        strong_action = _classify_action(strong, current_roster=2)
+        marginal_action = _classify_action(marginal, current_roster=2)
+
+        self.assertEqual(strong_action["action_label"], "true_buy_low")
+        self.assertEqual(marginal_action["action_label"], "true_buy_low")
+        self.assertNotEqual(strong_action["why"], marginal_action["why"])
+        self.assertIn("80", strong_action["why"])
+        self.assertIn("31", marginal_action["why"])
+
+    def test_priority_board_deduplicates_by_entity(self) -> None:
+        actions = pd.DataFrame(
+            [{"roster_id": 8, "team_name": "The Clapper", "player_id": "1", "player_name": "Dup Player", "position": "WR", "action_label": "true_buy_low", "consumer_label": "True Buy Low", "action_rank": 1, "action_score": 90, "projected_ppg": 15, "market_value": 40, "why": "action reason", "evidence": "e", "risk": "medium", "confidence": "high", "source_trace": "t"}]
+        )
+        news = pd.DataFrame(
+            [{"event_id": "n1", "source": "sleeper", "published_at": "2026-06-01", "player_id": "1", "player_name": "Dup Player", "roster_id": 8, "team_name": "The Clapper", "impact_type": "market_heat", "evidence": "news evidence", "risk": "low", "confidence": "high", "source_trace": "t"}]
+        )
+        picks = pd.DataFrame(columns=["is_my_original_pick", "i_currently_own_it", "pick_season", "round", "original_roster_id", "current_owner_roster_id", "current_owner", "original_team", "previous_owner"])
+        managers = pd.DataFrame(columns=["roster_id", "team_name", "trade_activity_score", "plain_language_label", "evidence"])
+        config = {"current_team": {"roster_id": 2}}
+
+        board = build_today_priority_board(actions, news, picks, managers, config)
+
+        dup_rows = board[(board["entity_type"] == "player") & (board["entity_id"] == "1")]
+        self.assertEqual(len(dup_rows), 1)
+        # The higher-signal source (action_recommendations) should win the collision.
+        self.assertEqual(dup_rows.iloc[0]["why"], "action reason")
+
+    def test_priority_board_ranks_higher_priority_first(self) -> None:
+        actions = pd.DataFrame(
+            [
+                {"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "High Priority", "position": "RB", "action_label": "sell_window", "consumer_label": "Sell Window", "action_rank": 1, "action_score": 95, "projected_ppg": 10, "market_value": 30, "why": "high", "evidence": "e", "risk": "medium", "confidence": "high", "source_trace": "t"},
+                {"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "2", "player_name": "Low Priority", "position": "RB", "action_label": "monitor", "consumer_label": "Monitor", "action_rank": 5, "action_score": 5, "projected_ppg": 4, "market_value": 5, "why": "low", "evidence": "e", "risk": "low", "confidence": "low", "source_trace": "t"},
+            ]
+        )
+        empty_news = pd.DataFrame(columns=["event_id", "source", "published_at", "player_id", "player_name", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"])
+        empty_picks = pd.DataFrame(columns=["is_my_original_pick", "i_currently_own_it", "pick_season", "round", "original_roster_id", "current_owner_roster_id", "current_owner", "original_team", "previous_owner"])
+        empty_managers = pd.DataFrame(columns=["roster_id", "team_name", "trade_activity_score", "plain_language_label", "evidence"])
+        config = {"current_team": {"roster_id": 2}}
+
+        board = build_today_priority_board(actions, empty_news, empty_picks, empty_managers, config)
+
+        self.assertEqual(board.iloc[0]["entity_name"], "High Priority")
+        self.assertGreater(board.iloc[0]["priority_score"], board.iloc[-1]["priority_score"])
 
 
 if __name__ == "__main__":

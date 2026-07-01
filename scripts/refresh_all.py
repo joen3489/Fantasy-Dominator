@@ -30,6 +30,7 @@ from src.normalize import (
 )
 from src.pick_ownership import build_pick_ownership
 from src.players import load_players, players_table
+from src.priority_board import build_today_priority_board
 from src.profile_intelligence import build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _load_raw_stats, build_projection_tables
@@ -176,6 +177,13 @@ def main(force: bool = False) -> None:
             dataframes["manager_valuation_profiles"],
         )
     )
+    dataframes["today_priority_board"] = build_today_priority_board(
+        dataframes["action_recommendations"],
+        dataframes["league_news_impact"],
+        dataframes["pick_ownership"],
+        dataframes["manager_behavior_signals"],
+        config,
+    )
     dataframes.update(
         build_profile_intelligence_tables(
             dataframes["manager_profiles"],
@@ -225,6 +233,7 @@ def main(force: bool = False) -> None:
                 "market_consensus_rows": len(dataframes.get("market_consensus_values", pd.DataFrame())),
                 "projection_source_rows": len(dataframes.get("projection_source_components", pd.DataFrame())),
                 "projection_accuracy_rows": len(dataframes.get("source_accuracy_scores", pd.DataFrame())),
+                "today_priority_board_rows": len(dataframes.get("today_priority_board", pd.DataFrame())),
                 "manager_valuation_profile_rows": len(dataframes.get("manager_valuation_profiles", pd.DataFrame())),
                 "counterparty_edge_rows": len(dataframes.get("counterparty_trade_edges", pd.DataFrame())),
                 "manager_profile_tag_rows": len(dataframes.get("manager_profile_tags", pd.DataFrame())),

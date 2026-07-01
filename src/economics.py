@@ -191,9 +191,10 @@ def build_manager_behavior_signals(
     manager_profiles_df: pd.DataFrame,
     roster_players_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    rows: list[dict[str, Any]] = []
     current_teams = _latest_teams(teams_df)
     current_rosters = _latest_season_rows(roster_players_df)
+
+    raw_rows: list[dict[str, Any]] = []
     for _, team in current_teams.iterrows():
         roster_id = int(team.get("roster_id"))
         profile = _row_for(manager_profiles_df, "roster_id", roster_id)
@@ -204,22 +205,66 @@ def build_manager_behavior_signals(
         claims = _int(profile.get("number_of_waiver_claims", 0))
         roster = current_rosters[current_rosters.get("roster_id") == roster_id] if not current_rosters.empty else pd.DataFrame()
         pos_counts = Counter(roster.get("position", pd.Series(dtype=str)))
-        rows.append(
+        raw_rows.append(
             {
                 "roster_id": roster_id,
                 "team_name": team.get("team_name", ""),
-                "trade_activity_score": min(100, trade_count * 18),
-                "pick_buyer_score": min(100, firsts_in * 35),
-                "pick_seller_score": min(100, firsts_out * 35),
-                "faab_aggression_score": min(100, faab + claims * 8),
-                "waiver_activity_score": min(100, claims * 12),
-                "rb_appetite_score": min(100, int(pos_counts.get("RB", 0)) * 9),
-                "pass_catcher_appetite_score": min(100, int(pos_counts.get("WR", 0) + pos_counts.get("TE", 0)) * 6),
+                "trade_count": trade_count,
+                "firsts_in": firsts_in,
+                "firsts_out": firsts_out,
+                "faab_aggression_raw": faab + claims * 8,
+                "claims": claims,
+                "rb_count": int(pos_counts.get("RB", 0)),
+                "pass_catcher_count": int(pos_counts.get("WR", 0) + pos_counts.get("TE", 0)),
                 "plain_language_label": _behavior_label(trade_count, firsts_in, firsts_out, faab, claims),
                 "evidence": _behavior_evidence(trade_count, firsts_in, firsts_out, faab, claims),
             }
         )
-    return pd.DataFrame(rows)
+
+    if not raw_rows:
+        return pd.DataFrame(raw_rows)
+
+    # League-relative percentile scoring instead of fixed absolute multipliers: a
+    # manager's score reflects standing relative to THIS league's other managers, not an
+    # arbitrary count against a magic-number cap. Fixes score saturation (previously any
+    # manager with >=6 trades capped at the same 100 as a 46-trade manager, making very
+    # different activity levels indistinguishable) and adapts to each league's own
+    # activity distribution instead of one multiplier tuned for a hypothetical league.
+    raw_df = pd.DataFrame(raw_rows)
+    raw_df["trade_activity_score"] = _percentile_score(raw_df["trade_count"])
+    raw_df["pick_buyer_score"] = _percentile_score(raw_df["firsts_in"])
+    raw_df["pick_seller_score"] = _percentile_score(raw_df["firsts_out"])
+    raw_df["faab_aggression_score"] = _percentile_score(raw_df["faab_aggression_raw"])
+    raw_df["waiver_activity_score"] = _percentile_score(raw_df["claims"])
+    raw_df["rb_appetite_score"] = _percentile_score(raw_df["rb_count"])
+    raw_df["pass_catcher_appetite_score"] = _percentile_score(raw_df["pass_catcher_count"])
+
+    return raw_df[
+        [
+            "roster_id",
+            "team_name",
+            "trade_activity_score",
+            "pick_buyer_score",
+            "pick_seller_score",
+            "faab_aggression_score",
+            "waiver_activity_score",
+            "rb_appetite_score",
+            "pass_catcher_appetite_score",
+            "plain_language_label",
+            "evidence",
+        ]
+    ]
+
+
+def _percentile_score(series: pd.Series) -> pd.Series:
+    """Rank-based percentile (0-100) within the current set of managers. Same pattern as
+    profile_intelligence._percentile_series, duplicated here deliberately (small,
+    self-contained) rather than importing a private cross-module helper -- matches this
+    codebase's existing precedent of small per-module duplication (e.g. name
+    normalization in news.py/projections.py) over coupling unrelated modules."""
+    if series.empty:
+        return series
+    return (series.rank(pct=True, method="average").fillna(0) * 100).round().astype(int)
 
 
 def build_manager_valuation_profiles(
