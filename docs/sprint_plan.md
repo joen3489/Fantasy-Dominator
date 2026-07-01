@@ -796,6 +796,11 @@ Non-goals:
 - Any change to `build_chat_context_markdown()` -- a separate, already-working manual export feature.
 - A new landing-page narrative surface or multi-page routing -- deliberately deferred in favor of extending the existing Analyst Brief section and staying with one generated HTML file/one data bundle.
 
+Post-ship hardening (found via the very first real click with a real key, not caught by mocked tests):
+
+- The entity-card pipeline (`generate_insight_output_via_llm`, unchanged code from Sprint 13, never actually exercised against the live API until this sprint) returned zero cards on its first live run. `max_tokens` raised from 4096 to 8192 for 10-20 verbose cards, and both LLM call functions now check `stop_reason == "max_tokens"` and raise a clear, diagnosable error instead of silently returning an incomplete/empty result.
+- The narrative brief's first live output was rejected for containing the bare word "sent" in an ordinary, non-transactional sentence -- `FORBIDDEN_TERMS`' bare-word substring scan is safe for short one-liner fields but produces false positives across 300-400 words of natural football prose, where "sent"/"offered"/"accepted" routinely appear with no transactional meaning. `validate_daily_gm_brief_output()` now uses `DAILY_GM_BRIEF_FORBIDDEN_PATTERNS` -- phrase-proximity regexes requiring a transaction verb near trade/offer/deal vocabulary -- instead of the bare-word list. `validate_insight_output()`/`FORBIDDEN_TERMS` are untouched; short structured fields don't have this false-positive problem.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

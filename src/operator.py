@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -47,6 +48,18 @@ FORBIDDEN_TERMS = (
 )
 
 DAILY_GM_BRIEF_HEADERS = ("## Target Theses", "## Sell Windows", "## Manager Angles")
+
+# The entity-card FORBIDDEN_TERMS list bans bare common words ("sent", "offered", "accepted"),
+# which is safe for short one-liner fields but produces false positives across 300-400 words of
+# free-flowing football prose, where those words routinely appear with no transactional meaning
+# ("the offense offered little resistance," "his role sent his value climbing"). The narrative
+# brief instead checks for the actual risk -- a transaction verb near trade/offer/deal vocabulary.
+DAILY_GM_BRIEF_FORBIDDEN_PATTERNS = (
+    re.compile(r"\b(trade|offer|deal)\w*\b(?:\W+\w+){0,4}?\W+\b(sent|offered|accepted|submitted|executed|messaged)\b", re.IGNORECASE),
+    re.compile(r"\b(sent|offered|accepted|submitted|executed|messaged)\b(?:\W+\w+){0,4}?\W+\b(trade|offer|deal)\w*\b", re.IGNORECASE),
+    re.compile(r"\bguaranteed\b", re.IGNORECASE),
+    re.compile(r"\bwill overpay\b", re.IGNORECASE),
+)
 
 _SHARED_SAFETY_RULES = (
     "Forbidden language (do not use these words or their forms, in any tense, anywhere in your output): "
@@ -305,7 +318,7 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
         },
         json={
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": system_prompt,
             "tools": [tool],
             "tool_choice": {"type": "tool", "name": "emit_insight_cards"},
@@ -315,6 +328,8 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
     )
     response.raise_for_status()
     body = response.json()
+    if body.get("stop_reason") == "max_tokens":
+        raise ValueError("Anthropic response was truncated at the token limit before finishing the insight cards.")
     for block in body.get("content", []):
         if block.get("type") == "tool_use" and block.get("name") == "emit_insight_cards":
             return block.get("input", {})
@@ -344,6 +359,8 @@ def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model:
     )
     response.raise_for_status()
     body = response.json()
+    if body.get("stop_reason") == "max_tokens":
+        raise ValueError("Anthropic response was truncated at the token limit before finishing the narrative.")
     for block in body.get("content", []):
         if block.get("type") == "tool_use" and block.get("name") == "emit_daily_gm_brief":
             return block.get("input", {})
@@ -352,8 +369,10 @@ def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model:
 
 def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
     """Sibling to validate_insight_output() for one narrative blob instead of a card list:
-    same forbidden-language scan and evidence-ID-subset citation check, plus a structural
-    check unique to a narrative (the three required section headers must be present)."""
+    same evidence-ID-subset citation check, plus a structural check unique to a narrative
+    (the three required section headers must be present). The forbidden-language check uses
+    phrase-proximity patterns rather than FORBIDDEN_TERMS' bare-word scan -- see
+    DAILY_GM_BRIEF_FORBIDDEN_PATTERNS for why."""
     generated_at = _now()
     packet = _safe_json(INSIGHT_PACKET_PATH)
     evidence_ids = {str(item.get("evidence_id")) for item in packet.get("evidence", []) if item.get("evidence_id")}
@@ -368,9 +387,9 @@ def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
     missing_headers = [header for header in DAILY_GM_BRIEF_HEADERS if header not in narrative]
     if missing_headers:
         errors.append(f"Narrative is missing required section headers: {','.join(missing_headers)}")
-    banned = [term for term in FORBIDDEN_TERMS if term in narrative.lower()]
-    if banned:
-        errors.append(f"Narrative contains forbidden language: {','.join(banned)}")
+    banned_matches = [match.group(0) for pattern in DAILY_GM_BRIEF_FORBIDDEN_PATTERNS for match in pattern.finditer(narrative)]
+    if banned_matches:
+        errors.append(f"Narrative contains forbidden language: {','.join(banned_matches)}")
     if not cited:
         errors.append("Narrative has no cited evidence IDs")
     elif not cited.issubset(evidence_ids):

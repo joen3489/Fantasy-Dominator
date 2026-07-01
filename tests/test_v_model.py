@@ -456,6 +456,28 @@ class VModelTests(unittest.TestCase):
                 self.assertTrue(any("forbidden language" in error for error in validation["errors"]))
                 self.assertFalse(operator.DAILY_GM_BRIEF_PATH.exists())
 
+    def test_daily_gm_brief_allows_common_words_used_non_transactionally(self) -> None:
+        # Real production failure: a 388-word narrative was rejected for containing the bare
+        # word "sent" in an ordinary, non-transactional football sentence. The narrative
+        # validator must not flag common English words that happen to overlap with
+        # FORBIDDEN_TERMS unless they appear near trade/offer/deal vocabulary.
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            self._seed_dossiers(dirs["ANALYSIS_DIR"])
+            with patch.multiple(operator, **dirs):
+                operator.build_insight_packet()
+                output = {
+                    "narrative_markdown": (
+                        "## Target Theses\nHis expanded role sent his value climbing this month.\n\n"
+                        "## Sell Windows\nThe defense offered little resistance, which is not a signal here.\n\n"
+                        "## Manager Angles\nIt is widely accepted that Melkor is rebuilding."
+                    ),
+                    "cited_evidence_ids": ["player:1:1"],
+                }
+                validation = operator.validate_daily_gm_brief_output(output)
+                self.assertTrue(validation["valid"], validation["errors"])
+                self.assertTrue(operator.DAILY_GM_BRIEF_PATH.exists())
+
     def test_daily_gm_brief_rejects_unknown_evidence_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dirs = self._operator_dirs(Path(tmp))
