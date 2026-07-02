@@ -833,6 +833,19 @@ Key deliverables:
 
 Non-goals (explicit v2): the full `ffopportunity` XGBoost expected-points model, snap counts, NGS, red-zone share (all weighted 0.10-0.15 in the report, non-essential, and R-only for ffopportunity); the other 10 report scores (efficiency, asymmetry, liquidity, etc.) -- several already exist in our economics layer, and the backtest did not show they were worth adding yet.
 
+### Sprint 19: Manager Data Correctness + Cross-Article Dedup
+
+Goal: fix the two problems the first successful article run surfaced -- "roster stuff looks wrong" on other managers, and the same content repeating across articles. Both traced to the deterministic layer (the LLM was faithfully writing up bad inputs).
+
+Root causes found and fixed:
+
+- **Trade Desk pairings were round-robin** (`build_trade_theses` paired each manager with the Nth opportunity-board row, attributing players to managers who don't roster them). Now matched by the real `opportunity_board.target_team` linkage (verified 38/38 assets genuinely belong to their listed team); a manager with no matched asset gets a tendency-based angle and never someone else's player. Real-data check: 21/21 named assets owned by the correct manager.
+- **11 of 12 managers classified "rebuild"**: `_pick_counts` counted ALL-TIME firsts (league median 10; one roster 52) so the absolute `>= 4` threshold fired for everyone. Now counts FUTURE firsts only (`pick_season >= current_season`) and classifies league-relative (percentile position, Sprint 14 pattern) with one absolute anchor -- zero future firsts is contender-leaning at any league size. Real-data result: 5 contenders / 4 rebuilders / 1 transition / 2 balanced, matching the actual pick-capital distribution. Post-fix hardening: `_percentile_series` returns 0-100 (per `_temperature`'s 75/45 usage), not 0-1 -- the first cut of the thresholds silently classified everyone rebuild again until checked against real data.
+- **`likely_sells` was a fixed string per cycle** (11 identical "veteran RBs; short-window scorers" lines). Now roster-grounded: names the manager's actual veteran assets (age >= 28, market >= 20, best first) from player dossiers, so every manager's line is different and verifiable.
+- **Cross-article repetition**: new `apply_entity_dedup` in `src/articles.py` -- the first section article to scope a player claims it (by normalized name, threaded through `ArticleContext.claimed_players`); later articles drop that player's evidence and receive one "covered elsewhere" context item instead. Daily brief exempt (it synthesizes by design) but its prompt now demands cross-section connections over recaps; the three later section prompts got matching don't-re-profile guidance. Real-data check: zero player overlap across the four section-article scopes.
+
+Non-goals: dedup against the deterministic UI surfaces (Today's Board etc. showing the same top players as articles is expected -- they are ranked data views, not written analysis); any change to the underlying Sleeper roster ingestion (verified correct -- the wrongness was attribution logic, not data).
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

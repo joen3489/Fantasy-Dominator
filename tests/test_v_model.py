@@ -2058,6 +2058,106 @@ class VModelTests(unittest.TestCase):
         high = _breakout_score("WR", 24, 12.0, 40.0, "high", "", opportunity_score=90.0)
         self.assertGreater(high, low)
 
+    # --- Sprint 19: manager data correctness + cross-article dedup -----------------------
+
+    def test_trade_theses_only_name_assets_owned_by_target_manager(self) -> None:
+        # The old round-robin paired managers with arbitrary opportunity rows, attributing
+        # players to managers who don't roster them. Theses must use the real target_team link.
+        from src.analysis import build_trade_theses
+
+        dataframes = {
+            "manager_behavior_signals": pd.DataFrame(
+                [
+                    {"roster_id": 3, "team_name": "The Clapper", "plain_language_label": "pick buyer", "evidence": "e3"},
+                    {"roster_id": 4, "team_name": "Moose Caboose", "plain_language_label": "waiver aggressive", "evidence": "e4"},
+                    {"roster_id": 5, "team_name": "Quiet Team", "plain_language_label": "low activity", "evidence": "e5"},
+                ]
+            ),
+            "opportunity_board": pd.DataFrame(
+                [
+                    {"action_type": "buy_low_target", "target_team": "The Clapper", "asset_in": "Clapper Player", "evidence": "oe1", "risk": "medium", "confidence": "high", "source_trace": "t"},
+                    {"action_type": "buy_low_target", "target_team": "Moose Caboose", "asset_in": "Moose Player", "evidence": "oe2", "risk": "medium", "confidence": "high", "source_trace": "t"},
+                ]
+            ),
+        }
+        theses = build_trade_theses(dataframes, 2, "Melkor Lord of Light", "2026-01-01T00:00:00+00:00")
+        by_manager = {thesis["target_manager_name"]: thesis for thesis in theses}
+        self.assertIn("Clapper Player", by_manager["The Clapper"]["assets_to_discuss"])
+        self.assertIn("Moose Player", by_manager["Moose Caboose"]["assets_to_discuss"])
+        self.assertNotIn("Clapper Player", by_manager["Moose Caboose"]["assets_to_discuss"])
+        # A manager with no matched opportunity gets a tendency-based angle, never someone else's player.
+        self.assertNotIn("Player", by_manager["Quiet Team"]["assets_to_discuss"])
+
+    def test_dynasty_cycles_differentiate_by_future_pick_capital(self) -> None:
+        # 11/12 managers classified "rebuild" in production because all-time pick counts tripped
+        # an absolute threshold. Future-firsts + league-relative classification must produce a mix.
+        from src.profile_intelligence import build_manager_cycle_profiles
+
+        profiles = pd.DataFrame(
+            [
+                {"owner_id": "a", "roster_id": 1, "team_name": "Hoarder", "seasons_covered": "2021-2026", "total_trades": 30, "number_of_waiver_claims": 40, "faab_spent_on_waivers": 200, "future_1sts_acquired": 12, "future_1sts_sold": 2, "rb_count": 6, "pass_catcher_count": 14},
+                {"owner_id": "b", "roster_id": 2, "team_name": "Spender", "seasons_covered": "2021-2026", "total_trades": 28, "number_of_waiver_claims": 35, "faab_spent_on_waivers": 180, "future_1sts_acquired": 1, "future_1sts_sold": 9, "rb_count": 10, "pass_catcher_count": 18},
+                {"owner_id": "c", "roster_id": 3, "team_name": "Middle", "seasons_covered": "2021-2026", "total_trades": 5, "number_of_waiver_claims": 10, "faab_spent_on_waivers": 40, "future_1sts_acquired": 3, "future_1sts_sold": 3, "rb_count": 8, "pass_catcher_count": 16},
+            ]
+        )
+        picks = pd.DataFrame(
+            # Hoarder owns 5 future firsts, Spender none, Middle one; plus stale past-season picks
+            # for everyone that must NOT count.
+            [{"round": 1, "pick_season": 2027, "current_owner_roster_id": 1}] * 5
+            + [{"round": 1, "pick_season": 2027, "current_owner_roster_id": 3}]
+            + [{"round": 1, "pick_season": 2022, "current_owner_roster_id": 2}] * 6
+        )
+        cycles = build_manager_cycle_profiles(profiles, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), picks, None, 2026)
+        by_team = {row["team_name"]: row["dynasty_cycle"] for _, row in cycles.iterrows()}
+        self.assertEqual(by_team["Hoarder"], "rebuild")
+        self.assertEqual(by_team["Spender"], "contender")
+        self.assertEqual(len(set(by_team.values())) > 1, True)
+
+    def test_likely_sells_names_actual_roster_veterans(self) -> None:
+        from src.profile_intelligence import build_manager_cycle_profiles
+
+        profiles = pd.DataFrame(
+            [
+                {"owner_id": "a", "roster_id": 1, "team_name": "Hoarder", "seasons_covered": "2021-2026", "total_trades": 30, "number_of_waiver_claims": 40, "faab_spent_on_waivers": 200, "future_1sts_acquired": 12, "future_1sts_sold": 2, "rb_count": 6, "pass_catcher_count": 14},
+                {"owner_id": "b", "roster_id": 2, "team_name": "Spender", "seasons_covered": "2021-2026", "total_trades": 28, "number_of_waiver_claims": 35, "faab_spent_on_waivers": 180, "future_1sts_acquired": 1, "future_1sts_sold": 9, "rb_count": 10, "pass_catcher_count": 18},
+            ]
+        )
+        picks = pd.DataFrame([{"round": 1, "pick_season": 2027, "current_owner_roster_id": 1}] * 4)
+        dossiers = pd.DataFrame(
+            [
+                {"player_id": "9", "player_name": "Old Star", "position": "RB", "age": 30, "roster_id": 1, "market_value": 60},
+                {"player_id": "10", "player_name": "Young Gun", "position": "WR", "age": 23, "roster_id": 1, "market_value": 80},
+            ]
+        )
+        cycles = build_manager_cycle_profiles(profiles, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), picks, dossiers, 2026)
+        hoarder = cycles[cycles.team_name == "Hoarder"].iloc[0]
+        self.assertEqual(hoarder["dynasty_cycle"], "rebuild")
+        self.assertIn("Old Star", hoarder["likely_sells"])  # the actual veteran, by name
+        self.assertNotIn("Young Gun", hoarder["likely_sells"])  # the 23-year-old is not a sell
+
+    def test_articles_dedup_claims_players_across_scopes(self) -> None:
+        from src import articles
+
+        ctx = articles.ArticleContext(analysis_dir=Path("."), active_roster_id=2)
+        first = [
+            {"evidence_id": "player:1:1", "entity_type": "player", "entity_id": "1", "name": "Shared Star", "text": "t"},
+            {"evidence_id": "player:2:2", "entity_type": "player", "entity_id": "2", "name": "Only First", "text": "t"},
+        ]
+        second = [
+            {"evidence_id": "player:1:9", "entity_type": "player", "entity_id": "1", "name": "Shared Star", "text": "t"},
+            {"evidence_id": "player:3:3", "entity_type": "player", "entity_id": "3", "name": "Only Second", "text": "t"},
+            {"evidence_id": "manager:4:4", "entity_type": "manager", "entity_id": "4", "name": "Some Manager", "text": "t"},
+        ]
+        kept_first = articles.apply_entity_dedup(ctx, first)
+        kept_second = articles.apply_entity_dedup(ctx, second)
+        self.assertEqual(len(kept_first), 2)
+        second_players = [row["name"] for row in kept_second if row.get("entity_type") == "player"]
+        self.assertEqual(second_players, ["Only Second"])  # Shared Star dropped
+        self.assertTrue(any(row.get("entity_type") == "manager" for row in kept_second))  # managers untouched
+        covered = [row for row in kept_second if row.get("entity_type") == "context"]
+        self.assertEqual(len(covered), 1)
+        self.assertIn("Shared Star", covered[0]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

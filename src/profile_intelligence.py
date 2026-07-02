@@ -71,16 +71,12 @@ def build_profile_intelligence_tables(
     weekly_projections_df: pd.DataFrame,
     news_impact_df: pd.DataFrame,
     player_signal_scores_df: pd.DataFrame,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, pd.DataFrame]:
     generated_at = datetime.now(timezone.utc).isoformat()
-    manager_cycles = build_manager_cycle_profiles(
-        manager_profiles_df,
-        manager_event_log_df,
-        manager_valuation_profiles_df,
-        team_needs_df,
-        pick_ownership_df,
-    )
-    manager_tags = build_manager_profile_tags(manager_cycles, manager_profiles_df, generated_at)
+    current_season = _int((config or {}).get("current_season")) or None
+    # Player dossiers are built first so the manager cycle reads can name each roster's actual
+    # veteran assets instead of a fixed per-cycle string.
     player_history = build_player_transaction_history(trades_df, waivers_df, draft_picks_df)
     player_dossiers = build_player_dossiers(
         roster_players_df,
@@ -91,6 +87,16 @@ def build_profile_intelligence_tables(
         player_signal_scores_df,
         player_history,
     )
+    manager_cycles = build_manager_cycle_profiles(
+        manager_profiles_df,
+        manager_event_log_df,
+        manager_valuation_profiles_df,
+        team_needs_df,
+        pick_ownership_df,
+        player_dossiers,
+        current_season,
+    )
+    manager_tags = build_manager_profile_tags(manager_cycles, manager_profiles_df, generated_at)
     player_tags = build_player_profile_tags(player_dossiers, player_signal_scores_df, news_impact_df, generated_at)
     return {
         "manager_profile_tags": manager_tags,
@@ -107,6 +113,8 @@ def build_manager_cycle_profiles(
     manager_valuation_profiles_df: pd.DataFrame,
     team_needs_df: pd.DataFrame,
     pick_ownership_df: pd.DataFrame,
+    player_dossiers_df: pd.DataFrame | None = None,
+    current_season: int | None = None,
 ) -> pd.DataFrame:
     if manager_profiles_df.empty:
         return pd.DataFrame([], columns=CYCLE_COLUMNS)
@@ -121,7 +129,14 @@ def build_manager_cycle_profiles(
     frame["_waiver_pct"] = _percentile_series(frame["_waivers_per_season"])
     frame["_faab_pct"] = _percentile_series(frame["_faab_per_season"])
     needs = _row_map(team_needs_df, "roster_id")
-    current_picks = _pick_counts(pick_ownership_df)
+    # Only FUTURE firsts say anything about a team's current cycle. The all-time count (which
+    # includes every already-drafted pick in league history) made 11 of 12 managers trip the old
+    # absolute "rebuild" threshold -- median all-time count was 10 firsts.
+    current_picks = _pick_counts(pick_ownership_df, current_season)
+    frame["_future_firsts"] = frame["roster_id"].map(lambda rid: current_picks.get(_int(rid), 0.0))
+    frame["_firsts_pct"] = _percentile_series(frame["_future_firsts"])
+    frame["_net_pct"] = _percentile_series(frame["_firsts_net"])
+    veterans_by_roster = _veterans_by_roster(player_dossiers_df)
     rows: list[dict[str, Any]] = []
     for _, row in frame.iterrows():
         roster_id = _int(row.get("roster_id"))
@@ -142,7 +157,7 @@ def build_manager_cycle_profiles(
                 "pick_posture": pick_posture,
                 "waiver_posture": waiver_posture,
                 "likely_needs": _likely_needs(need),
-                "likely_sells": _likely_sells(dynasty_cycle, row, need),
+                "likely_sells": _likely_sells(dynasty_cycle, row, need, veterans_by_roster.get(roster_id, [])),
                 "confidence": confidence,
                 "evidence": (
                     f"seasons={int(_num(row.get('_seasons')))}; trades_per_season={round(_num(row.get('_trades_per_season')), 2)}; "
@@ -367,16 +382,25 @@ def _player_event(player_id: str, player_name: Any, event_type: str, row: pd.Ser
 
 
 def _dynasty_cycle(row: pd.Series, need: dict[str, Any], firsts_owned: float) -> str:
-    firsts_net = _num(row.get("_firsts_net"))
-    firsts_sold = _num(row.get("future_1sts_sold"))
-    ppr = _num(row.get("pass_catcher_count"))
-    rb_count = _num(row.get("rb_count"))
+    # League-relative classification (same fix class as Sprint 14's manager scores): a cycle is
+    # a POSITION in this league's pick-capital distribution, not an absolute count. Absolute
+    # thresholds classified 11 of 12 managers as "rebuild" -- impossible in a real league.
+    # NOTE: _percentile_series returns a 0-100 scale (see _temperature's 75/45 thresholds).
+    firsts_pct = _num(row.get("_firsts_pct"))
+    net_pct = _num(row.get("_net_pct"))
     team_shape = str(need.get("team_shape", "")).lower()
-    if firsts_owned >= 4 or (firsts_net >= 4 and rb_count <= 7) or "rebuild" in team_shape:
+    if "rebuild" in team_shape and firsts_pct >= 50:
         return "rebuild"
-    if firsts_sold >= 6 or (rb_count >= 8 and ppr >= 14) or "contender" in team_shape:
+    if "contender" in team_shape and firsts_pct <= 50:
         return "contender"
-    if abs(firsts_net) <= 2 and _num(row.get("total_trades")) >= 25:
+    if firsts_pct >= 70 and net_pct >= 50:
+        return "rebuild"
+    # Zero future firsts is a meaningful absolute anchor at any league size: a team that has
+    # spent all its future capital is contending by definition (rank percentiles alone can miss
+    # the lowest team in small pools).
+    if (firsts_pct <= 30 or _num(row.get("_future_firsts")) == 0) and net_pct <= 50:
+        return "contender"
+    if _num(row.get("_trade_pct")) >= 60:
         return "transition"
     return "balanced_or_unclear"
 
@@ -407,14 +431,39 @@ def _likely_needs(need: dict[str, Any]) -> str:
     return "; ".join(needs) if needs else "no glaring need"
 
 
-def _likely_sells(cycle: str, row: pd.Series, need: dict[str, Any]) -> str:
+def _likely_sells(cycle: str, row: pd.Series, need: dict[str, Any], veterans: list[str] | None = None) -> str:
+    # Ground the sell read in the manager's ACTUAL roster where possible -- a fixed string per
+    # cycle made 11 managers read identically, which the user correctly flagged as wrong-looking.
+    named = "; ".join((veterans or [])[:3])
     if cycle == "rebuild":
-        return "veteran RBs; short-window scorers"
+        return f"win-now veterans: {named}" if named else "veteran producers with short windows"
     if cycle == "contender":
         return "future picks only at premium; excess depth"
+    if named:
+        return f"aging depth: {named}"
     if _num(row.get("pass_catcher_count")) >= 16:
         return "pass-catcher depth"
     return "unclear; start with price discovery"
+
+
+def _veterans_by_roster(player_dossiers_df: pd.DataFrame | None) -> dict[int, list[str]]:
+    """Each roster's most-valuable veteran assets (age >= 28, real market value), best first --
+    the concrete names a rebuilder would actually shop."""
+    if player_dossiers_df is None or player_dossiers_df.empty:
+        return {}
+    veterans: dict[int, list[tuple[float, str]]] = {}
+    for _, player in player_dossiers_df.fillna("").iterrows():
+        age = _num(player.get("age"))
+        market = _num(player.get("market_value"))
+        if age < 28 or market < 20:
+            continue
+        roster_id = _int(player.get("roster_id"))
+        label = f"{player.get('player_name', '')} ({player.get('position', '')}, {int(age)})"
+        veterans.setdefault(roster_id, []).append((market, label))
+    return {
+        roster_id: [label for _, label in sorted(entries, reverse=True)]
+        for roster_id, entries in veterans.items()
+    }
 
 
 def _manager_confidence(seasons: float, trades: float, waivers: float) -> str:
@@ -453,14 +502,20 @@ def _percentile_series(series: pd.Series) -> pd.Series:
     return series.rank(pct=True, method="average").fillna(0) * 100
 
 
-def _pick_counts(frame: pd.DataFrame) -> dict[int, float]:
+def _pick_counts(frame: pd.DataFrame, current_season: int | None = None) -> dict[int, float]:
+    """First-round picks owned per roster. When current_season is given, only FUTURE picks count
+    (pick_season >= current season) -- all-time counts include every already-drafted pick in league
+    history and say nothing about a team's current cycle."""
     counts: dict[int, float] = {}
     if frame.empty:
         return counts
     for _, row in frame.fillna("").iterrows():
-        if str(row.get("round", "")) == "1":
-            owner = _int(row.get("current_owner_roster_id"))
-            counts[owner] = counts.get(owner, 0) + 1
+        if str(row.get("round", "")) != "1":
+            continue
+        if current_season is not None and _int(row.get("pick_season")) < current_season:
+            continue
+        owner = _int(row.get("current_owner_roster_id"))
+        counts[owner] = counts.get(owner, 0) + 1
     return counts
 
 

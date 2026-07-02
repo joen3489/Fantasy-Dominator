@@ -206,13 +206,31 @@ def build_trade_theses(
 ) -> list[dict[str, Any]]:
     behavior = dataframes.get("manager_behavior_signals", pd.DataFrame())
     opportunities = dataframes.get("opportunity_board", pd.DataFrame())
-    targets = _rows(opportunities.head(12))
+    # Opportunities keyed by the manager they actually target -- opportunity_board.target_team is
+    # the real linkage (each asset_in genuinely belongs to that team). The old round-robin pairing
+    # here attributed players to managers who don't roster them, which read as wrong data.
+    opportunities_by_team: dict[str, list[dict[str, Any]]] = {}
+    for opportunity in _rows(opportunities):
+        opportunities_by_team.setdefault(str(opportunity.get("target_team", "")), []).append(opportunity)
     theses: list[dict[str, Any]] = []
     managers = [row for row in _rows(behavior) if _int(row.get("roster_id")) != active_roster_id]
     for index, manager in enumerate(managers[:10], start=1):
-        opportunity = targets[(index - 1) % len(targets)] if targets else {}
         manager_name = manager.get("team_name", "Unknown manager")
         manager_signal = manager.get("plain_language_label", "")
+        matched = opportunities_by_team.get(str(manager_name), [])
+        assets = "; ".join(dict.fromkeys(str(opportunity.get("asset_in", "")) for opportunity in matched[:3] if opportunity.get("asset_in")))
+        top = matched[0] if matched else {}
+        if assets:
+            analysis_text = (
+                f"{manager_name} profiles as {manager_signal or 'unclear'}. "
+                f"Use that as a conversation angle around {assets}, with the evidence row setting the guardrails."
+            )
+        else:
+            analysis_text = (
+                f"{manager_name} profiles as {manager_signal or 'unclear'}. "
+                f"No specific roster target stands out from the current board -- open with their tendency "
+                f"(what they buy, what they hoard) and let price discovery surface the asset."
+            )
         theses.append(
             {
                 "thesis_id": f"trade-{index:03d}",
@@ -220,16 +238,13 @@ def build_trade_theses(
                 "target_manager_roster_id": _int(manager.get("roster_id")),
                 "target_manager_name": manager_name,
                 "approach_type": _approach_type(manager_signal),
-                "assets_to_discuss": opportunity.get("asset_in", "watchlist asset"),
+                "assets_to_discuss": assets or "tendency-based approach; no named asset",
                 "manager_signal": manager_signal,
-                "evidence": opportunity.get("evidence") or manager.get("evidence", ""),
-                "risk": opportunity.get("risk", "medium"),
-                "confidence": opportunity.get("confidence", "medium"),
-                "source_trace": opportunity.get("source_trace") or "manager_behavior_signals;opportunity_board",
-                "analysis_text": (
-                    f"{manager_name} profiles as {manager_signal or 'unclear'}. "
-                    f"Use that as a conversation angle around {opportunity.get('asset_in', 'watchlist assets')}, with the evidence row setting the guardrails."
-                ),
+                "evidence": top.get("evidence") or manager.get("evidence", ""),
+                "risk": top.get("risk", "medium"),
+                "confidence": top.get("confidence", "medium") if matched else "low",
+                "source_trace": top.get("source_trace") or "manager_behavior_signals;opportunity_board",
+                "analysis_text": analysis_text,
                 "generated_at": generated_at,
             }
         )

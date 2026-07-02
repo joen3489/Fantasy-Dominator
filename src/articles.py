@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -28,6 +29,41 @@ class ArticleContext:
     analysis_dir: Path
     active_roster_id: int | None
     section_outputs: dict[str, str] = field(default_factory=dict)
+    claimed_players: set[str] = field(default_factory=set)
+
+
+def apply_entity_dedup(ctx: ArticleContext, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cross-article player dedup (the Sprint 14 Today's Board philosophy applied to articles):
+    the first section article to scope a player claims it; later articles drop that player's
+    evidence and instead receive one 'covered elsewhere' context item so the writer knows the
+    name exists but should spend its words on players not yet covered. The daily brief is exempt
+    by the caller -- it synthesizes the sections by design."""
+    fresh: list[dict[str, Any]] = []
+    covered: list[str] = []
+    for row in rows:
+        if str(row.get("entity_type", "")) == "player":
+            key = _normalize_name(row.get("name"))
+            if key and key in ctx.claimed_players:
+                covered.append(str(row.get("name", "")))
+                continue
+            if key:
+                ctx.claimed_players.add(key)
+        fresh.append(row)
+    if covered:
+        unique_covered = ", ".join(dict.fromkeys(name for name in covered if name))
+        fresh.append(
+            _evidence(
+                "context",
+                "covered_elsewhere",
+                len(fresh) + 1,
+                "Covered elsewhere",
+                (
+                    f"Already profiled in an earlier section this run: {unique_covered}. "
+                    "A passing reference is fine; do not re-profile them -- spend the words on names not yet covered."
+                ),
+            )
+        )
+    return fresh
 
 
 @dataclass
@@ -251,6 +287,11 @@ def _safe_config() -> dict[str, Any]:
         return load_config()
     except (OSError, ValueError):
         return {}
+
+
+def _normalize_name(value: Any) -> str:
+    # Matches src/projections.py::_normalize_name -- the shared player-name join/dedup key.
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
 
 def _as_int(value: Any) -> int | None:

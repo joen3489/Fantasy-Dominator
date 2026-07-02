@@ -652,6 +652,10 @@ def generate_articles_workflow() -> dict[str, Any]:
     for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
         try:
             evidence = article.scope(ctx)
+            if not article.is_summary:
+                # First article to scope a player claims it; later ones get a "covered elsewhere"
+                # note instead -- kills the same-player-profiled-in-three-sections repetition.
+                evidence = articles.apply_entity_dedup(ctx, evidence)
             if not evidence:
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
                 continue

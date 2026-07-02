@@ -208,6 +208,7 @@ def main(force: bool = False) -> None:
             dataframes["player_projection_weekly"],
             dataframes["league_news_impact"],
             dataframes["player_signal_scores"],
+            config,
         )
     )
     configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]
