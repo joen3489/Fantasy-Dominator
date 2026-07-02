@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 import requests
 
+from . import articles
 from .browser_site import build_browser_site
 from .utils import (
     ANALYSIS_DIR,
@@ -519,6 +520,169 @@ def generate_insights_automatically() -> dict[str, Any]:
         )
     )
     return results
+
+
+# === Sprint 17: per-section article workflow ==============================================
+# One focused LLM call per meaningful section instead of one mega-call that writes all the copy.
+# Each article gets its own editable prompt (prompts/{key}.md) + only its own scoped evidence,
+# is validated independently, and falls back to its deterministic .md on failure. This
+# generalizes the Sprint 16 single-brief pipeline (which stays intact for its own tests).
+
+ARTICLE_TOOL = {
+    "name": "emit_article",
+    "description": "Emit one section article as markdown prose grounded in the provided evidence.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "narrative_markdown": {
+                "type": "string",
+                "description": "The full article as markdown prose under the requested section headers.",
+            },
+            "cited_evidence_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Every evidence_id referenced by a factual claim in narrative_markdown.",
+            },
+        },
+        "required": ["narrative_markdown", "cited_evidence_ids"],
+    },
+}
+
+_CITATION_RULES = (
+    "Every sentence containing a specific factual claim must be traceable to at least one evidence_id "
+    "you cite in cited_evidence_ids. Each evidence item below has its own \"evidence_id\" field, e.g. "
+    "\"player:4984:12\" or \"manager:6:3\" -- copy that exact string character-for-character into "
+    "cited_evidence_ids for items you actually used. Never construct, reformat, or guess an ID yourself, "
+    "even if you know a real numeric ID; only ever use the literal evidence_id strings given to you."
+)
+
+
+def _article_system_prompt(article: articles.Article) -> str:
+    return f"{articles.load_prompt(article.prompt_filename)}\n\n{_SHARED_SAFETY_RULES}\n\n{_CITATION_RULES}"
+
+
+def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]], api_key: str, model: str) -> dict[str, Any]:
+    """Focused single-article call. Small output (one section, a few hundred words) so a 4096
+    ceiling has ample headroom and truncation is a non-issue, unlike the old all-cards-at-once call."""
+    response = requests.post(
+        ANTHROPIC_API_URL,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_API_VERSION,
+            "content-type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "tools": [ARTICLE_TOOL],
+            "tool_choice": {"type": "tool", "name": "emit_article"},
+            "messages": [{"role": "user", "content": json.dumps({"evidence": evidence})}],
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if body.get("stop_reason") == "max_tokens":
+        raise ValueError("Anthropic response was truncated at the token limit before finishing the article.")
+    for block in body.get("content", []):
+        if block.get("type") == "tool_use" and block.get("name") == "emit_article":
+            return block.get("input", {})
+    raise ValueError("Anthropic response did not include an emit_article tool call.")
+
+
+def validate_article_output(output: dict[str, Any], evidence_ids: set[str], headers: tuple[str, ...]) -> dict[str, Any]:
+    """Independent per-article validation: required headers (if any), the shared phrase-proximity
+    forbidden-language scan, and lenient citation (reject only if NONE of the cited IDs are real,
+    since a synthesized article can plausibly drop one citation among several correct ones)."""
+    narrative = str(output.get("narrative_markdown", "")) if isinstance(output, dict) else ""
+    cited = {str(value) for value in output.get("cited_evidence_ids", [])} if isinstance(output, dict) else set()
+    valid_citations = cited & evidence_ids
+    unknown_citations = cited - evidence_ids
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not narrative.strip():
+        errors.append("Article narrative_markdown is empty.")
+    missing_headers = [header for header in headers if header not in narrative]
+    if missing_headers:
+        errors.append(f"Article is missing required section headers: {','.join(missing_headers)}")
+    banned_matches = [match.group(0) for pattern in FORBIDDEN_LANGUAGE_PATTERNS for match in pattern.finditer(narrative)]
+    if banned_matches:
+        errors.append(f"Article contains forbidden language: {','.join(banned_matches)}")
+    if not cited:
+        errors.append("Article has no cited evidence IDs.")
+    elif not valid_citations:
+        errors.append(f"Article cites only unknown evidence IDs: {','.join(sorted(unknown_citations))}")
+    elif unknown_citations:
+        warnings.append(f"Article cited some unknown evidence IDs (kept): {','.join(sorted(unknown_citations))}")
+
+    return {"valid": not errors, "errors": errors, "warnings": warnings, "narrative": narrative, "word_count": len(narrative.split())}
+
+
+def _render_article_markdown(article: articles.Article, narrative: str, generated_at: str, output_path: Path) -> str:
+    existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    front_lines = [
+        "---",
+        f"artifact_type: {article.key}",
+        f"generated_at: {generated_at}",
+        "model_mode: automatic_llm",
+    ]
+    for key in ("roster_id", "team_name"):
+        value = _front_matter_value(existing, key)
+        if value:
+            front_lines.append(f"{key}: {value}")
+    front_lines.append("---")
+    return "\n".join(front_lines) + f"\n\n# {article.title}\n\n{narrative.strip()}\n"
+
+
+def generate_articles_workflow() -> dict[str, Any]:
+    """Explicit, user-triggered, cost-incurring action. Generates one article per meaningful
+    section (each independently validated, each falling back to its deterministic .md on failure),
+    then a daily brief that synthesizes across them. Fails loud only on missing API key."""
+    generated_at = _now()
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"state": "failed", "message": "ANTHROPIC_API_KEY is not set. No LLM call was attempted.", "generated_at": generated_at, "articles": {}}
+    model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
+
+    ctx = articles.ArticleContext(analysis_dir=ANALYSIS_DIR, active_roster_id=articles.resolve_active_roster_id())
+    results: dict[str, Any] = {}
+
+    for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
+        try:
+            evidence = article.scope(ctx)
+            if not evidence:
+                results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
+                continue
+            output = generate_article_via_llm(_article_system_prompt(article), evidence, api_key, model)
+            evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
+            validation = validate_article_output(output, evidence_ids, article.headers)
+            if validation["valid"]:
+                output_path = ANALYSIS_DIR / article.output_filename
+                output_path.write_text(_render_article_markdown(article, validation["narrative"], generated_at, output_path), encoding="utf-8")
+                if not article.is_summary:
+                    ctx.section_outputs[article.key] = validation["narrative"]
+                results[article.key] = {"state": "complete", "message": f"{article.title} written.", "warnings": validation["warnings"]}
+            else:
+                results[article.key] = {"state": "failed", "message": f"{article.title} failed validation.", "errors": validation["errors"]}
+        except Exception as exc:  # noqa: BLE001 - one article failing must not sink the rest.
+            results[article.key] = {"state": "failed", "message": f"{article.title} generation failed: {exc}"}
+
+    attempted = [state for state in results.values() if state["state"] != "skipped"]
+    completed = [state for state in attempted if state["state"] == "complete"]
+    if attempted and len(completed) == len(attempted):
+        state = "complete"
+    elif completed:
+        state = "partial"
+    else:
+        state = "failed"
+    return {
+        "state": state,
+        "message": f"Articles generated: {len(completed)} complete, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
+        "generated_at": generated_at,
+        "articles": results,
+    }
 
 
 def build_chat_context_markdown() -> dict[str, Any]:

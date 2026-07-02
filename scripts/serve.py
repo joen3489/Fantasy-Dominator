@@ -79,7 +79,18 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         return operator.start_job("build-packet", operator.build_insight_packet)
 
     def _generate_insights(self) -> dict:
-        return operator.start_job("generate-insights", operator.generate_insights_automatically)
+        # The full analysis workflow: refresh the data, write one LLM article per section, then
+        # rebuild the browser bundle so the page picks up the new article .md files (the bundle is
+        # baked at build time, so writing articles without a rebuild would not surface them).
+        def job() -> dict:
+            from scripts.refresh_all import main as refresh_all
+
+            refresh_all(force=True)
+            result = operator.generate_articles_workflow()
+            operator.rebuild_browser()
+            return result
+
+        return operator.start_job("generate-insights", job)
 
     def _validate_insights(self) -> dict:
         return operator.start_job("validate-insights", operator.validate_insight_output)

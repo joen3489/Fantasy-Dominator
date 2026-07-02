@@ -52,6 +52,11 @@ def build_analysis_artifacts(
         "daily_gm_brief.md": build_daily_gm_brief(active_roster_id, active_team_name, target_theses, sell_theses, trade_theses, generated_at),
         "manager_dossiers.md": build_manager_dossiers(dataframes, generated_at),
         "news_impact_brief.md": build_news_impact_brief(dataframes, generated_at),
+        # Sprint 17 per-section article fallbacks -- the LLM workflow overwrites these in place.
+        "team_report.md": build_team_report(dataframes, active_roster_id, active_team_name, generated_at),
+        "market_watch.md": build_market_watch(target_theses, sell_theses, generated_at),
+        "trade_desk.md": build_trade_desk(trade_theses, active_team_name, generated_at),
+        "manager_intel.md": build_manager_intel(dataframes, generated_at),
     }
     for filename, text in markdown_artifacts.items():
         (analysis_dir / filename).write_text(text, encoding="utf-8")
@@ -315,6 +320,78 @@ def build_news_impact_brief(dataframes: dict[str, pd.DataFrame], generated_at: s
         "News interpretation summarizes imported rows and player matches; it is not a sourced injury database by itself.",
         "",
         *_bullets(news, "player_name", "evidence"),
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+# --- Sprint 17: deterministic fallbacks for the per-section articles. Each mirrors the LLM
+# article's headers so the browser renders both the same way, and each is overwritten in place
+# by the LLM version when the article workflow succeeds. -----------------------------------
+
+def _article_front_matter(key: str, generated_at: str, **extra: Any) -> str:
+    return _front_matter({"artifact_type": key, "generated_at": generated_at, "model_mode": GENERATION_MODE, **extra})
+
+
+def build_team_report(dataframes: dict[str, pd.DataFrame], active_roster_id: int | None, active_team_name: str, generated_at: str) -> str:
+    players = [row for row in _rows(dataframes.get("player_dossiers", pd.DataFrame())) if _int(row.get("roster_id")) == _int(active_roster_id)]
+    players.sort(key=lambda row: _num(row.get("market_value")), reverse=True)
+    cornerstones = players[:4]
+    shop = [row for row in players if "sell" in str(row.get("signal_label", "")).lower()][:4] or players[4:8]
+    lines = [
+        _article_front_matter("team_report", generated_at, roster_id=active_roster_id, team_name=active_team_name),
+        f"# Your Team Report: {active_team_name}",
+        "",
+        "## Cornerstones",
+        *_bullets(cornerstones, "player_name", "evidence"),
+        "",
+        "## Shop Candidates",
+        *_bullets(shop, "player_name", "evidence"),
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_market_watch(targets: list[dict[str, Any]], sells: list[dict[str, Any]], generated_at: str) -> str:
+    lines = [
+        _article_front_matter("market_watch", generated_at),
+        "# Market Watch",
+        "",
+        "## Buy-Low Targets",
+        *_bullets(targets[:5], "player_name", "analysis_text"),
+        "",
+        "## Sell-High Windows",
+        *_bullets(sells[:5], "player_name", "analysis_text"),
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_trade_desk(trades: list[dict[str, Any]], active_team_name: str, generated_at: str) -> str:
+    best = trades[:5]
+    lines = [
+        _article_front_matter("trade_desk", generated_at, team_name=active_team_name),
+        "# Trade Desk Read",
+        "",
+        "## Best Fits",
+        *_bullets(best, "target_manager_name", "analysis_text"),
+        "",
+        "## Steer Clear",
+        "- No steer-clear counterparties flagged from the current evidence.",
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_manager_intel(dataframes: dict[str, pd.DataFrame], generated_at: str) -> str:
+    cycles = _rows(dataframes.get("manager_cycle_profiles", pd.DataFrame()))
+    contenders = [row for row in cycles if str(row.get("dynasty_cycle", "")) == "contender"]
+    rebuilders = [row for row in cycles if str(row.get("dynasty_cycle", "")) == "rebuild"]
+    lines = [
+        _article_front_matter("manager_intel", generated_at, manager_count=len(cycles)),
+        "# Manager Intel",
+        "",
+        "## Contenders",
+        *_bullets(contenders, "team_name", "likely_needs"),
+        "",
+        "## Rebuilders",
+        *_bullets(rebuilders, "team_name", "likely_sells"),
     ]
     return "\n".join(lines).strip() + "\n"
 

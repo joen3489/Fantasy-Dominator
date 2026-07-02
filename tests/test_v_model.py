@@ -539,6 +539,115 @@ class VModelTests(unittest.TestCase):
                 self.assertTrue(any("player:999:1" in warning for warning in validation["warnings"]))
                 self.assertTrue(operator.DAILY_GM_BRIEF_PATH.exists())
 
+    # --- Sprint 17: per-section article workflow ---------------------------------------
+
+    def test_article_registry_has_one_summary_and_loadable_prompts(self) -> None:
+        from src import articles
+
+        summaries = [article for article in articles.ARTICLES if article.is_summary]
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].key, "daily_brief")
+        # daily_brief keeps its long-standing filename so the existing bundle/badge wiring holds.
+        self.assertEqual(summaries[0].output_filename, "daily_gm_brief.md")
+        for article in articles.ARTICLES:
+            self.assertTrue(articles.load_prompt(article.prompt_filename).strip(), article.key)
+
+    def test_validate_article_output_rules(self) -> None:
+        evidence_ids = {"player:1:1", "player:2:2"}
+        headers = ("## Cornerstones", "## Shop Candidates")
+        good = {
+            "narrative_markdown": "## Cornerstones\nHis role sent his value climbing.\n\n## Shop Candidates\nSome names.",
+            "cited_evidence_ids": ["player:1:1"],
+        }
+        self.assertTrue(operator.validate_article_output(good, evidence_ids, headers)["valid"])
+
+        forbidden = {
+            "narrative_markdown": "## Cornerstones\nThe trade was sent and accepted.\n\n## Shop Candidates\nx.",
+            "cited_evidence_ids": ["player:1:1"],
+        }
+        self.assertFalse(operator.validate_article_output(forbidden, evidence_ids, headers)["valid"])
+
+        missing_header = {"narrative_markdown": "## Cornerstones\nOnly one header here.", "cited_evidence_ids": ["player:1:1"]}
+        self.assertFalse(operator.validate_article_output(missing_header, evidence_ids, headers)["valid"])
+
+        all_unknown = {
+            "narrative_markdown": "## Cornerstones\nx.\n\n## Shop Candidates\nx.",
+            "cited_evidence_ids": ["player:999:9"],
+        }
+        self.assertFalse(operator.validate_article_output(all_unknown, evidence_ids, headers)["valid"])
+
+        partial = {
+            "narrative_markdown": "## Cornerstones\nx.\n\n## Shop Candidates\nx.",
+            "cited_evidence_ids": ["player:1:1", "player:999:9"],
+        }
+        partial_result = operator.validate_article_output(partial, evidence_ids, headers)
+        self.assertTrue(partial_result["valid"])
+        self.assertTrue(partial_result["warnings"])
+
+    def _seed_article_inputs(self, analysis_dir: Path, processed_dir: Path) -> None:
+        processed_dir.mkdir(parents=True, exist_ok=True)
+        (processed_dir / "player_dossiers.csv").write_text(
+            "player_id,player_name,position,roster_id,market_value,projected_ppg,signal_label,news_impact\n"
+            "1,Jayden Daniels,QB,2,90,21.1,productive_hold,\n"
+            "2,Tank Dell,WR,2,40,10.6,sell_candidate,\n",
+            encoding="utf-8",
+        )
+        for filename, items in (
+            ("target_theses.json", [{"player_id": "1", "player_name": "Jayden Daniels", "analysis_text": "Buy-low angle."}]),
+            ("sell_theses.json", [{"player_id": "2", "player_name": "Tank Dell", "analysis_text": "Sell-high angle."}]),
+            ("trade_theses.json", [{"target_manager_roster_id": 3, "target_manager_name": "The Clapper", "analysis_text": "Trade angle."}]),
+            ("manager_dossiers.json", [{"roster_id": 3, "team_name": "The Clapper", "dynasty_cycle": "rebuild", "analysis_text": "Rebuild read."}]),
+        ):
+            (analysis_dir / filename).write_text(json.dumps({"items": items}), encoding="utf-8")
+
+    def test_generate_articles_workflow_reports_partial_success(self) -> None:
+        from src import articles
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+
+            def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002 - match requests signature
+                import json as _json
+
+                system = json["system"]
+                evidence = _json.loads(json["messages"][0]["content"])["evidence"]
+                eid = evidence[0]["evidence_id"] if evidence else "player:1:1"
+                # Every article shares one narrative carrying all possible headers, but the Team
+                # Report call deliberately trips the forbidden-language check so exactly one fails.
+                narrative = (
+                    "## Cornerstones\nSolid core.\n\n## Shop Candidates\nSome names.\n\n"
+                    "## Buy-Low Targets\nx\n\n## Sell-High Windows\nx\n\n## Best Fits\nx\n\n## Steer Clear\nx\n\n"
+                    "## Contenders\nx\n\n## Rebuilders\nx\n\n## Target Theses\nx\n\n## Sell Windows\nx\n\n## Manager Angles\nx"
+                )
+                if "Your Team Report" in system:
+                    narrative = narrative.replace("Solid core.", "The trade was sent and accepted already.")
+                resp = MagicMock()
+                resp.raise_for_status = lambda: None
+                resp.json = lambda: {
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "tool_use", "name": "emit_article", "input": {"narrative_markdown": narrative, "cited_evidence_ids": [eid]}}],
+                }
+                return resp
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(operator, "ANALYSIS_DIR", analysis), \
+                 patch.object(articles, "PROCESSED_DIR", processed), \
+                 patch.object(articles, "resolve_active_roster_id", return_value=2), \
+                 patch.object(operator.requests, "post", side_effect=fake_post):
+                result = operator.generate_articles_workflow()
+
+            self.assertEqual(result["state"], "partial")
+            self.assertEqual(result["articles"]["team_report"]["state"], "failed")
+            self.assertEqual(result["articles"]["market_watch"]["state"], "complete")
+            self.assertEqual(result["articles"]["daily_brief"]["state"], "complete")
+            # The failed article was never written; a successful one carries the LLM marker.
+            self.assertFalse((analysis / "team_report.md").exists())
+            self.assertIn("model_mode: automatic_llm", (analysis / "market_watch.md").read_text(encoding="utf-8"))
+
     def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dirs = self._operator_dirs(Path(tmp))

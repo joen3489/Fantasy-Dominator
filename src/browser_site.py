@@ -91,6 +91,15 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "dailyGmBriefMode": _front_matter_field(analysis_dir / "daily_gm_brief.md", "model_mode"),
         "managerDossiers": _text_or_empty(analysis_dir / "manager_dossiers.md"),
         "newsImpactBrief": _text_or_empty(analysis_dir / "news_impact_brief.md"),
+        # Sprint 17 per-section articles (each with its LLM-written / Deterministic mode marker).
+        "teamReport": _text_or_empty(analysis_dir / "team_report.md"),
+        "teamReportMode": _front_matter_field(analysis_dir / "team_report.md", "model_mode"),
+        "marketWatch": _text_or_empty(analysis_dir / "market_watch.md"),
+        "marketWatchMode": _front_matter_field(analysis_dir / "market_watch.md", "model_mode"),
+        "tradeDeskRead": _text_or_empty(analysis_dir / "trade_desk.md"),
+        "tradeDeskReadMode": _front_matter_field(analysis_dir / "trade_desk.md", "model_mode"),
+        "managerIntel": _text_or_empty(analysis_dir / "manager_intel.md"),
+        "managerIntelMode": _front_matter_field(analysis_dir / "manager_intel.md", "model_mode"),
         "insightCards": _json_items(analysis_dir / "validated_insight_cards.json"),
         "insightValidation": _json_items(analysis_dir / "insight_card_validation.json"),
     }
@@ -369,6 +378,11 @@ def _page(
       display: grid;
       gap: 10px;
     }}
+    .article-panel {{ border-left: 4px solid var(--accent); }}
+    .article-body {{ display: grid; gap: 8px; }}
+    .article-h {{ margin: 6px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }}
+    .article-p {{ margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); }}
+    .article-list {{ margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5; }}
     .brief-card {{
       border: 1px solid var(--line);
       border-left: 4px solid var(--info);
@@ -660,6 +674,7 @@ def _page(
 
     <section id="roster-value">
       <h2>Roster Value Board</h2>
+      <div class="panel article-panel"><h3>Your Team Report <span id="team-report-mode" class="tag"></span></h3><div id="team-report"></div></div>
       <div class="controls">
         <label>Position<select id="position-filter"></select></label>
         <label>Status<select id="status-filter"></select></label>
@@ -680,6 +695,7 @@ def _page(
 
     <section id="signal-board">
       <h2>Signal Board</h2>
+      <div class="panel article-panel"><h3>Market Watch <span id="market-watch-mode" class="tag"></span></h3><div id="market-watch"></div></div>
       <div class="controls">
         <button class="signal-scope active" data-signal-scope="team" type="button">Active Team</button>
         <button class="signal-scope" data-signal-scope="league" type="button">League</button>
@@ -724,14 +740,14 @@ def _page(
           <label>Operator token<input id="operator-token" type="password" placeholder="FRONT_OFFICE_OPERATOR_TOKEN"></label>
           <button id="operator-refresh" type="button">Refresh Data</button>
           <button id="operator-build-packet" type="button">Build Insight Packet</button>
-          <button id="operator-generate-insights" type="button">Generate Insights (LLM)</button>
+          <button id="operator-generate-insights" type="button">Update &amp; Write Analysis (LLM)</button>
           <button id="operator-import" type="button">Import Insight JSON</button>
           <button id="operator-validate" type="button">Validate Insights</button>
           <button id="operator-rebuild" type="button">Rebuild Browser</button>
           <button id="operator-reload" type="button">Reload Latest</button>
           <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
         </div>
-        <p class="note">Generate Insights calls Claude directly (requires ANTHROPIC_API_KEY on the server) and skips the manual copy-paste loop below. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
+        <p class="note">Update &amp; Write Analysis refreshes the data, then has Claude write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site (requires ANTHROPIC_API_KEY on the server). Each article falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
         <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
         <div id="operator-status-panel"></div>
         <div id="operator-chat-context-status"></div>
@@ -750,6 +766,7 @@ def _page(
 
     <section id="counterparty-edges">
       <h2>Counterparty Edges</h2>
+      <div class="panel article-panel"><h3>Trade Desk Read <span id="trade-desk-read-mode" class="tag"></span></h3><div id="trade-desk-read"></div></div>
       <p class="note">These are estimated value disagreements, not trade quotes. Nobody has accepted anything. The commissioner can breathe.</p>
       <div class="grid">
         <div class="panel"><h3>We May Value More Than Owner</h3><div id="edge-we-value-more"></div></div>
@@ -821,6 +838,7 @@ def _page(
 
     <section id="manager-room">
       <h2>Manager Room</h2>
+      <div class="panel article-panel"><h3>Manager Intel <span id="manager-intel-mode" class="tag"></span></h3><div id="manager-intel"></div></div>
       <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly.</p>
       <div class="grid">
         <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
@@ -1363,8 +1381,16 @@ def _page(
       document.getElementById('signal-sells').innerHTML = signalCards(signalSellRows(), 'sell');
       document.getElementById('signal-gap-table').innerHTML = table(filteredSignalGaps(), signalGapColumns);
       document.getElementById('team-fit-table').innerHTML = table(filteredTeamFits(), teamFitColumns);
-      document.getElementById('daily-gm-brief').innerHTML = markdownBrief(analysis.dailyGmBrief);
-      document.getElementById('daily-gm-brief-mode').textContent = analysis.dailyGmBriefMode === 'automatic_llm' ? 'LLM-written' : 'Deterministic';
+      document.getElementById('daily-gm-brief').innerHTML = articleBody(analysis.dailyGmBrief);
+      document.getElementById('daily-gm-brief-mode').textContent = articleModeLabel(analysis.dailyGmBriefMode);
+      document.getElementById('team-report').innerHTML = articleBody(analysis.teamReport);
+      document.getElementById('team-report-mode').textContent = articleModeLabel(analysis.teamReportMode);
+      document.getElementById('market-watch').innerHTML = articleBody(analysis.marketWatch);
+      document.getElementById('market-watch-mode').textContent = articleModeLabel(analysis.marketWatchMode);
+      document.getElementById('trade-desk-read').innerHTML = articleBody(analysis.tradeDeskRead);
+      document.getElementById('trade-desk-read-mode').textContent = articleModeLabel(analysis.tradeDeskReadMode);
+      document.getElementById('manager-intel').innerHTML = articleBody(analysis.managerIntel);
+      document.getElementById('manager-intel-mode').textContent = articleModeLabel(analysis.managerIntelMode);
       document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
       document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
       document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
@@ -1866,6 +1892,30 @@ def _page(
       const withoutFrontMatter = String(text).replace(/^---[\\s\\S]*?---\\n/, '');
       const lines = withoutFrontMatter.split('\\n').filter(line => line.trim()).slice(0, 18);
       return `<div class="brief-list">${{lines.map(line => `<div class="brief-card-evidence">${{escapeHtml(line.replace(/^#+\\s*/, '').replace(/^-\\s*/, ''))}}</div>`).join('')}}</div>`;
+    }}
+
+    function articleBody(text) {{
+      if (!text) return '<p class="note">No written analysis yet. Use Update &amp; Write Analysis in Operator Mode to generate it.</p>';
+      const body = String(text).replace(/^---[\\s\\S]*?---\\n/, '');
+      const parts = [];
+      let para = [];
+      let list = [];
+      const flushPara = () => {{ if (para.length) {{ parts.push(`<p class="article-p">${{escapeHtml(para.join(' '))}}</p>`); para = []; }} }};
+      const flushList = () => {{ if (list.length) {{ parts.push(`<ul class="article-list">${{list.map(item => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>`); list = []; }} }};
+      for (const raw of body.split('\\n')) {{
+        const line = raw.trim();
+        if (!line) {{ flushPara(); flushList(); continue; }}
+        if (line.startsWith('# ') && !line.startsWith('## ')) {{ continue; }}
+        if (line.startsWith('## ')) {{ flushPara(); flushList(); parts.push(`<h4 class="article-h">${{escapeHtml(line.replace(/^##\\s*/, ''))}}</h4>`); continue; }}
+        if (line.startsWith('- ')) {{ flushPara(); list.push(line.replace(/^-\\s*/, '')); continue; }}
+        flushList(); para.push(line);
+      }}
+      flushPara(); flushList();
+      return `<div class="article-body">${{parts.join('')}}</div>`;
+    }}
+
+    function articleModeLabel(mode) {{
+      return mode === 'automatic_llm' ? 'LLM-written' : 'Deterministic';
     }}
 
     function insightFor(entityType, entityId) {{
