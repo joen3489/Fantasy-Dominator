@@ -33,6 +33,7 @@ from src.players import load_players, players_table
 from src.priority_board import build_today_priority_board
 from src.profile_intelligence import build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
+from src.opportunity import build_opportunity_scores
 from src.projections import _load_raw_stats, build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
@@ -152,6 +153,12 @@ def main(force: bool = False) -> None:
     # of the overwrite-every-refresh export loop below.
     append_projection_accuracy_snapshot(accuracy_history_path, dataframes["projection_source_components"], config)
 
+    # Opportunity-based scores (Sprint 18) from nflverse weekly usage -- the verified forward-looking
+    # signal the projection average was missing. Computed after projections, before signals consume it.
+    dataframes["player_opportunity_scores"] = build_opportunity_scores(
+        raw_stats_for_grading, dataframes["roster_players"], config
+    )
+
     dataframes.update(
         build_economic_tables(
             dataframes["teams"],
@@ -175,6 +182,7 @@ def main(force: bool = False) -> None:
             dataframes["league_news_impact"],
             config,
             dataframes["manager_valuation_profiles"],
+            dataframes["player_opportunity_scores"],
         )
     )
     dataframes["today_priority_board"] = build_today_priority_board(

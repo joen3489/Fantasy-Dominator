@@ -17,6 +17,7 @@ def build_signal_tables(
     news_impact_df: pd.DataFrame,
     config: dict[str, Any],
     manager_valuation_profiles_df: pd.DataFrame | None = None,
+    opportunity_scores_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     scores = build_player_signal_scores(
         projections_df,
@@ -26,6 +27,7 @@ def build_signal_tables(
         manager_behavior_df,
         news_impact_df,
         config,
+        opportunity_scores_df,
     )
     gaps = build_projection_market_gaps(scores)
     breakouts = build_breakout_candidates(scores)
@@ -52,6 +54,7 @@ def build_player_signal_scores(
     manager_behavior_df: pd.DataFrame,
     news_impact_df: pd.DataFrame,
     config: dict[str, Any],
+    opportunity_scores_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if projections_df.empty:
         return pd.DataFrame([], columns=_signal_columns())
@@ -61,6 +64,7 @@ def build_player_signal_scores(
     needs = _row_map(team_needs_df, "roster_id")
     behavior = _row_map(manager_behavior_df, "roster_id")
     news = _news_map(news_impact_df)
+    opportunity = _opportunity_map(opportunity_scores_df)
     rows: list[dict[str, Any]] = []
 
     for _, projection in projections_df.fillna("").iterrows():
@@ -78,11 +82,16 @@ def build_player_signal_scores(
         team_need = needs.get(roster_id, {})
         manager = behavior.get(roster_id, {})
         news_signal = news.get(player_id, "")
+        opp = opportunity.get(player_id, {})
+        opportunity_score = _num(opp.get("opportunity_score"))
+        xfp_regression_score = _num(opp.get("xfp_regression_score"))
+        role_trend_score = _num(opp.get("role_trend_score"))
+        fragility_score = _num(opp.get("fragility_score"))
 
         projection_edge = _projection_edge_score(ppg, projection_confidence)
         market_gap = _market_gap_score(projection_edge, normalized_market, market_record)
         timeline_fit = _timeline_fit_score(position, age, config)
-        breakout = _breakout_score(position, age, ppg, market_gap, projection_confidence, news_signal)
+        breakout = _breakout_score(position, age, ppg, market_gap, projection_confidence, news_signal, opportunity_score)
         sell = _sell_score(position, age, ppg, normalized_market, roster_id, config, projection_confidence, news_signal)
         label = _signal_label(breakout, sell, market_gap, ppg, projection_confidence)
         confidence = _signal_confidence(projection_confidence, market_record)
@@ -104,6 +113,10 @@ def build_player_signal_scores(
                 "timeline_fit_score": timeline_fit,
                 "breakout_score": breakout,
                 "sell_score": sell,
+                "opportunity_score": round(opportunity_score, 1),
+                "xfp_regression_score": round(xfp_regression_score, 1),
+                "role_trend_score": round(role_trend_score, 1),
+                "fragility_score": round(fragility_score, 1),
                 "signal_label": label,
                 "evidence": _evidence(projection, market_value, team_need, manager, news_signal),
                 "risk": _risk(projection_confidence, market_record, sell),
@@ -375,7 +388,7 @@ def _timeline_fit_score(position: str, age: float, config: dict[str, Any]) -> fl
     return 50.0
 
 
-def _breakout_score(position: str, age: float, ppg: float, gap: float, confidence: str, news_signal: str) -> float:
+def _breakout_score(position: str, age: float, ppg: float, gap: float, confidence: str, news_signal: str, opportunity_score: float = 0.0) -> float:
     score = max(0.0, gap) * 0.65 + min(45.0, ppg * 2.2)
     if position in PASS_CATCHERS and age and age <= 25:
         score += 16
@@ -383,9 +396,14 @@ def _breakout_score(position: str, age: float, ppg: float, gap: float, confidenc
         score += 10
     if "market_heat" in news_signal or "role_or_value_change" in news_signal:
         score += 8
+    # Opportunity is the forward-looking signal validated by our own rolling-origin backtest
+    # (AUC ~0.80 for rest-of-season finishes). A real breakout needs the usage to back it, so
+    # opportunity above the league-median (>50) adds, well below it subtracts.
+    if opportunity_score:
+        score += (opportunity_score - 50.0) * 0.30
     if confidence == "low":
         score *= 0.65
-    return round(min(100.0, score), 2)
+    return round(max(0.0, min(100.0, score)), 2)
 
 
 def _sell_score(
@@ -506,6 +524,12 @@ def _row_map(frame: pd.DataFrame, key: str) -> dict[int, dict[str, Any]]:
     return {_int(row.get(key)): row.to_dict() for _, row in frame.fillna("").iterrows()}
 
 
+def _opportunity_map(frame: pd.DataFrame | None) -> dict[str, dict[str, Any]]:
+    if frame is None or frame.empty or "player_id" not in frame:
+        return {}
+    return {str(row.get("player_id")): row.to_dict() for _, row in frame.fillna("").iterrows()}
+
+
 def _news_map(frame: pd.DataFrame) -> dict[str, str]:
     if frame.empty:
         return {}
@@ -555,6 +579,10 @@ def _signal_columns() -> list[str]:
         "timeline_fit_score",
         "breakout_score",
         "sell_score",
+        "opportunity_score",
+        "xfp_regression_score",
+        "role_trend_score",
+        "fragility_score",
         "signal_label",
         "evidence",
         "risk",

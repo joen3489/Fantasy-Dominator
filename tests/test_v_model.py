@@ -22,7 +22,8 @@ from src.priority_board import build_today_priority_board
 from src.profile_intelligence import build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
-from src.signals import _classify_action, build_signal_tables
+from src.opportunity import build_opportunity_scores, score_players_from_weekly
+from src.signals import _breakout_score, _classify_action, build_signal_tables
 from scripts.refresh_all import _discover_league_history
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
@@ -57,7 +58,8 @@ EXPECTED_TABLE_COLUMNS = {
     "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
     "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
     "today_priority_board": ["item_type", "item_type_label", "entity_type", "entity_id", "entity_name", "roster_id", "team_name", "priority_score", "why", "evidence", "risk", "confidence", "source_trace"],
-    "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
+    "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "opportunity_score", "xfp_regression_score", "role_trend_score", "fragility_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
+    "player_opportunity_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "games_sample", "opportunity_score", "production_score", "xfp_regression_score", "role_trend_score", "fragility_score", "opportunity_evidence", "source_trace"],
     "breakout_candidates": ["player_id", "player_name", "position", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "projection_market_gaps": ["player_id", "player_name", "position", "projected_fantasy_points", "projected_ppg", "market_value", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
@@ -2027,6 +2029,34 @@ class VModelTests(unittest.TestCase):
 
         self.assertEqual(board.iloc[0]["entity_name"], "High Priority")
         self.assertGreater(board.iloc[0]["priority_score"], board.iloc[-1]["priority_score"])
+
+    def test_opportunity_scores_rank_usage_within_position(self) -> None:
+        # Two WRs across three weeks: one commands the targets, one barely plays. Opportunity is
+        # percentile-ranked within position, so the high-usage WR must score materially higher.
+        weeks = []
+        for week in (1, 2, 3):
+            weeks.append({"player_id": "nfl_hi", "player_display_name": "Alpha Receiver", "player_name": "Alpha Receiver", "position": "WR", "season": 2026, "week": week, "season_type": "REG", "attempts": 0, "carries": 0, "targets": 11, "receptions": 8, "target_share": 0.32, "air_yards_share": 0.40, "wopr": 0.75, "fantasy_points": 18, "fantasy_points_ppr": 26})
+            weeks.append({"player_id": "nfl_lo", "player_display_name": "Backup Receiver", "player_name": "Backup Receiver", "position": "WR", "season": 2026, "week": week, "season_type": "REG", "attempts": 0, "carries": 0, "targets": 2, "receptions": 1, "target_share": 0.05, "air_yards_share": 0.06, "wopr": 0.10, "fantasy_points": 3, "fantasy_points_ppr": 4})
+        weekly = pd.DataFrame(weeks)
+        roster = pd.DataFrame(
+            [
+                {"player_id": "10", "player_name": "Alpha Receiver", "position": "WR", "roster_id": 2, "team_name": "Melkor Lord of Light", "age": 25},
+                {"player_id": "20", "player_name": "Backup Receiver", "position": "WR", "roster_id": 3, "team_name": "The Clapper", "age": 27},
+            ]
+        )
+        scores = build_opportunity_scores(weekly, roster, {"current_season": 2026})
+        self.assertEqual(set(scores["player_id"]), {"10", "20"})  # carries the Sleeper roster id, not the nflverse id
+        by_name = {row["player_name"]: row for _, row in scores.iterrows()}
+        self.assertGreater(by_name["Alpha Receiver"]["opportunity_score"], by_name["Backup Receiver"]["opportunity_score"])
+        for _, row in scores.iterrows():
+            self.assertGreaterEqual(row["opportunity_score"], 0.0)
+            self.assertLessEqual(row["opportunity_score"], 100.0)
+
+    def test_breakout_score_lifts_with_opportunity(self) -> None:
+        # The Sprint 18 blend: identical player, higher opportunity must not lower the breakout score.
+        low = _breakout_score("WR", 24, 12.0, 40.0, "high", "", opportunity_score=20.0)
+        high = _breakout_score("WR", 24, 12.0, 40.0, "high", "", opportunity_score=90.0)
+        self.assertGreater(high, low)
 
 
 if __name__ == "__main__":

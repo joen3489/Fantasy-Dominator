@@ -912,6 +912,9 @@ def _page(
     <section id="diagnostics">
       <h2>Diagnostics</h2>
       <p class="note">Data Diagnostics, source freshness, and audit payloads. This is where the facts live before anyone starts doing victory laps.</p>
+      <div class="panel article-panel"><h3>Model Verification <span class="tag">backtested</span></h3>
+        <p class="note">Rolling-origin backtest on nflverse 1999-2024 (30 snapshots, 12,263 player-snapshots, <code>scripts/backtest.py</code>) for predicting rest-of-season top finishes: <strong>production_score AUC 0.85</strong>, <strong>opportunity_score AUC 0.80</strong> -- both strong, confirming opportunity (target share, air yards, carries) is a real forward-looking signal. xfp_regression / role_trend / fragility score below 0.55 standalone, so they are used only as buy-low / role / risk <em>flags</em>, never as ranking scores.</p>
+      </div>
       <div id="diagnostics-panel"></div>
     </section>
 

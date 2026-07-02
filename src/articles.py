@@ -152,6 +152,31 @@ def _scope_market_watch(ctx: ArticleContext) -> list[dict[str, Any]]:
                 )
             )
             index += 1
+    # Opportunity-vs-output evidence (Sprint 18): the players whose usage is outrunning their
+    # points are the sharpest buy-lows -- give the writer the numbers to say so in plain English.
+    opp = _load_processed_csv("player_opportunity_scores.csv")
+    buy_low = sorted(opp, key=lambda row: _as_float(row.get("xfp_regression_score")), reverse=True)
+    for row in buy_low[:8]:
+        if _as_float(row.get("xfp_regression_score")) < 55 or _as_float(row.get("opportunity_score")) < 50:
+            continue
+        rows.append(
+            _evidence(
+                "player",
+                row.get("player_id", index),
+                index,
+                str(row.get("player_name", "")),
+                (
+                    f"{row.get('player_name', 'This player')} ({row.get('position', '')}): opportunity "
+                    f"{row.get('opportunity_score')} but production {row.get('production_score')} -- usage is "
+                    f"outrunning the box score (xfp_regression {row.get('xfp_regression_score')}). {row.get('opportunity_evidence', '')}"
+                ),
+                side="opportunity_buy_low",
+                opportunity_score=row.get("opportunity_score", ""),
+                production_score=row.get("production_score", ""),
+                xfp_regression_score=row.get("xfp_regression_score", ""),
+            )
+        )
+        index += 1
     return rows
 
 

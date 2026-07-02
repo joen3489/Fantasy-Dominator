@@ -820,6 +820,19 @@ Acceptance criteria: verified locally that each article scopes to real data (tea
 
 Non-goals: scheduled/automatic article generation (still the standing cadence follow-on -- article generation stays an explicit, user-triggered workflow and off the LLM-free startup refresh path); per-entity micro-articles; removing the now-unused entity-card generator (kept for its tests and the manual loop).
 
+### Sprint 18: Opportunity-Based Scoring + Verification Backtest
+
+Goal: close the real accuracy gap surfaced by a deep-research report -- our projections were a 2-year per-game *production* average with no *opportunity* lens, even though usage (target share, air yards, carries) is the stickier forward-looking signal. Built the opportunity layer, then verified it on our own data rather than trusting the report.
+
+Key deliverables:
+
+- `src/opportunity.py` (delegated to Codex, reviewed): `build_opportunity_scores` computes five 0-100 percentile-within-position scores (`opportunity_score`, `production_score`, `xfp_regression_score`, `role_trend_score`, `fragility_score`) from the weekly nflverse usage fields already cached (`target_share`, `air_yards_share`, `wopr`, `targets`, `carries`). Senior-engineer fix on review: it joined nflverse GSIS ids to Sleeper roster ids (zero overlap, 0 rows) -- corrected to the codebase's `_normalize_name` join, carrying the Sleeper `player_id` downstream. Shared `score_players_from_weekly` powers both the live table and the backtest.
+- `src/backtest.py` + `scripts/backtest.py` (delegated to Codex, reviewed): rolling-origin harness over cached 1999-2024 weekly stats (no leakage: scores from weeks<=W, outcomes from weeks>W). Result on our data (30 snapshots, 12,263 player-snapshots), ROS top-finish AUC: `production_score` 0.846, `opportunity_score` 0.795 (both strong -- opportunity validated as a real predictor); `role_trend` 0.511, `xfp_regression` 0.358, `fragility` 0.267 (weak/inverse standalone). This *corrected* the report on the derived scores: they are value/risk/trend FLAGS, not outcome rankers.
+- New `player_opportunity_scores` table wired into `refresh_all.py`; `opportunity_score` blended into `_breakout_score` (a real breakout needs usage to back it) and the four scores surfaced on `player_signal_scores`. New opportunity tags in `build_player_profile_tags` (`buy-low usage`, `rising role`, `fragile usage`) -- used only as flags, per the backtest.
+- Polish: the `market_watch` article scope + prompt now feed the writer opportunity-vs-output evidence so it can say "the targets are there, the points haven't followed" in plain English; a static "Model Verification" note in Diagnostics states the backtested AUCs honestly.
+
+Non-goals (explicit v2): the full `ffopportunity` XGBoost expected-points model, snap counts, NGS, red-zone share (all weighted 0.10-0.15 in the report, non-essential, and R-only for ffopportunity); the other 10 report scores (efficiency, asymmetry, liquidity, etc.) -- several already exist in our economics layer, and the backtest did not show they were worth adding yet.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

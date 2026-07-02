@@ -290,6 +290,7 @@ def build_player_profile_tags(
     news_impact_df: pd.DataFrame,
     generated_at: str,
 ) -> pd.DataFrame:
+    opportunity = _row_map(player_signal_scores_df, "player_id") if not player_signal_scores_df.empty else {}
     rows: list[dict[str, Any]] = []
     for _, player in player_dossiers_df.fillna("").iterrows():
         player_id = str(player.get("player_id", ""))
@@ -299,8 +300,14 @@ def build_player_profile_tags(
         breakout = _num(player.get("breakout_score"))
         sell = _num(player.get("sell_score"))
         confidence = _player_confidence(player)
+        opp = opportunity.get(player_id, {})
+        opportunity_score = _num(opp.get("opportunity_score"))
+        xfp_regression = _num(opp.get("xfp_regression_score"))
+        role_trend = _num(opp.get("role_trend_score"))
+        fragility = _num(opp.get("fragility_score"))
         evidence = (
             f"age={age}; market={market}; projected_ppg={ppg}; breakout={breakout}; sell={sell}; "
+            f"opportunity={opportunity_score}; xfp_regression={xfp_regression}; role_trend={role_trend}; fragility={fragility}; "
             f"signal={player.get('signal_label', '')}; news={player.get('news_impact', '')}; transactions={player.get('transaction_count', 0)}"
         )
         tag_scores = {
@@ -314,6 +321,11 @@ def build_player_profile_tags(
             "roster clogger": 62 if market <= 5 and ppg <= 3 else 0,
             "injury discount": 72 if "injury" in str(player.get("news_impact")).lower() and market >= 10 else 0,
             "market overheat": 70 if market >= 45 and ppg < 8 else 0,
+            # Opportunity-driven flags (Sprint 18). Our backtest showed these are value/risk/trend
+            # FLAGS, not outcome rankers, so they live as tags, never as a ranking score.
+            "buy-low usage": 70 if xfp_regression >= 60 and opportunity_score >= 55 else 0,
+            "rising role": role_trend if role_trend >= 65 else 0,
+            "fragile usage": fragility if fragility >= 65 else 0,
         }
         for tag, score in tag_scores.items():
             if score < 55:
