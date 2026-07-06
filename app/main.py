@@ -185,9 +185,14 @@ def _refresh_job(league: dict[str, Any] | None) -> dict[str, Any]:
     from scripts.refresh_all import main as refresh_all
 
     if league is None:
-        refresh_all(force=True)
-    else:
-        refresh_all(
+        # No league scope means "refresh my world": every linked league plus the
+        # attention queue, i.e. the scheduler cycle on demand. The legacy
+        # single-league refresh only runs when a specific league is named.
+        from . import scheduler as front_scheduler
+
+        front_scheduler.run_cycle()
+        return {"state": "complete", "message": "All leagues refreshed and attention queue rebuilt."}
+    refresh_all(
             force=True,
             league_id=str(league["league_id"]),
             roster_id=league.get("roster_id"),
