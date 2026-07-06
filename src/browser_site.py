@@ -58,6 +58,7 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
         "player_dossiers": _records(processed_dir / "player_dossiers.csv"),
         "player_transaction_history": _records(processed_dir / "player_transaction_history.csv"),
         "player_profile_tags": _records(processed_dir / "player_profile_tags.csv"),
+        "player_opportunity_scores": _records(processed_dir / "player_opportunity_scores.csv"),
     }
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
@@ -555,6 +556,28 @@ def _page(
     .tag {{ display: inline-block; color: #fff; background: var(--accent); border-radius: 4px; padding: 2px 6px; font-size: 12px; }}
     .warn {{ background: var(--accent-2); }}
     .note {{ color: var(--muted); font-size: 13px; line-height: 1.45; }}
+    .view-block {{ margin: 0 0 34px; }}
+    .entity-header {{ display: flex; gap: 16px; align-items: flex-start; margin: 0 0 16px; }}
+    .entity-header h2 {{ margin: 0 0 8px; }}
+    .entity-headshot .headshot-img, .entity-headshot .headshot-fallback {{ width: 72px; height: 72px; font-size: 20px; }}
+    .tile-row {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }}
+    .entity-tile {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 96px; text-align: center; }}
+    .entity-tile-value {{ font-size: 20px; font-weight: 800; }}
+    .entity-tile-value.score-high {{ color: var(--buy); }}
+    .entity-tile-value.score-mid {{ color: #7a5f28; }}
+    .entity-tile-value.score-low {{ color: var(--sell); }}
+    .entity-tile-label {{ color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }}
+    .entity-link {{ color: var(--accent); text-decoration: none; font-weight: 700; }}
+    .entity-link:hover {{ text-decoration: underline; }}
+    .back-link {{ display: inline-block; color: var(--muted); text-decoration: none; font-size: 13px; margin: 0 0 12px; }}
+    .back-link:hover {{ color: var(--ink); }}
+    .data-drawer {{ border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px; margin: 0 0 14px; }}
+    .data-drawer summary {{ cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 700; }}
+    .data-drawer[open] summary {{ margin-bottom: 10px; }}
+    #entity-search {{ width: 100%; min-width: 0; margin-bottom: 4px; }}
+    #entity-search-results a {{ display: block; color: #f8f4ea; text-decoration: none; padding: 5px 9px; border-radius: 6px; font-size: 13px; }}
+    #entity-search-results a:hover {{ background: rgba(255,255,255,0.08); }}
+    #entity-search-results .entity-kind {{ color: #96a89d; font-size: 11px; margin-left: 5px; }}
     .joke {{ color: #53635b; font-size: 13px; font-style: italic; }}
     .loading {{ padding: 22px 28px; color: var(--muted); }}
     .list {{ margin: 0; padding-left: 20px; font-size: 13px; }}
@@ -576,51 +599,22 @@ def _page(
       <h1>The Front Office</h1>
       <p>Find the market leak, then pretend it was obvious all along.</p>
       <div class="nav-group">
-        <div class="nav-group-title">Command Center</div>
+        <div class="nav-group-title">Where To</div>
         <nav>
-          <a href="#todays-board">Today's Board</a>
-          <a href="#decision-board">Decision Board</a>
-          <a href="#analyst-brief">Analyst Brief</a>
+          <a href="#view-today">Today</a>
+          <a href="#view-my-team">My Team</a>
+          <a href="#view-players">Players</a>
+          <a href="#view-league">League</a>
+          <a href="#view-trade-desk">Trade Desk</a>
+          <a href="#view-news">News</a>
+          <a href="#view-data-room">Data Room</a>
         </nav>
       </div>
       <div class="nav-group">
-        <div class="nav-group-title">Team Room</div>
+        <div class="nav-group-title">Find</div>
         <nav>
-          <a href="#team-overview">Team Overview</a>
-          <a href="#roster-value">Roster Value</a>
-          <a href="#projection-board">Projection Board</a>
-          <a href="#signal-board">Signal Board</a>
-        </nav>
-      </div>
-      <div class="nav-group">
-        <div class="nav-group-title">Trade Desk</div>
-        <nav>
-          <a href="#market-gaps">Market Gaps</a>
-          <a href="#counterparty-edges">Counterparty Edges</a>
-          <a href="#market-lens-lab">Market Lens Lab</a>
-          <a href="#asset-ledger">Asset Ledger</a>
-          <a href="#opportunity-board">Opportunity Board</a>
-          <a href="#pick-ledger">Pick Ledger</a>
-          <a href="#trade-market">Trade Market</a>
-          <a href="#waiver-market">Waiver Market</a>
-        </nav>
-      </div>
-      <div class="nav-group">
-        <div class="nav-group-title">Intel</div>
-        <nav>
-          <a href="#news-desk">News Desk</a>
-          <a href="#manager-room">Manager Room</a>
-          <a href="#player-room">Player Room</a>
-          <a href="#manager-map">Manager Map</a>
-          <a href="#manager-behavior">Manager Behavior</a>
-        </nav>
-      </div>
-      <div class="nav-group">
-        <div class="nav-group-title">Data Room</div>
-        <nav>
-          <a href="#operator-mode">Operator Mode</a>
-          <a href="#diagnostics">Diagnostics</a>
-          <a href="#draft">Draft</a>
+          <input id="entity-search" type="search" placeholder="player or team..." autocomplete="off">
+          <div id="entity-search-results"></div>
         </nav>
       </div>
     </aside>
@@ -631,13 +625,16 @@ def _page(
       </header>
       <div id="loading-state" class="loading">Opening the binder, checking the cap table, and pretending future picks are a real currency...</div>
       <main hidden>
-    <section id="todays-board">
-      <h2>Today's Board</h2>
+    <section id="view-today">
+    <div id="todays-board" class="view-block">
+      <h2>Today</h2>
+      <div class="panel article-panel"><h3>Daily GM Brief <span id="daily-gm-brief-mode" class="tag"></span></h3><div id="daily-gm-brief"></div></div>
+      <h3>Today's Board</h3>
       <p class="note">One ranked list, highest priority first. Each player/pick/manager appears once, whichever signal ranked it highest.</p>
       <div class="panel"><div id="today-priority-board"></div></div>
-    </section>
+    </div>
 
-    <section id="decision-board">
+    <div id="decision-board" class="view-block">
       <h2>Decision Board</h2>
       <div class="controls">
         <label>Active team<select id="team-filter"></select></label>
@@ -662,17 +659,19 @@ def _page(
           <div id="likely-traders"></div>
         </div>
       </div>
+    </div>
     </section>
 
-    <section id="team-overview">
-      <h2>Team Overview</h2>
+    <section id="view-my-team">
+    <div id="team-overview" class="view-block">
+      <h2>My Team</h2>
       <div class="grid">
-        <div class="panel"><h3>Active Team Profile</h3><div id="team-overview-panel"></div></div>
+        <div class="panel"><h3>Team Overview</h3><div id="team-overview-panel"></div></div>
         <div class="panel"><h3>Strategy Overlay</h3><div id="strategy-panel"></div></div>
       </div>
-    </section>
+    </div>
 
-    <section id="roster-value">
+    <div id="roster-value" class="view-block">
       <h2>Roster Value Board</h2>
       <div class="panel article-panel"><h3>Your Team Report <span id="team-report-mode" class="tag"></span></h3><div id="team-report"></div></div>
       <div class="controls">
@@ -681,9 +680,25 @@ def _page(
       </div>
       <p class="note">Value tags are planned as a strategy overlay. For now this board uses Sleeper roster/player data only.</p>
       <div id="roster-table"></div>
+    </div>
     </section>
 
-    <section id="projection-board">
+    <section id="view-players">
+    <div id="player-room" class="view-block">
+      <h2>Players</h2>
+      <p class="note">Player tags combine roster status, market value, projections, news, signals, and league transaction history. A tag is a research prompt with evidence, not a parade route. Click any player card to open their page.</p>
+      <div id="player-browser"></div>
+      <div class="grid">
+        <div class="panel"><h3>Active Team Player Cards</h3><div id="player-dossier-cards"></div></div>
+        <div class="panel"><h3>Player Tag Board</h3><div id="player-tag-cards"></div></div>
+      </div>
+      <h3>Player Dossiers</h3>
+      <div id="player-dossier-table"></div>
+      <h3>Player Transaction History</h3>
+      <div id="player-transaction-history-table"></div>
+    </div>
+
+    <div id="projection-board" class="view-block">
       <h2>Projection Board</h2>
       <div class="controls">
         <button class="projection-scope active" data-projection-scope="team" type="button">Active Team</button>
@@ -691,11 +706,49 @@ def _page(
         <label>Confidence<select id="projection-confidence-filter"></select></label>
       </div>
       <div id="projection-table"></div>
+    </div>
     </section>
 
-    <section id="signal-board">
-      <h2>Signal Board</h2>
+    <section id="view-league">
+    <div id="manager-room" class="view-block">
+      <h2>League</h2>
+      <div class="panel article-panel"><h3>Manager Intel <span id="manager-intel-mode" class="tag"></span></h3><div id="manager-intel"></div></div>
+      <h3>Manager Room</h3>
+      <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly. Click a manager card to open their page.</p>
+      <div id="manager-grid"></div>
+      <div class="grid">
+        <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
+        <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
+      </div>
+      <h3>Manager Cycle Profiles</h3>
+      <div id="manager-cycle-table"></div>
+      <h3>Manager Tag Evidence</h3>
+      <div id="manager-profile-tag-table"></div>
+      <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossiers"></div></div>
+    </div>
+
+    <div id="manager-map" class="view-block">
+      <h2>Manager Map</h2>
+      <div class="grid">
+        <div class="panel"><h3>Manager Valuation Profiles</h3><div id="manager-valuation-table"></div></div>
+        <div class="panel"><h3>Behavior Signals</h3><div id="manager-signal-table"></div></div>
+        <div class="panel"><h3>Manager Event Log</h3><div id="manager-event-table"></div></div>
+      </div>
+    </div>
+
+    <div id="manager-behavior" class="view-block">
+      <h2>Manager Behavior</h2>
+      <div id="active-manager-profile"></div>
+      <h3>League Manager Profiles</h3>
+      <div id="manager-table"></div>
+    </div>
+    </section>
+
+    <section id="view-trade-desk">
+    <div id="signal-board" class="view-block">
+      <h2>Trade Desk</h2>
       <div class="panel article-panel"><h3>Market Watch <span id="market-watch-mode" class="tag"></span></h3><div id="market-watch"></div></div>
+      <h3>Signal Board</h3>
       <div class="controls">
         <button class="signal-scope active" data-signal-scope="team" type="button">Active Team</button>
         <button class="signal-scope" data-signal-scope="league" type="button">League</button>
@@ -710,9 +763,9 @@ def _page(
       <div id="signal-gap-table"></div>
       <h3>Team Fit Scores</h3>
       <div id="team-fit-table"></div>
-    </section>
+    </div>
 
-    <section id="analyst-brief">
+    <div id="analyst-brief" class="view-block">
       <h2>Analyst Brief</h2>
       <p class="note">Analysis is interpretation generated from deterministic tables. It does not send, accept, or execute transactions.</p>
       <div class="controls">
@@ -721,40 +774,13 @@ def _page(
         <label>Confidence<select id="analysis-confidence-filter"></select></label>
       </div>
       <div class="grid">
-        <div class="panel"><h3>Daily GM Brief <span id="daily-gm-brief-mode" class="tag"></span></h3><div id="daily-gm-brief"></div></div>
         <div class="panel"><h3>Target Theses</h3><div id="target-theses"></div></div>
         <div class="panel"><h3>Sell Theses</h3><div id="sell-theses"></div></div>
         <div class="panel"><h3>Trade Theses</h3><div id="trade-theses"></div></div>
       </div>
-      <div class="grid">
-        <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossiers"></div></div>
-        <div class="panel"><h3>News Impact Brief</h3><div id="news-impact-brief"></div></div>
-      </div>
-    </section>
+    </div>
 
-    <section id="operator-mode">
-      <h2>Operator Mode</h2>
-      <p class="note">Personal-use update loop. These controls refresh facts, build Codex packets, validate insight output, and rebuild the browser. They require the operator token and never execute league transactions.</p>
-      <div class="panel">
-        <div class="controls">
-          <label>Operator token<input id="operator-token" type="password" placeholder="FRONT_OFFICE_OPERATOR_TOKEN"></label>
-          <button id="operator-refresh" type="button">Refresh Data</button>
-          <button id="operator-build-packet" type="button">Build Insight Packet</button>
-          <button id="operator-generate-insights" type="button">Update &amp; Write Analysis (LLM)</button>
-          <button id="operator-import" type="button">Import Insight JSON</button>
-          <button id="operator-validate" type="button">Validate Insights</button>
-          <button id="operator-rebuild" type="button">Rebuild Browser</button>
-          <button id="operator-reload" type="button">Reload Latest</button>
-          <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
-        </div>
-        <p class="note">Update &amp; Write Analysis refreshes the data, then has Claude write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site (requires ANTHROPIC_API_KEY on the server). Each article falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
-        <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
-        <div id="operator-status-panel"></div>
-        <div id="operator-chat-context-status"></div>
-      </div>
-    </section>
-
-    <section id="market-gaps">
+    <div id="market-gaps" class="view-block">
       <h2>Market Gaps</h2>
       <div class="controls">
         <button class="gap-scope active" data-gap-scope="targets" type="button">Targets</button>
@@ -762,9 +788,9 @@ def _page(
         <button class="gap-scope" data-gap-scope="league" type="button">League</button>
       </div>
       <div id="market-gap-table"></div>
-    </section>
+    </div>
 
-    <section id="counterparty-edges">
+    <div id="counterparty-edges" class="view-block">
       <h2>Counterparty Edges</h2>
       <div class="panel article-panel"><h3>Trade Desk Read <span id="trade-desk-read-mode" class="tag"></span></h3><div id="trade-desk-read"></div></div>
       <p class="note">These are estimated value disagreements, not trade quotes. Nobody has accepted anything. The commissioner can breathe.</p>
@@ -776,9 +802,9 @@ def _page(
       </div>
       <h3>Counterparty Edge Table</h3>
       <div id="counterparty-edge-table"></div>
-    </section>
+    </div>
 
-    <section id="market-lens-lab">
+    <div id="market-lens-lab" class="view-block">
       <h2>Market Lens Lab</h2>
       <p class="note">Scenario rankings are browser-only exploration. They do not change canonical tables, default recommendations, or anyone's actual asking price.</p>
       <div class="lens-preset-row" id="market-lens-presets"></div>
@@ -812,74 +838,19 @@ def _page(
       </div>
       <h3>Scenario Detail</h3>
       <div id="scenario-table"></div>
-    </section>
+    </div>
 
-    <section id="asset-ledger">
+    <div id="asset-ledger" class="view-block">
       <h2>Asset Ledger</h2>
       <div id="asset-ledger-table"></div>
-    </section>
+    </div>
 
-    <section id="opportunity-board">
+    <div id="opportunity-board" class="view-block">
       <h2>Opportunity Board</h2>
       <div id="opportunity-table"></div>
-    </section>
+    </div>
 
-    <section id="news-desk">
-      <h2>News Desk</h2>
-      <div class="controls">
-        <button class="news-scope active" data-news-scope="league-impact" type="button">League Impact</button>
-        <button class="news-scope" data-news-scope="watchlist" type="button">Watchlist / Waiver</button>
-        <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched Feed Items</button>
-      </div>
-      <div id="news-impact-table"></div>
-      <h3>Player News Matches</h3>
-      <div id="news-match-table"></div>
-    </section>
-
-    <section id="manager-room">
-      <h2>Manager Room</h2>
-      <div class="panel article-panel"><h3>Manager Intel <span id="manager-intel-mode" class="tag"></span></h3><div id="manager-intel"></div></div>
-      <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly.</p>
-      <div class="grid">
-        <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
-        <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
-      </div>
-      <h3>Manager Cycle Profiles</h3>
-      <div id="manager-cycle-table"></div>
-      <h3>Manager Tag Evidence</h3>
-      <div id="manager-profile-tag-table"></div>
-    </section>
-
-    <section id="player-room">
-      <h2>Player Room</h2>
-      <p class="note">Player tags combine roster status, market value, projections, news, signals, and league transaction history. A tag is a research prompt with evidence, not a parade route.</p>
-      <div class="grid">
-        <div class="panel"><h3>Active Team Player Cards</h3><div id="player-dossier-cards"></div></div>
-        <div class="panel"><h3>Player Tag Board</h3><div id="player-tag-cards"></div></div>
-      </div>
-      <h3>Player Dossiers</h3>
-      <div id="player-dossier-table"></div>
-      <h3>Player Transaction History</h3>
-      <div id="player-transaction-history-table"></div>
-    </section>
-
-    <section id="manager-map">
-      <h2>Manager Map</h2>
-      <div class="grid">
-        <div class="panel"><h3>Manager Valuation Profiles</h3><div id="manager-valuation-table"></div></div>
-        <div class="panel"><h3>Behavior Signals</h3><div id="manager-signal-table"></div></div>
-        <div class="panel"><h3>Manager Event Log</h3><div id="manager-event-table"></div></div>
-      </div>
-    </section>
-
-    <section id="manager-behavior">
-      <h2>Manager Behavior</h2>
-      <div id="active-manager-profile"></div>
-      <h3>League Manager Profiles</h3>
-      <div id="manager-table"></div>
-    </section>
-
-    <section id="pick-ledger">
+    <div id="pick-ledger" class="view-block">
       <h2>Pick Ledger</h2>
       <div class="controls">
         <button class="pick-filter active" data-pick-filter="all" type="button">All Picks</button>
@@ -888,18 +859,18 @@ def _page(
         <button class="pick-filter" data-pick-filter="active-original" type="button">Active Team Original</button>
       </div>
       <div id="pick-table"></div>
-    </section>
+    </div>
 
-    <section id="trade-market">
+    <div id="trade-market" class="view-block">
       <h2>Trade Market</h2>
       <div class="controls">
         <button class="scope-filter active" data-scope="team" type="button">Active Team</button>
         <button class="scope-filter" data-scope="league" type="button">League</button>
       </div>
       <div id="trade-table"></div>
-    </section>
+    </div>
 
-    <section id="waiver-market">
+    <div id="waiver-market" class="view-block">
       <h2>Waiver Market</h2>
       <div class="controls">
         <button class="waiver-scope active" data-waiver-scope="team" type="button">Active Team</button>
@@ -907,18 +878,67 @@ def _page(
         <label>Status<select id="waiver-status-filter"></select></label>
       </div>
       <div id="waiver-table"></div>
+    </div>
     </section>
 
-    <section id="diagnostics">
+    <section id="view-news">
+    <div id="news-desk" class="view-block">
+      <h2>News Desk</h2>
+      <div class="panel article-panel"><h3>News Impact Brief</h3><div id="news-impact-brief"></div></div>
+      <div class="controls">
+        <button class="news-scope active" data-news-scope="league-impact" type="button">League Impact</button>
+        <button class="news-scope" data-news-scope="watchlist" type="button">Watchlist / Waiver</button>
+        <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched Feed Items</button>
+      </div>
+      <div id="news-impact-table"></div>
+      <h3>Player News Matches</h3>
+      <div id="news-match-table"></div>
+    </div>
+    </section>
+
+    <section id="view-data-room">
+    <div id="operator-mode" class="view-block">
+      <h2>Data Room</h2>
+      <h3>Operator Mode</h3>
+      <p class="note">Personal-use update loop. These controls refresh facts, build Codex packets, validate insight output, and rebuild the browser. They require the operator token and never execute league transactions.</p>
+      <div class="panel">
+        <div class="controls">
+          <label>Operator token<input id="operator-token" type="password" placeholder="FRONT_OFFICE_OPERATOR_TOKEN"></label>
+          <button id="operator-refresh" type="button">Refresh Data</button>
+          <button id="operator-build-packet" type="button">Build Insight Packet</button>
+          <button id="operator-generate-insights" type="button">Update &amp; Write Analysis (LLM)</button>
+          <button id="operator-import" type="button">Import Insight JSON</button>
+          <button id="operator-validate" type="button">Validate Insights</button>
+          <button id="operator-rebuild" type="button">Rebuild Browser</button>
+          <button id="operator-reload" type="button">Reload Latest</button>
+          <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
+        </div>
+        <p class="note">Update &amp; Write Analysis refreshes the data, then has Claude write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site (requires ANTHROPIC_API_KEY on the server). Each article falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
+        <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
+        <div id="operator-status-panel"></div>
+        <div id="operator-chat-context-status"></div>
+      </div>
+    </div>
+
+    <div id="diagnostics" class="view-block">
       <h2>Diagnostics</h2>
       <p class="note">Data Diagnostics, source freshness, and audit payloads. This is where the facts live before anyone starts doing victory laps.</p>
       <div class="panel article-panel"><h3>Model Verification <span class="tag">backtested</span></h3>
         <p class="note">Rolling-origin backtest on nflverse 1999-2024 (30 snapshots, 12,263 player-snapshots, <code>scripts/backtest.py</code>) for predicting rest-of-season top finishes: <strong>production_score AUC 0.85</strong>, <strong>opportunity_score AUC 0.80</strong> -- both strong, confirming opportunity (target share, air yards, carries) is a real forward-looking signal. xfp_regression / role_trend / fragility score below 0.55 standalone, so they are used only as buy-low / role / risk <em>flags</em>, never as ranking scores.</p>
       </div>
       <div id="diagnostics-panel"></div>
+    </div>
+
+    <div id="draft" class="view-block"><h2>Draft Results</h2><div id="draft-table"></div></div>
     </section>
 
-    <section id="draft"><h2>Draft Results</h2><div id="draft-table"></div></section>
+    <section id="player-page">
+      <div id="player-page-body"><p class="note">Pick a player from any card, table, or the search box to open their page.</p></div>
+    </section>
+
+    <section id="team-page">
+      <div id="team-page-body"><p class="note">Pick a manager from the League view to open their page.</p></div>
+    </section>
       </main>
     </div>
   </div>
@@ -928,7 +948,7 @@ def _page(
     let tables = {{}};
     let analysis = {{}};
     const state = {{
-      activeSection: 'todays-board',
+      activeSection: 'view-today',
       teamId: 0,
       query: '',
       position: 'ALL',
@@ -1299,7 +1319,57 @@ def _page(
           showSection(link.getAttribute('href').slice(1));
         }});
       }});
+      // Entity links (#player-..., #team-...) created dynamically in cards, search results, and
+      // entity pages need no listeners: native anchor navigation changes the hash and the
+      // hashchange listener below routes it.
       window.addEventListener('hashchange', () => showSection(location.hash.replace('#', '')));
+      const entitySearch = document.getElementById('entity-search');
+      entitySearch.addEventListener('input', () => renderEntitySearch(entitySearch.value));
+      document.getElementById('entity-search-results').addEventListener('click', () => {{
+        document.getElementById('entity-search-results').innerHTML = '';
+        entitySearch.value = '';
+      }});
+    }}
+
+    function managerGridCards() {{
+      const cycles = tables.manager_cycle_profiles || [];
+      if (!cycles.length) return '<p class="note">No manager profiles yet.</p>';
+      return `<div class="brief-list">${{cycles.map(row => briefCard({{
+        title: row.team_name || `Roster ${{row.roster_id}}`,
+        category: categoryFor('dynasty_cycle', row.dynasty_cycle),
+        entityHash: `team-${{num(row.roster_id)}}`,
+        chips: [label(row.dynasty_cycle || ''), row.trade_temperature, row.pick_posture],
+        summary: row.likely_needs ? `Needs: ${{row.likely_needs}}` : ''
+      }})).join('')}}</div>`;
+    }}
+
+    function playerBrowserCards() {{
+      const rows = sortRows(applySearch(tables.player_dossiers), ['market_value']).reverse().slice(0, 24);
+      if (!rows.length) return '<p class="note">No player dossiers yet.</p>';
+      return `<h3>Top of the Player Pool</h3><div class="brief-list">${{rows.map((row, index) => briefCard({{
+        title: row.player_name || 'Unknown',
+        category: categoryFor('signal_label', row.signal_label),
+        rank: index + 1,
+        playerId: row.player_id,
+        entityHash: `player-${{row.player_id}}`,
+        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg ? `ppg ${{row.projected_ppg}}` : '']
+      }})).join('')}}</div>`;
+    }}
+
+    function renderEntitySearch(query) {{
+      const box = document.getElementById('entity-search-results');
+      const needle = String(query || '').trim().toLowerCase();
+      if (needle.length < 2) {{ box.innerHTML = ''; return; }}
+      const players = (tables.player_dossiers || [])
+        .filter(row => String(row.player_name || '').toLowerCase().includes(needle))
+        .slice(0, 6)
+        .map(row => `<a href="#player-${{escapeHtml(String(row.player_id))}}">${{escapeHtml(row.player_name)}}<span class="entity-kind">${{escapeHtml(row.position || 'player')}}</span></a>`);
+      const teams = currentSeasonTeams()
+        .filter(row => String(row.team_name || row.display_name || '').toLowerCase().includes(needle))
+        .slice(0, 4)
+        .map(row => `<a href="#team-${{Number(row.roster_id)}}">${{escapeHtml(row.team_name || row.display_name)}}<span class="entity-kind">team</span></a>`);
+      const results = [...players, ...teams];
+      box.innerHTML = results.length ? results.join('') : '<a href="javascript:void(0)"><span class="entity-kind">no matches</span></a>';
     }}
 
     function renderMarketLensPresetButtons() {{
@@ -1418,6 +1488,8 @@ def _page(
       document.getElementById('opportunity-table').innerHTML = table(applySearch(tables.opportunity_board), opportunityColumns);
       document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
+      document.getElementById('manager-grid').innerHTML = managerGridCards();
+      document.getElementById('player-browser').innerHTML = playerBrowserCards();
       document.getElementById('active-manager-dossier').innerHTML = activeManagerDossier();
       document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16), false);
       document.getElementById('manager-cycle-table').innerHTML = table(filteredManagerCycles(), managerCycleColumns);
@@ -1825,6 +1897,7 @@ def _page(
         category: categoryFor('item_type', row.item_type),
         rank: index + 1,
         playerId: row.entity_type === 'player' ? row.entity_id : null,
+        entityHash: row.entity_type === 'player' ? `player-${{row.entity_id}}` : (row.entity_type === 'manager' ? `team-${{num(row.entity_id)}}` : ''),
         chips: [
           row.team_name,
           row.priority_score !== undefined && row.priority_score !== null && row.priority_score !== '' ? `priority ${{row.priority_score}}` : '',
@@ -1860,6 +1933,7 @@ def _page(
         category: bucket,
         rank: index + 1,
         playerId: row.player_id,
+        entityHash: row.player_id ? `player-${{row.player_id}}` : '',
         chips: [
           mode,
           row.position,
@@ -1986,6 +2060,7 @@ def _page(
         title: (insightFor('player', row.player_id).headline || row.player_name || 'Unknown player'),
         category: categoryFor('signal_label', row.signal_label),
         playerId: row.player_id,
+        entityHash: row.player_id ? `player-${{row.player_id}}` : '',
         chips: [
           row.position,
           row.market_value ? `market ${{row.market_value}}` : '',
@@ -2108,10 +2183,12 @@ def _page(
         : '';
       const mediaBlock = `<div class="brief-card-media">${{rankBlock}}${{headshotBlock}}</div>`;
 
+      const titleText = escapeHtml(card.title || 'Untitled');
+      const titleHtml = card.entityHash ? `<a class="entity-link" href="#${{escapeHtml(String(card.entityHash))}}">${{titleText}}</a>` : titleText;
       return `<article class="brief-card cat-${{bucket}}">
         ${{mediaBlock}}
         <div class="brief-card-body">
-          <div class="brief-card-title">${{escapeHtml(card.title || 'Untitled')}}</div>
+          <div class="brief-card-title">${{titleHtml}}</div>
           <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
           ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
           ${{watchouts}}
@@ -2157,16 +2234,168 @@ def _page(
       document.querySelectorAll(selector).forEach(button => button.classList.toggle('active', button === activeButton));
     }}
 
-    const SECTION_IDS = [
-      'todays-board', 'decision-board', 'team-overview', 'roster-value', 'projection-board',
-      'signal-board', 'analyst-brief', 'operator-mode', 'market-gaps', 'counterparty-edges',
-      'market-lens-lab', 'asset-ledger', 'opportunity-board', 'news-desk', 'manager-room',
-      'player-room', 'manager-map', 'manager-behavior', 'pick-ledger', 'trade-market',
-      'waiver-market', 'diagnostics', 'draft'
+    const VIEW_IDS = [
+      'view-today', 'view-my-team', 'view-players', 'view-league',
+      'view-trade-desk', 'view-news', 'view-data-room'
     ];
 
+    function findRow(rows, key, value) {{
+      const target = String(value ?? '');
+      return (rows || []).find(row => String(row[key] ?? '') === target) || {{}};
+    }}
+
+    function findRows(rows, key, value) {{
+      const target = String(value ?? '');
+      return (rows || []).filter(row => String(row[key] ?? '') === target);
+    }}
+
+    function entityTile(label, value, kind) {{
+      const num = Number(value);
+      const shown = value === undefined || value === null || value === '' ? '--' : value;
+      let band = '';
+      if (kind === 'score' && Number.isFinite(num)) {{
+        band = num >= 70 ? 'score-high' : num >= 40 ? 'score-mid' : 'score-low';
+      }}
+      return `<div class="entity-tile"><div class="entity-tile-value ${{band}}">${{escapeHtml(String(shown))}}</div><div class="entity-tile-label">${{escapeHtml(label)}}</div></div>`;
+    }}
+
+    function backLink() {{
+      return '<a class="back-link" href="javascript:history.back()">&larr; back</a>';
+    }}
+
+    function renderPlayerPage(playerId) {{
+      const id = String(playerId ?? '');
+      const dossier = findRow(tables.player_dossiers, 'player_id', id);
+      const signal = findRow(tables.player_signal_scores, 'player_id', id);
+      const opp = findRow(tables.player_opportunity_scores, 'player_id', id);
+      const rosterRow = findRow(currentSeasonRoster(), 'player_id', id) || {{}};
+      const action = findRow(tables.action_recommendations, 'player_id', id);
+      const name = dossier.player_name || signal.player_name || rosterRow.player_name || 'Unknown player';
+      const position = dossier.position || signal.position || rosterRow.position || '';
+      const ownerName = dossier.team_name || signal.team_name || rosterRow.team_name || '';
+      const ownerId = num(dossier.roster_id || signal.roster_id || rosterRow.roster_id);
+      const tags = topTags('player', id, 6);
+      const newsRows = (tables.league_news_impact || []).filter(row => String(row.player_id ?? '') === id).slice(0, 6);
+      const history = findRows(tables.player_transaction_history, 'player_id', id).slice(0, 20);
+      const insight = insightFor('player', id);
+      const marketValue = dossier.market_value ?? signal.market_value ?? '';
+      if (!name || name === 'Unknown player') {{
+        document.getElementById('player-page-body').innerHTML = `${{backLink()}}<p class="note">No data found for this player id. They may be outside the current rostered pool.</p>`;
+        return;
+      }}
+      document.getElementById('player-page-body').innerHTML = `
+        ${{backLink()}}
+        <div class="entity-header">
+          <div class="entity-headshot">${{headshotImg(id, name)}}</div>
+          <div>
+            <h2>${{escapeHtml(name)}}</h2>
+            <div class="brief-card-meta">
+              ${{position ? `<span class="brief-chip">${{escapeHtml(position)}}</span>` : ''}}
+              ${{dossier.age ? `<span class="brief-chip">age ${{escapeHtml(String(dossier.age))}}</span>` : ''}}
+              ${{ownerName ? `<a class="brief-chip entity-link" href="#team-${{ownerId}}">${{escapeHtml(ownerName)}}</a>` : '<span class="brief-chip">unrostered</span>'}}
+              ${{signal.signal_label ? `<span class="brief-chip">${{escapeHtml(label(signal.signal_label))}}</span>` : ''}}
+            </div>
+            ${{insight.one_line_read ? `<p class="article-p">${{escapeHtml(insight.one_line_read)}}</p>` : ''}}
+          </div>
+        </div>
+        <div class="tile-row">
+          ${{entityTile('Market Value', marketValue)}}
+          ${{entityTile('Projected PPG', dossier.projected_ppg ?? signal.projected_ppg ?? '')}}
+          ${{entityTile('Opportunity', opp.opportunity_score ?? signal.opportunity_score ?? '', 'score')}}
+          ${{entityTile('Production', opp.production_score ?? '', 'score')}}
+          ${{entityTile('Usage vs Output', opp.xfp_regression_score ?? signal.xfp_regression_score ?? '', 'score')}}
+          ${{entityTile('Role Trend', opp.role_trend_score ?? signal.role_trend_score ?? '', 'score')}}
+          ${{entityTile('Fragility', opp.fragility_score ?? signal.fragility_score ?? '', 'score')}}
+          ${{entityTile('Breakout', signal.breakout_score ?? '', 'score')}}
+          ${{entityTile('Sell', signal.sell_score ?? '', 'score')}}
+        </div>
+        ${{tags.length ? `<div class="brief-card-meta">${{tags.map(row => `<span class="brief-chip cat-chip-${{categoryFor('tag', row.tag)}}">${{escapeHtml(row.tag)}}</span>`).join('')}}</div>` : ''}}
+        ${{action.why ? `<div class="panel article-panel"><h3>${{escapeHtml(action.consumer_label || 'Read')}}</h3><p class="article-p">${{escapeHtml(action.why)}}</p><p class="note">${{escapeHtml(action.risk || '')}}</p></div>` : ''}}
+        ${{opp.opportunity_evidence ? `<p class="note">Usage: ${{escapeHtml(opp.opportunity_evidence)}} (${{escapeHtml(String(opp.games_sample || 0))}} games sampled)</p>` : ''}}
+        ${{newsRows.length ? `<h3>News</h3><div class="brief-list">${{newsRows.map(row => briefCard({{
+          title: `${{row.impact_type ? label(row.impact_type) : 'News'}}`,
+          category: 'info',
+          chips: [row.source, row.published_at],
+          evidence: row.evidence || ''
+        }})).join('')}}</div>` : ''}}
+        ${{history.length ? `<details class="data-drawer"><summary>Transaction history (${{history.length}})</summary>${{table(history, playerHistoryColumns)}}</details>` : ''}}
+      `;
+    }}
+
+    function renderTeamPage(rosterId) {{
+      const rid = Number(rosterId);
+      const team = currentSeasonTeams().find(row => Number(row.roster_id) === rid) || findRow(tables.teams, 'roster_id', rid);
+      const cycle = (tables.manager_cycle_profiles || []).find(row => Number(row.roster_id) === rid) || {{}};
+      const behavior = (tables.manager_behavior_signals || []).find(row => Number(row.roster_id) === rid) || {{}};
+      const teamName = team.team_name || team.display_name || cycle.team_name || `Roster ${{rid}}`;
+      const tags = topTags('manager', rid, 6);
+      const roster = currentSeasonRoster().filter(row => Number(row.roster_id) === rid);
+      const dossierByPlayer = rowMap(tables.player_dossiers, 'player_id');
+      const rosterCards = roster
+        .map(row => ({{ row, market: num((dossierByPlayer.get(String(row.player_id)) || {{}}).market_value) }}))
+        .sort((a, b) => b.market - a.market)
+        .slice(0, 30);
+      const picks = (tables.pick_ownership || []).filter(row => Number(row.current_owner_roster_id) === rid && String(row.round) === '1');
+      const thesis = (analysis.tradeTheses || []).find(row => Number(row.target_manager_roster_id) === rid) || {{}};
+      const edges = (tables.counterparty_trade_edges || []).filter(row => Number(row.target_roster_id) === rid).slice(0, 5);
+      document.getElementById('team-page-body').innerHTML = `
+        ${{backLink()}}
+        <div class="entity-header">
+          <div>
+            <h2>${{escapeHtml(teamName)}}</h2>
+            <div class="brief-card-meta">
+              ${{cycle.dynasty_cycle ? `<span class="brief-chip cat-chip-${{categoryFor('dynasty_cycle', cycle.dynasty_cycle)}}">${{escapeHtml(label(cycle.dynasty_cycle))}}</span>` : ''}}
+              ${{cycle.trade_temperature ? `<span class="brief-chip">${{escapeHtml(cycle.trade_temperature)}}</span>` : ''}}
+              ${{cycle.pick_posture ? `<span class="brief-chip">${{escapeHtml(cycle.pick_posture)}}</span>` : ''}}
+              ${{tags.map(row => `<span class="brief-chip">${{escapeHtml(row.tag)}}</span>`).join('')}}
+            </div>
+            ${{cycle.likely_needs ? `<p class="article-p">Likely needs: ${{escapeHtml(cycle.likely_needs)}}</p>` : ''}}
+            ${{cycle.likely_sells ? `<p class="article-p">Likely sells: ${{escapeHtml(cycle.likely_sells)}}</p>` : ''}}
+          </div>
+        </div>
+        <div class="tile-row">
+          ${{entityTile('Trade Activity', behavior.trade_activity_score ?? '', 'score')}}
+          ${{entityTile('Pick Buyer', behavior.pick_buyer_score ?? '', 'score')}}
+          ${{entityTile('Pick Seller', behavior.pick_seller_score ?? '', 'score')}}
+          ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
+          ${{entityTile('Future 1sts Owned', picks.length)}}
+        </div>
+        ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
+        ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{
+          title: `${{row.player_name || 'Unknown'}}`,
+          category: categoryFor('edge_type', row.edge_type),
+          rank: index + 1,
+          playerId: row.player_id,
+          entityHash: `player-${{row.player_id}}`,
+          chips: [row.edge_type, row.position, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : ''],
+          evidence: row.evidence || ''
+        }})).join('')}}</div>` : ''}}
+        <h3>Roster (by market value)</h3>
+        <div class="brief-list">${{rosterCards.map(({{ row, market }}) => briefCard({{
+          title: `${{row.player_name}}`,
+          category: 'info',
+          playerId: row.player_id,
+          entityHash: `player-${{row.player_id}}`,
+          chips: [row.position, market ? `market ${{market}}` : '', row.roster_status]
+        }})).join('')}}</div>
+      `;
+    }}
+
     function showSection(sectionId) {{
-      const targetId = SECTION_IDS.includes(sectionId) ? sectionId : 'todays-board';
+      let targetId = sectionId;
+      // Entity routes: #player-{{sleeperId}} and #team-{{rosterId}} open detail pages rendered
+      // on demand from the bundle. Everything else resolves to one of the seven task views.
+      const playerMatch = /^player-(.+)$/.exec(String(sectionId || ''));
+      const teamMatch = /^team-(\\d+)$/.exec(String(sectionId || ''));
+      if (playerMatch) {{
+        renderPlayerPage(playerMatch[1]);
+        targetId = 'player-page';
+      }} else if (teamMatch) {{
+        renderTeamPage(Number(teamMatch[1]));
+        targetId = 'team-page';
+      }} else if (!VIEW_IDS.includes(sectionId)) {{
+        targetId = 'view-today';
+      }}
       document.querySelectorAll('main > section').forEach(section => {{
         section.hidden = section.id !== targetId;
       }});
@@ -2174,9 +2403,12 @@ def _page(
         link.classList.toggle('active', link.getAttribute('href') === `#${{targetId}}`);
       }});
       state.activeSection = targetId;
-      if (location.hash !== `#${{targetId}}`) {{
-        history.pushState(null, '', `#${{targetId}}`);
+      const hashTarget = playerMatch || teamMatch ? sectionId : targetId;
+      if (location.hash !== `#${{hashTarget}}`) {{
+        history.pushState(null, '', `#${{hashTarget}}`);
       }}
+      document.querySelector('main').scrollTop = 0;
+      window.scrollTo(0, 0);
     }}
 
     function setText(id, value) {{
