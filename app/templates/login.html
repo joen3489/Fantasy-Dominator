@@ -25,23 +25,52 @@
     <main>
       <p class="tagline">Find the market leak, then pretend it was obvious all along.</p>
       {% if publishable_key %}
-        <h1>Sending you to Clerk.</h1>
+        <h1>Sign in to the Front Office.</h1>
         <p>Hold the clipboard. The auth bouncer is checking names.</p>
         <div id="sign-in"></div>
+        <p id="clerk-status" class="tagline" hidden></p>
         <script
           async
           crossorigin="anonymous"
           data-clerk-publishable-key="{{ publishable_key }}"
-          src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+          src="{{ clerk_js_url }}"
           type="text/javascript">
         </script>
         <script>
-          window.addEventListener("load", async () => {
-            await window.Clerk.load();
-            window.Clerk.mountSignIn(document.getElementById("sign-in"), {
-              redirectUrl: "{{ redirect_url }}"
-            });
-          });
+          (function () {
+            var status = document.getElementById("clerk-status");
+            var attempts = 0;
+            function fail(message) {
+              status.hidden = false;
+              status.textContent = message;
+            }
+            function boot() {
+              attempts += 1;
+              if (!window.Clerk) {
+                if (attempts > 100) {
+                  fail("The Clerk script never arrived. Check the browser network tab or an ad blocker, then reload.");
+                  return;
+                }
+                setTimeout(boot, 100);
+                return;
+              }
+              window.Clerk.load()
+                .then(function () {
+                  if (window.Clerk.user) {
+                    window.location.href = "{{ redirect_url }}";
+                    return;
+                  }
+                  window.Clerk.mountSignIn(document.getElementById("sign-in"), {
+                    fallbackRedirectUrl: "{{ redirect_url }}",
+                    redirectUrl: "{{ redirect_url }}"
+                  });
+                })
+                .catch(function (err) {
+                  fail("Clerk failed to start: " + (err && err.message ? err.message : err));
+                });
+            }
+            boot();
+          })();
         </script>
       {% else %}
         <h1>Auth is not configured.</h1>

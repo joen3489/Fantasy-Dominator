@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
             {
                 "request": request,
                 "publishable_key": publishable_key,
+                "clerk_js_url": _clerk_js_url(publishable_key),
                 "redirect_url": str(request.url_for("home")),
             },
         )
@@ -152,6 +153,26 @@ def create_app() -> FastAPI:
         return front_operator.start_job("rebuild-browser", lambda: _rebuild_browser_job(league))
 
     return app
+
+
+def _clerk_js_url(publishable_key: str) -> str:
+    """Serve clerk-js from the instance's own frontend API domain, pinned to major v5.
+
+    The publishable key encodes that domain (base64 of "host$"). Loading a pinned
+    major from the instance domain is Clerk's documented pattern; an unpinned
+    @latest from a third-party CDN silently breaks on major releases.
+    """
+    import base64
+
+    try:
+        encoded = publishable_key.split("_")[2]
+        # Clerk pads with '$' before base64; restore b64 padding then strip the sentinel.
+        host = base64.b64decode(encoded + "=" * (-len(encoded) % 4)).decode("utf-8").rstrip("$")
+        if host:
+            return f"https://{host}/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+    except Exception:
+        pass
+    return "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
 
 
 def _owned_enabled_league(user: dict[str, Any], league_id: str | None) -> dict[str, Any] | None:
