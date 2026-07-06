@@ -8,10 +8,12 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.analysis import build_default_analysis_artifacts
+from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
+from src.league_paths import LeaguePaths
+from src.league_registry import discover_leagues, save_registry
 from src.manager_profiles import build_manager_profiles
 from src.news import build_news_tables
 from src.normalize import (
@@ -38,22 +40,44 @@ from src.projections import _load_raw_stats, build_projection_tables
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI
 from src.signals import build_signal_tables
-from src.utils import PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
+from src.utils import ANALYSIS_DIR, PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
 
 
-def main(force: bool = False) -> None:
-    ensure_dirs()
+def main(
+    force: bool = False,
+    league_id: str | None = None,
+    roster_id: int | None = None,
+    paths: "LeaguePaths | None" = None,
+) -> None:
+    if paths is None:
+        ensure_dirs()
+        raw_dir = None
+        processed_dir = PROCESSED_DIR
+        reports_dir = REPORTS_DIR
+        site_dir = SITE_DIR
+        analysis_dir = ANALYSIS_DIR
+    else:
+        paths.ensure()
+        raw_dir = paths.raw_dir
+        processed_dir = paths.processed_dir
+        reports_dir = paths.reports_dir
+        site_dir = paths.site_dir
+        analysis_dir = paths.analysis_dir
+
     config = load_config()
-    api = SleeperAPI()
+    api = SleeperAPI(raw_dir=raw_dir) if raw_dir is not None else SleeperAPI()
     players = load_players(api, force=force)
     current_team = config.get("current_team", {}) or {}
     my_display_name = current_team.get("display_name") or config.get("my_display_name", "")
     my_team_name = current_team.get("team_name") or config.get("my_team_name", "")
-    configured_roster_id = current_team.get("roster_id")
+    configured_roster_id = roster_id if roster_id is not None else current_team.get("roster_id")
     configured_roster_id = int(configured_roster_id) if configured_roster_id not in (None, "") else None
     week_start = int(config.get("transaction_weeks", {}).get("start", 1))
     week_end = int(config.get("transaction_weeks", {}).get("end", 18))
-    league_ids_by_season = _discover_league_history(config, api, force=force)
+    if league_id:
+        league_ids_by_season = _discover_league_history_from_seed(config, api, str(league_id), force=force)
+    else:
+        league_ids_by_season = _discover_league_history(config, api, force=force)
 
     external_frames = refresh_external_sources(config, force=force)
 
@@ -136,7 +160,7 @@ def main(force: bool = False) -> None:
 
     nflverse_stats_path = RAW_EXTERNAL_DIR / "nflverse" / str(config.get("current_season", "")) / "player_stats.csv"
     raw_stats_for_grading = _load_raw_stats(nflverse_stats_path)
-    accuracy_history_path = PROCESSED_DIR / "projection_snapshot_history.csv"
+    accuracy_history_path = processed_dir / "projection_snapshot_history.csv"
     accuracy_df = build_projection_accuracy_table(raw_stats_for_grading, dataframes["leagues"], config, accuracy_history_path)
     dataframes["source_accuracy_scores"] = accuracy_df
 
@@ -213,7 +237,7 @@ def main(force: bool = False) -> None:
     )
     configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]
     ingested_seasons = sorted({str(value) for value in dataframes["leagues"].get("season", pd.Series(dtype=str)).dropna().tolist()})
-    analysis_metadata = build_default_analysis_artifacts(dataframes, config, current_my_roster_id)
+    analysis_metadata = build_analysis_artifacts(analysis_dir, dataframes, config, current_my_roster_id)
     dataframes["refresh_metadata"] = pd.DataFrame(
         [
             {
@@ -252,16 +276,16 @@ def main(force: bool = False) -> None:
         ]
     )
 
-    sqlite_path = PROCESSED_DIR / "sleeper_dynasty.sqlite"
+    sqlite_path = processed_dir / "sleeper_dynasty.sqlite"
     with _sqlite_connection(sqlite_path) as conn:
         for name, frame in dataframes.items():
-            csv_path = PROCESSED_DIR / f"{name}.csv"
+            csv_path = processed_dir / f"{name}.csv"
             frame.to_csv(csv_path, index=False)
             frame.to_sql(name, conn, if_exists="replace", index=False)
             print(f"Wrote {csv_path} ({len(frame)} rows)")
 
     build_weekly_report(
-        REPORTS_DIR / "weekly_hinkie_report.md",
+        reports_dir / "weekly_hinkie_report.md",
         dataframes["teams"],
         dataframes["roster_players"],
         dataframes["trades"],
@@ -271,8 +295,8 @@ def main(force: bool = False) -> None:
         current_my_roster_id,
         config.get("strategy_profile") or {},
     )
-    print(f"Wrote {REPORTS_DIR / 'weekly_hinkie_report.md'}")
-    site_path = build_browser_site(SITE_DIR, PROCESSED_DIR)
+    print(f"Wrote {reports_dir / 'weekly_hinkie_report.md'}")
+    site_path = build_browser_site(site_dir, processed_dir, analysis_dir)
     print(f"Wrote {site_path}")
 
 
@@ -281,6 +305,38 @@ def _sqlite_connection(path: Path):
 
     path.parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(path)
+
+
+def refresh_user(username: str, season: str, force: bool = False) -> dict[str, dict[str, str]]:
+    api = SleeperAPI()
+    entries = discover_leagues(api, username, str(season))
+    save_registry(entries)
+    statuses: dict[str, dict[str, str]] = {}
+
+    for entry in entries:
+        league_id = str(entry.get("league_id") or "")
+        league_type = str(entry.get("league_type") or "")
+        if not league_id:
+            continue
+        if league_type == "best_ball":
+            continue
+        try:
+            roster_id = entry.get("roster_id")
+            main(
+                force=force,
+                league_id=league_id,
+                roster_id=int(roster_id) if roster_id not in (None, "") else None,
+                paths=LeaguePaths.for_league(league_id),
+            )
+            statuses[league_id] = {"state": "complete", "message": "Refresh complete.", "league_type": league_type}
+        except Exception as exc:  # noqa: BLE001 - one league failing must not stop the rest.
+            statuses[league_id] = {
+                "state": "failed",
+                "message": f"Refresh failed: {exc}",
+                "league_type": league_type,
+            }
+
+    return statuses
 
 
 def _discover_league_history(config: dict, api: SleeperAPI, force: bool = False) -> dict[str, str]:
@@ -292,7 +348,26 @@ def _discover_league_history(config: dict, api: SleeperAPI, force: bool = False)
     if not current_league_id:
         return configured
 
+    return _discover_league_history_from_seed(config, api, current_league_id, force=force, configured=configured)
+
+
+def _discover_league_history_from_seed(
+    config: dict,
+    api: SleeperAPI,
+    current_league_id: str,
+    force: bool = False,
+    configured: dict[str, str] | None = None,
+) -> dict[str, str]:
+    configured = dict(configured or {})
+    if not (config.get("historical_ingestion") or {}).get("auto_discover_previous_leagues", True):
+        current_season = str(config.get("current_season", "") or "")
+        return configured or ({current_season: current_league_id} if current_season and current_league_id else {})
+    current_season = str(config.get("current_season", "") or "")
+    if not current_season or not current_league_id:
+        return configured
+
     discovered = dict(configured)
+    discovered.setdefault(current_season, current_league_id)
     season = int(current_season) if current_season.isdigit() else 0
     league_id = current_league_id
     seen = {league_id}

@@ -36,6 +36,12 @@ class SleeperAPI:
             dump_json(cache_path, data)
         return data
 
+    def user(self, username_or_id: str, force: bool = False) -> dict[str, Any]:
+        return self.get(f"/user/{username_or_id}", self.raw_dir / "users" / f"{username_or_id}.json", force)
+
+    def user_leagues(self, user_id: str, season: str, force: bool = False) -> list[dict[str, Any]]:
+        return self.get(f"/user/{user_id}/leagues/nfl/{season}", self.raw_dir / "users" / user_id / f"leagues_{season}.json", force)
+
     def league(self, season: str, league_id: str, force: bool = False) -> dict[str, Any]:
         return self.get(f"/league/{league_id}", self.raw_dir / season / "league.json", force)
 

@@ -12,3 +12,6 @@ data/site/index.html
 data/site/data/
 data/site/refresh_status.json
 data/site/server.*.log
+data/leagues/
+data/league_registry.json
+data/app.db
