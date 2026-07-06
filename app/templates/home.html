@@ -3,122 +3,485 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fantasy Dominator</title>
+    <title>The Front Office</title>
     <style>
       :root {
+        color-scheme: light;
+        --bg: #f5f4ef;
+        --panel: #ffffff;
+        --ink: #15171a;
+        --muted: #626a73;
+        --line: #d8ddd2;
+        --accent: #0f5c4a;
+        --accent-2: #a23f2d;
         --rail: #202722;
-        --cream: #f5f4ef;
-        --green: #0f5c4a;
-        --rust: #a23f2d;
         --gold: #c49b44;
+
+        --buy: var(--accent);
+        --buy-bg: #e4efe9;
+        --sell: var(--accent-2);
+        --sell-bg: #f4e3dd;
+        --watch: var(--gold);
+        --watch-bg: #f6ecd8;
+        --hold: #35506b;
+        --hold-bg: #e2e8ee;
+        --info: var(--muted);
+        --info-bg: #eceeec;
+        --alert: #8a2f5c;
+        --alert-bg: #f1e0ea;
+
+        --rank-size-lg: 28px;
+        --rank-size-md: 22px;
+        --rank-weight: 800;
+        --rank-color: var(--ink);
+        --rank-muted: var(--muted);
+        --tile-size: 34px;
+        --tile-radius: 7px;
+        --tile-font-size: 13px;
       }
+
       * { box-sizing: border-box; }
+      html { background: var(--bg); }
       body {
         margin: 0;
+        min-width: 0;
+        overflow-x: hidden;
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: var(--rail);
-        background: var(--cream);
+        color: var(--ink);
+        background: var(--bg);
       }
-      header {
-        padding: 24px;
-        color: var(--cream);
+      a { color: inherit; text-decoration: none; }
+      button, input { font: inherit; }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        color: var(--bg);
         background: var(--rail);
+        border-bottom: 1px solid rgba(245, 244, 239, .12);
       }
-      header p { margin: 4px 0 0; color: var(--gold); }
-      main {
+      .topbar-inner {
+        width: min(100%, 720px);
+        margin: 0 auto;
+        padding: 14px 16px 12px;
         display: grid;
-        gap: 24px;
-        padding: 24px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
       }
-      section {
-        max-width: 1080px;
+      .wordmark {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      .tagline {
+        margin: 5px 0 0;
+        color: #d4c38e;
+        font-size: 12px;
+        line-height: 1.3;
+      }
+      .logout-form { margin: 0; }
+      .logout {
+        min-height: 44px;
+        padding: 0 13px;
+        border: 1px solid rgba(245, 244, 239, .24);
+        border-radius: 8px;
+        color: var(--bg);
+        background: transparent;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      main {
+        width: min(100%, 720px);
+        margin: 0 auto;
+        padding: 16px 12px 28px;
+        display: grid;
+        gap: 14px;
       }
       .league-strip {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        padding: 2px 4px 10px;
+        margin: 0 -4px;
+        scrollbar-width: none;
+      }
+      .league-strip::-webkit-scrollbar { display: none; }
+      .league-pill {
+        flex: 0 0 auto;
+        min-height: 44px;
+        max-width: 248px;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-      }
-      .league, .attention, form {
-        border: 1px solid rgba(32, 39, 34, .18);
+        grid-template-columns: auto 1fr;
+        gap: 7px;
+        align-items: center;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 16px;
-        background: #fffdfa;
+        background: var(--panel);
+        box-shadow: 0 1px 0 rgba(21, 23, 26, .03);
       }
-      .badge {
-        display: inline-block;
-        padding: 2px 8px;
+      .fresh-dot {
+        width: 9px;
+        height: 9px;
         border-radius: 999px;
-        color: var(--cream);
-        background: var(--green);
-        font-size: 12px;
+        background: var(--muted);
       }
-      a { color: var(--green); font-weight: 700; }
-      button {
-        border: 0;
-        border-radius: 6px;
-        padding: 10px 14px;
-        color: var(--cream);
-        background: var(--rust);
+      .fresh-dot.fresh { background: var(--buy); }
+      .fresh-dot.stale { background: var(--gold); }
+      .fresh-dot.failed { background: var(--sell); }
+      .league-pill-main {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .league-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .type-badge, .league-chip {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        font-size: 10px;
+        line-height: 1;
+        font-weight: 900;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+      .type-badge {
+        padding: 4px 6px;
+        color: var(--panel);
+        background: var(--muted);
+      }
+      .type-badge.dynasty { background: var(--gold); color: var(--ink); }
+      .type-badge.redraft { background: var(--buy); }
+      .type-badge.best-ball { background: var(--muted); }
+      .feed-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 2px;
+      }
+      .feed-title {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+      }
+      .queue-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: right;
+      }
+      .attention-feed {
+        display: grid;
+        gap: 10px;
+      }
+      .attention-card {
+        min-height: 62px;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--info);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 11px 11px 11px 12px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+      }
+      .attention-card[href] { cursor: pointer; }
+      .attention-card.cat-buy { border-left-color: var(--buy); }
+      .attention-card.cat-sell { border-left-color: var(--sell); }
+      .attention-card.cat-info { border-left-color: var(--info); }
+      .attention-card.cat-alert { border-left-color: var(--alert); }
+      .attention-body {
+        min-width: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .league-chip {
+        justify-self: start;
+        padding: 4px 7px;
+        color: var(--accent);
+        background: var(--buy-bg);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .headline {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.25;
+        font-weight: 800;
+      }
+      .detail {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      .score-tile {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: var(--tile-size);
+        height: var(--tile-size);
+        border-radius: var(--tile-radius);
+        padding: 0 6px;
+        font-size: var(--tile-font-size);
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+      .score-tile.score-high { background: var(--buy-bg); color: var(--buy); }
+      .score-tile.score-mid { background: var(--watch-bg); color: #7a5f28; }
+      .score-tile.score-low { background: var(--sell-bg); color: var(--sell); }
+      .quiet-divider {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 10px;
+        align-items: center;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .quiet-divider::before,
+      .quiet-divider::after {
+        content: "";
+        height: 1px;
+        background: var(--line);
+      }
+      .attention-card.quiet {
+        min-height: 46px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        background: #fbfcf8;
+        opacity: .86;
+      }
+      .attention-card.quiet .headline {
+        color: var(--muted);
+        font-size: 14px;
         font-weight: 700;
       }
-      input {
+      .empty-hero {
+        display: grid;
+        gap: 13px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+      .empty-hero h2 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.05;
+      }
+      .empty-hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      .link-row {
+        display: grid;
+        gap: 9px;
+      }
+      .link-row input {
+        min-height: 44px;
         width: 100%;
-        margin: 6px 0 12px;
-        padding: 10px;
-        border: 1px solid rgba(32, 39, 34, .28);
-        border-radius: 6px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 12px;
+        color: var(--ink);
+        background: #fbfcf8;
+      }
+      .primary-button, .refresh-button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 8px;
+        color: var(--panel);
+        background: var(--accent);
+        font-weight: 900;
+      }
+      .refresh-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 2px 2px 0;
+      }
+      .refresh-button {
+        flex: 0 0 auto;
+        padding: 0 13px;
+        background: var(--accent-2);
+        font-size: 13px;
+      }
+      .refresh-button:disabled {
+        color: var(--muted);
+        background: var(--info-bg);
+      }
+      .empty-feed {
+        margin: 4px 2px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      @media (min-width: 560px) {
+        main { padding: 22px 18px 36px; }
+        .link-row { grid-template-columns: minmax(0, 1fr) auto; }
+        .primary-button { padding: 0 18px; }
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Fantasy Dominator</h1>
-      <p>Find the market leak, then pretend it was obvious all along.</p>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 class="wordmark">The Front Office</h1>
+          <p class="tagline">Find the market leak, then pretend it was obvious all along.</p>
+        </div>
+        <form class="logout-form" method="post" action="/logout">
+          <button class="logout" type="submit">Logout</button>
+        </form>
+      </div>
     </header>
+
     <main>
-      <section>
-        <h2>Leagues</h2>
-        {% if leagues %}
-          <div class="league-strip">
-            {% for league in leagues %}
-              <article class="league">
-                <h3><a href="/league/{{ league.league_id }}/">{{ league.name or league.league_id }}</a></h3>
-                <p><span class="badge">{{ league.league_type or "league" }}</span></p>
-                <p>{{ "Enabled" if league.enabled else "Paused" }}</p>
-                {% if league.refresh_status %}
-                  <p>{{ league.refresh_status.state or "Refresh status found" }}</p>
-                {% endif %}
-              </article>
+      {% if leagues %}
+        {% if enabled_leagues %}
+          <nav class="league-strip" aria-label="Enabled leagues">
+            {% for league in enabled_leagues %}
+              {% set league_type = (league.league_type or "league")|replace("_", " ") %}
+              {% set dot_class = league.refresh_freshness or "unknown" %}
+              <a class="league-pill" href="/league/{{ league.league_id }}/">
+                <span class="fresh-dot {{ dot_class }}" aria-hidden="true"></span>
+                <span class="league-pill-main">
+                  <span class="league-name">{{ league.name or league.league_id }}</span>
+                  <span class="type-badge {{ (league.league_type or 'league')|replace('_', '-') }}">{{ league_type }}</span>
+                </span>
+              </a>
             {% endfor %}
-          </div>
-        {% else %}
-          <form method="post" action="/api/leagues/link">
-            <h3>Link your Sleeper account</h3>
-            <label>Sleeper username
-              <input name="sleeper_username" autocomplete="username">
-            </label>
-            <label>Season
-              <input name="season" value="2026">
-            </label>
-            <button type="submit">Find leagues</button>
-          </form>
+          </nav>
         {% endif %}
-      </section>
-      <section>
-        <h2>Attention Queue</h2>
-        {% for item in attention %}
-          <article class="attention">
-            <strong>{{ item.severity }}</strong>
-            {% if item.deep_link %}
-              <a href="{{ item.deep_link }}">{{ item.headline }}</a>
-            {% else %}
-              {{ item.headline }}
+      {% else %}
+        <section class="empty-hero">
+          <h2>Link Sleeper</h2>
+          <p>Point me at your Sleeper username. I'll find the bodies.</p>
+          <form class="link-row" method="post" action="/api/leagues/link">
+            <input name="sleeper_username" autocomplete="username" placeholder="Sleeper username" aria-label="Sleeper username">
+            <input type="hidden" name="season" value="2026">
+            <button class="primary-button" type="submit">Find leagues</button>
+          </form>
+        </section>
+      {% endif %}
+
+      <section aria-labelledby="feed-title">
+        <div class="feed-header">
+          <h2 id="feed-title" class="feed-title">Attention Queue</h2>
+          <p class="queue-meta" data-relative-time="{{ queue_generated_at }}">Queue built {{ queue_generated_at or "never" }}</p>
+        </div>
+
+        <div class="attention-feed" data-testid="attention-feed">
+          {% set ns = namespace(quiet_started=false) %}
+          {% for item in attention %}
+            {% if item.item_type == "quiet" and not ns.quiet_started %}
+              {% set ns.quiet_started = true %}
+              <div class="quiet-divider">All quiet</div>
             {% endif %}
-          </article>
-        {% else %}
-          <p>No fires. Suspicious, but acceptable.</p>
-        {% endfor %}
+            {% set cat = "info" %}
+            {% if item.item_type == "deadline" %}
+              {% set cat = "alert" %}
+            {% elif item.item_type == "roster_health" %}
+              {% set cat = "sell" %}
+            {% elif item.item_type == "market_window" %}
+              {% set cat = "buy" %}
+            {% endif %}
+            {% set score_class = "score-low" if item.severity < 40 else ("score-mid" if item.severity < 70 else "score-high") %}
+            {% if item.deep_link %}
+              <a class="attention-card cat-{{ cat }} item-{{ item.item_type }}{% if item.item_type == 'quiet' %} quiet{% endif %}" href="{{ item.deep_link }}">
+            {% else %}
+              <article class="attention-card cat-{{ cat }} item-{{ item.item_type }}{% if item.item_type == 'quiet' %} quiet{% endif %}">
+            {% endif %}
+                <div class="attention-body">
+                  <span class="league-chip">{{ item.league_name }}</span>
+                  <p class="headline">{{ item.headline }}</p>
+                  {% if item.item_type != "quiet" and item.detail %}
+                    <p class="detail">{{ item.detail }}</p>
+                  {% endif %}
+                </div>
+                <span class="score-tile {{ score_class }}">{{ item.severity }}</span>
+            {% if item.deep_link %}
+              </a>
+            {% else %}
+              </article>
+            {% endif %}
+          {% else %}
+            <p class="empty-feed">No fires. Suspicious, but acceptable.</p>
+          {% endfor %}
+        </div>
       </section>
+
+      <footer class="refresh-footer">
+        <p class="queue-meta" data-relative-time="{{ queue_generated_at }}">Queue built {{ queue_generated_at or "never" }}</p>
+        {% set running = operator_status and operator_status.state == "running" %}
+        <button
+          class="refresh-button"
+          type="button"
+          data-refresh-button
+          data-running="{{ 'true' if running else 'false' }}"
+          {% if running %}disabled{% endif %}
+        >{{ "Refreshing" if running else "Refresh" }}</button>
+      </footer>
     </main>
+
+    <script>
+      (() => {
+        const rel = (iso) => {
+          if (!iso) return 'never';
+          const then = new Date(iso);
+          if (Number.isNaN(then.getTime())) return iso;
+          const seconds = Math.max(0, Math.round((Date.now() - then.getTime()) / 1000));
+          if (seconds < 60) return 'just now';
+          const minutes = Math.round(seconds / 60);
+          if (minutes < 60) return `${minutes}m ago`;
+          const hours = Math.round(minutes / 60);
+          if (hours < 48) return `${hours}h ago`;
+          return `${Math.round(hours / 24)}d ago`;
+        };
+
+        document.querySelectorAll('[data-relative-time]').forEach((node) => {
+          node.textContent = `Queue built ${rel(node.dataset.relativeTime)}`;
+        });
+
+        const button = document.querySelector('[data-refresh-button]');
+        if (!button) return;
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          button.textContent = 'Refreshing';
+          try {
+            const response = await fetch('/api/operator/refresh', {
+              method: 'POST',
+              headers: {'content-type': 'application/json'},
+              body: JSON.stringify({}),
+            });
+            button.textContent = response.ok ? 'Queued' : 'Try again';
+          } catch (error) {
+            button.disabled = false;
+            button.textContent = 'Try again';
+          }
+        });
+      })();
+    </script>
   </body>
 </html>
