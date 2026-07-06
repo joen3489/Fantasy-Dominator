@@ -846,6 +846,25 @@ Root causes found and fixed:
 
 Non-goals: dedup against the deterministic UI surfaces (Today's Board etc. showing the same top players as articles is expected -- they are ranked data views, not written analysis); any change to the underlying Sleeper roster ingestion (verified correct -- the wrongness was attribution logic, not data).
 
+### Sprint 20: Task-Based IA -- Entity Pages + View Reorg (checkpoint 1e3ff67)
+
+Goal: reorganize the generated site around user tasks instead of pipeline tables. The 23 data sections became drill-down blocks inside 7 task views (Today / My Team / Players / League / Trade Desk / News / Data Room); element ids stayed stable so `render()` and the string-assertion tests survived. New entity pages -- `#player-{sleeper_id}` and `#team-{roster_id}` hash routes through the extended `showSection` -- assemble the full cross-table read on one player or manager (scores, tags, news, market detail, roster, picks, trade thesis) from the existing client-side bundle, with click-through wiring from every player/team name and a global entity search. Raw tables demoted to data drawers. In v2 this whole surface becomes the per-league drill-down.
+
+### Sprint 21 (v2.0): The Front Office v2 -- Multi-League Triage Product
+
+Goal (per user interview): "run all my fantasy football teams in different leagues" -- login, a cross-league attention queue as the home surface, per-type league experiences, scheduled freshness. Built via four Codex work packages under senior review plus an integration lane.
+
+- **Multi-league data layer** (`src/league_paths.py`, `src/league_registry.py`, Sleeper user/user_leagues endpoints): `LeaguePaths.for_league(id)` namespaces every pipeline artifact under `data/leagues/<id>/`, module path constants stay as legacy defaults; `discover_leagues` + `classify_league` (dynasty / redraft / best_ball from Sleeper settings); `refresh_user` orchestrates per-league refreshes with per-league failure isolation, skipping best ball by design.
+- **App server + auth** (`app/`): FastAPI front door with Clerk verify-only auth -- PyJWT RS256 against the Clerk JWKS with pinned issuer, required sub/exp, azp allowlist, throttled kid-refresh; the backend never stores passwords or sessions and never needs the Clerk secret key. SQLite app store (users auto-provisioned by clerk_user_id, user_leagues registry). League sites served at `/league/<id>/` behind ownership-then-containment checks; operator jobs behind the session; open `/healthz` ends the boot-page-satisfies-healthcheck outage class.
+- **Attention queue** (`src/attention.py`): typed deterministic emitters per league -- deadline (pending transactions + waiver timing), roster_health (OUT/empty starters), market_window (existing recommendation outputs), quiet (explicit all-clear); severity-sorted cross-league merge; league failures surface as loud items; best-ball leagues emit a quiet "runs itself" card, never a data problem (missing data is their designed state).
+- **Phone-first home** (`app/templates/home.html`): the queue as severity-banded cards with house category tokens, league pill strip with type badges + freshness dots, quiet-day divider, Sleeper-link empty state.
+- **Scheduler** (`app/scheduler.py`): in-process daemon thread runs refresh_user + queue rebuild on `FRONT_OFFICE_REFRESH_INTERVAL` (default 6h) with status-file observability; LLM articles stay on-demand per league.
+- **League-type gating**: `build_browser_site(..., league_type)` emits `<body class="league-{type}">`; redraft hides dynasty-only surfaces via CSS -- one template, no fork.
+
+Verified locally end-to-end before cutover: real multi-league refresh of both dynasty leagues (including one never processed before), 13-item cross-league queue spot-checked against real Sleeper state, authenticated home + drill-downs rendered at 390px in Chrome via a locally-generated-JWKS simulated session (no real secrets), 77 tests green.
+
+Non-goals (deliberate): self-serve signup/billing (Clerk invite-only covers "others someday"); scheduled LLM article generation; redraft/best-ball article scoping beyond the CSS gate (no such league is linked yet).
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources
