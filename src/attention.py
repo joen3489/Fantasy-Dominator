@@ -317,6 +317,24 @@ def build_user_attention(registry_entries: list[dict[str, Any]], now: datetime |
         league_id = str(entry.get("league_id") or "")
         league_name = _league_name(entry)
         league_type = str(entry.get("league_type") or "redraft")
+        # Best ball is passive by design: refresh skips it, so missing data is the
+        # expected state, not a severity-90 alarm. It gets a quiet digest card only.
+        if league_type == "best_ball":
+            items.append(
+                AttentionItem(
+                    league_id=league_id,
+                    league_name=league_name,
+                    league_type=league_type,
+                    item_type="quiet",
+                    severity=3,
+                    headline=f"{league_name} runs itself",
+                    detail="Best ball needs no lineup decisions; this league is tracked passively.",
+                    deep_link="",
+                    evidence="league_type=best_ball; passive tracking",
+                    generated_at=generated_at,
+                )
+            )
+            continue
         try:
             paths = LeaguePaths.for_league(league_id)
             if not paths.root.exists():

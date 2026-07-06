@@ -48,6 +48,7 @@ def main(
     league_id: str | None = None,
     roster_id: int | None = None,
     paths: "LeaguePaths | None" = None,
+    league_type: str = "dynasty",
 ) -> None:
     if paths is None:
         ensure_dirs()
@@ -296,7 +297,7 @@ def main(
         config.get("strategy_profile") or {},
     )
     print(f"Wrote {reports_dir / 'weekly_hinkie_report.md'}")
-    site_path = build_browser_site(site_dir, processed_dir, analysis_dir)
+    site_path = build_browser_site(site_dir, processed_dir, analysis_dir, league_type=league_type)
     print(f"Wrote {site_path}")
 
 
@@ -327,6 +328,7 @@ def refresh_user(username: str, season: str, force: bool = False) -> dict[str, d
                 league_id=league_id,
                 roster_id=int(roster_id) if roster_id not in (None, "") else None,
                 paths=LeaguePaths.for_league(league_id),
+                league_type=league_type,
             )
             statuses[league_id] = {"state": "complete", "message": "Refresh complete.", "league_type": league_type}
         except Exception as exc:  # noqa: BLE001 - one league failing must not stop the rest.

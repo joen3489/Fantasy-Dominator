@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,10 +45,16 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         db.init_db()
+        # The refresh scheduler keeps the attention queue fresh without clicks. Disabled by
+        # default under tests (FRONT_OFFICE_SCHEDULER=off) and enabled in deployment via env.
+        if os.environ.get("FRONT_OFFICE_SCHEDULER", "on").lower() != "off" and app.state.background_starter:
+            app.state.background_starter()
         yield
 
     app = FastAPI(lifespan=lifespan)
-    app.state.background_starter = None
+    from . import scheduler as front_scheduler
+
+    app.state.background_starter = front_scheduler.start_scheduler
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse | RedirectResponse:
@@ -82,6 +89,7 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, user: dict[str, Any] = Depends(current_user)) -> HTMLResponse:
         leagues = [_league_view(row) for row in db.list_user_leagues(int(user["id"]))]
+        attention_items = [_attention_view(item) for item in _load_attention_safe()]
         return templates.TemplateResponse(
             request,
             "home.html",
@@ -89,7 +97,10 @@ def create_app() -> FastAPI:
                 "request": request,
                 "user": user,
                 "leagues": leagues,
-                "attention": [_attention_view(item) for item in _load_attention_safe()],
+                "enabled_leagues": [league for league in leagues if league.get("enabled")],
+                "attention": attention_items,
+                "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
+                "operator_status": front_operator.status(),
             },
         )
 
@@ -210,6 +221,7 @@ def _league_view(row: dict[str, Any]) -> dict[str, Any]:
     view = dict(row)
     view["enabled"] = bool(row.get("enabled"))
     view["refresh_status"] = _refresh_status(str(row.get("league_id") or ""))
+    view["refresh_freshness"] = _refresh_freshness(view["refresh_status"])
     return view
 
 
@@ -224,14 +236,34 @@ def _refresh_status(league_id: str) -> dict[str, Any] | None:
         return None
 
 
+def _refresh_freshness(status: dict[str, Any] | None) -> str:
+    if not status:
+        return "unknown"
+    if str(status.get("state") or "").lower() == "failed":
+        return "failed"
+    timestamp = str(status.get("generated_at") or status.get("updated_at") or "")
+    if not timestamp:
+        return "unknown"
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return "unknown"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return "fresh" if datetime.now(timezone.utc) - parsed.astimezone(timezone.utc) < timedelta(hours=24) else "stale"
+
+
 def _attention_view(item: Any) -> dict[str, Any]:
     return {
         "severity": item.severity,
         "headline": item.headline,
+        "detail": item.detail,
         "deep_link": item.deep_link,
         "league_id": item.league_id,
         "league_name": item.league_name,
+        "league_type": item.league_type,
         "item_type": item.item_type,
+        "generated_at": item.generated_at,
     }
 
 

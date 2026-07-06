@@ -10,7 +10,7 @@ import pandas as pd
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
 
-def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, analysis_dir: Path = ANALYSIS_DIR) -> Path:
+def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, analysis_dir: Path = ANALYSIS_DIR, league_type: str = "dynasty") -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -67,7 +67,7 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
     analysis = _analysis_artifacts(analysis_dir)
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis)
     target = output_dir / "index.html"
-    target.write_text(_page(my_team_name, manifest), encoding="utf-8")
+    target.write_text(_page(my_team_name, manifest, league_type), encoding="utf-8")
     return target
 
 
@@ -204,8 +204,13 @@ def _write_data_chunks(
 def _page(
     my_team_name: str,
     manifest: dict[str, Any],
+    league_type: str = "dynasty",
 ) -> str:
     manifest_json = json.dumps(manifest, ensure_ascii=False).replace("</", "<\\/")
+    # Per-type experience gating (v2): redraft leagues get the same generated site with the
+    # dynasty-only surfaces hidden via a body class + CSS, keeping one template instead of
+    # forking the giant page string. Best-ball leagues never generate a site at all.
+    body_class = f"league-{league_type}" if league_type in ("dynasty", "redraft") else "league-dynasty"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -557,6 +562,12 @@ def _page(
     .warn {{ background: var(--accent-2); }}
     .note {{ color: var(--muted); font-size: 13px; line-height: 1.45; }}
     .view-block {{ margin: 0 0 34px; }}
+    /* Per-type gating (v2): redraft leagues hide the dynasty-only surfaces -- future-pick
+       tooling and dynasty-cycle framing have no meaning in a one-season league. */
+    body.league-redraft #pick-ledger,
+    body.league-redraft nav a[href="#pick-ledger"],
+    body.league-redraft #manager-map,
+    body.league-redraft .dynasty-only {{ display: none; }}
     .entity-header {{ display: flex; gap: 16px; align-items: flex-start; margin: 0 0 16px; }}
     .entity-header h2 {{ margin: 0 0 8px; }}
     .entity-headshot .headshot-img, .entity-headshot .headshot-fallback {{ width: 72px; height: 72px; font-size: 20px; }}
@@ -591,7 +602,7 @@ def _page(
     }}
   </style>
 </head>
-<body>
+<body class="{body_class}">
   <script id="front-office-manifest" type="application/json">{manifest_json}</script>
   <div class="app-shell">
     <aside class="side-rail">

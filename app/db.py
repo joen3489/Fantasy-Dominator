@@ -127,6 +127,23 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
         conn.close()
 
 
+def list_users_with_sleeper() -> list[dict[str, Any]]:
+    """Every user who has linked a Sleeper account -- the scheduler's refresh population."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, clerk_user_id, sleeper_username, created_at
+            FROM users
+            WHERE sleeper_username IS NOT NULL AND sleeper_username != ''
+            ORDER BY id
+            """
+        ).fetchall()
+        return [_row(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def toggle_league(user_id: int, league_id: str, enabled: bool | None = None) -> dict[str, Any] | None:
     conn = _connect()
     try:

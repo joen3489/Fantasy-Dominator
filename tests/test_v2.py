@@ -278,6 +278,20 @@ class AttentionQueueTests(unittest.TestCase):
         self.assertEqual(problem[0].severity, 90)
         self.assertIn("data problem", problem[0].headline)
 
+    def test_best_ball_league_with_no_data_stays_quiet_not_data_problem(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            leagues_root = Path(tmp) / "leagues"
+            with patch("src.league_paths.LEAGUES_ROOT", leagues_root):
+                items = build_user_attention(
+                    [{"league_id": "bb", "name": "Passive BB", "league_type": "best_ball", "roster_id": 2, "season": "2026"}],
+                    datetime(2026, 7, 5, 12, tzinfo=timezone.utc),
+                )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].item_type, "quiet")
+        self.assertLess(items[0].severity, 10)
+        self.assertIn("runs itself", items[0].headline)
+
     def test_best_ball_suppresses_market_windows_and_reduces_roster_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             paths = self._paths(tmp, "best")
@@ -384,6 +398,56 @@ class FastAPIClerkAppTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT clerk_user_id FROM users").fetchone()
         self.assertEqual(row[0], "user_valid")
+
+    def test_home_renders_phone_first_attention_feed_and_league_pills(self) -> None:
+        token = self._token("user_home_feed")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_home_feed")
+        db.upsert_user_league(user_id, {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha League", "roster_id": 1})
+        db.upsert_user_league(user_id, {"league_id": "beta", "season": "2026", "league_type": "redraft", "name": "Beta League", "roster_id": 2})
+        db.toggle_league(user_id, "beta", False)
+        status_path = self.leagues_root / "alpha" / "site" / "refresh_status.json"
+        status_path.parent.mkdir(parents=True)
+        status_path.write_text(json.dumps({"state": "complete", "updated_at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
+        items = [
+            AttentionItem("alpha", "Alpha League", "dynasty", "deadline", 88, "Waivers process today", "Claims need a look.", "/league/alpha/#view-today", "e=1", "2026-07-05T12:00:00+00:00"),
+            AttentionItem("alpha", "Alpha League", "dynasty", "roster_health", 72, "Player is Out", "Lineup math got worse.", "/league/alpha/#player-1", "e=2", "2026-07-05T12:00:00+00:00"),
+            AttentionItem("alpha", "Alpha League", "dynasty", "market_window", 55, "Buy-low target: Receiver", "Someone else is bored.", "/league/alpha/#player-2", "e=3", "2026-07-05T12:00:00+00:00"),
+            AttentionItem("alpha", "Alpha League", "dynasty", "quiet", 5, "Nothing needs you in Alpha League", "Quiet detail stays hidden.", "", "e=4", "2026-07-05T12:00:00+00:00"),
+        ]
+
+        with patch("app.main.load_attention", return_value=items):
+            response = self.client.get("/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', html)
+        self.assertIn('data-testid="attention-feed"', html)
+        self.assertIn("attention-card cat-alert item-deadline", html)
+        self.assertIn("attention-card cat-sell item-roster_health", html)
+        self.assertIn("attention-card cat-buy item-market_window", html)
+        self.assertIn("quiet-divider", html)
+        self.assertIn("All quiet", html)
+        self.assertEqual(html.count('<span class="score-tile'), 4)
+        self.assertIn('class="league-pill" href="/league/alpha/"', html)
+        self.assertIn("type-badge dynasty", html)
+        self.assertIn("DYNASTY", html.upper())
+        self.assertIn("fresh-dot fresh", html)
+        self.assertNotIn("/league/beta/", html)
+
+    def test_home_empty_state_uses_sleeper_link_form(self) -> None:
+        token = self._token("user_empty_home")
+
+        with patch("app.main.load_attention", return_value=[]):
+            response = self.client.get("/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', html)
+        self.assertIn('class="empty-hero"', html)
+        self.assertIn('action="/api/leagues/link"', html)
+        self.assertIn('name="sleeper_username"', html)
+        self.assertIn("Point me at your Sleeper username. I'll find the bodies.", html)
 
     def test_expired_and_wrong_issuer_tokens_are_rejected(self) -> None:
         expired = self._token("user_expired", exp=datetime.now(timezone.utc) - timedelta(minutes=5))

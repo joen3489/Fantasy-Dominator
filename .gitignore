@@ -15,3 +15,5 @@ data/site/server.*.log
 data/leagues/
 data/league_registry.json
 data/app.db
+data/attention_queue.json
+data/scheduler_status.json

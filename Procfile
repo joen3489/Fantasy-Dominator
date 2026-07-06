@@ -1,1 +1,1 @@
-web: python scripts/start.py
+web: python -m app.main
