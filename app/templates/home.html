@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fantasy Dominator</title>
+    <style>
+      :root {
+        --rail: #202722;
+        --cream: #f5f4ef;
+        --green: #0f5c4a;
+        --rust: #a23f2d;
+        --gold: #c49b44;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--rail);
+        background: var(--cream);
+      }
+      header {
+        padding: 24px;
+        color: var(--cream);
+        background: var(--rail);
+      }
+      header p { margin: 4px 0 0; color: var(--gold); }
+      main {
+        display: grid;
+        gap: 24px;
+        padding: 24px;
+      }
+      section {
+        max-width: 1080px;
+      }
+      .league-strip {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .league, .attention, form {
+        border: 1px solid rgba(32, 39, 34, .18);
+        border-radius: 8px;
+        padding: 16px;
+        background: #fffdfa;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        color: var(--cream);
+        background: var(--green);
+        font-size: 12px;
+      }
+      a { color: var(--green); font-weight: 700; }
+      button {
+        border: 0;
+        border-radius: 6px;
+        padding: 10px 14px;
+        color: var(--cream);
+        background: var(--rust);
+        font-weight: 700;
+      }
+      input {
+        width: 100%;
+        margin: 6px 0 12px;
+        padding: 10px;
+        border: 1px solid rgba(32, 39, 34, .28);
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Fantasy Dominator</h1>
+      <p>Find the market leak, then pretend it was obvious all along.</p>
+    </header>
+    <main>
+      <section>
+        <h2>Leagues</h2>
+        {% if leagues %}
+          <div class="league-strip">
+            {% for league in leagues %}
+              <article class="league">
+                <h3><a href="/league/{{ league.league_id }}/">{{ league.name or league.league_id }}</a></h3>
+                <p><span class="badge">{{ league.league_type or "league" }}</span></p>
+                <p>{{ "Enabled" if league.enabled else "Paused" }}</p>
+                {% if league.refresh_status %}
+                  <p>{{ league.refresh_status.state or "Refresh status found" }}</p>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <form method="post" action="/api/leagues/link">
+            <h3>Link your Sleeper account</h3>
+            <label>Sleeper username
+              <input name="sleeper_username" autocomplete="username">
+            </label>
+            <label>Season
+              <input name="season" value="2026">
+            </label>
+            <button type="submit">Find leagues</button>
+          </form>
+        {% endif %}
+      </section>
+      <section>
+        <h2>Attention Queue</h2>
+        {% for item in attention %}
+          <article class="attention">
+            <strong>{{ item.severity }}</strong>
+            {% if item.deep_link %}
+              <a href="{{ item.deep_link }}">{{ item.headline }}</a>
+            {% else %}
+              {{ item.headline }}
+            {% endif %}
+          </article>
+        {% else %}
+          <p>No fires. Suspicious, but acceptable.</p>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import inspect
 import csv
+import json
+import os
+import sqlite3
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
+
+from app import auth, db
+from app.main import create_app
 from scripts import refresh_all
 from src.attention import (
     AttentionItem,
@@ -321,6 +330,154 @@ class AttentionQueueTests(unittest.TestCase):
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+
+
+class FastAPIClerkAppTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.tmp_path = Path(self.tmp.name)
+        self.db_path = self.tmp_path / "app.db"
+        self.leagues_root = self.tmp_path / "leagues"
+        self.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(self.private_key.public_key()))
+        jwk["kid"] = "test-key"
+        self.jwks = {"keys": [jwk]}
+        self.patches = [
+            patch.object(db, "DB_PATH", self.db_path),
+            patch("src.league_paths.LEAGUES_ROOT", self.leagues_root),
+            patch.object(auth, "JWKS_PROVIDER", lambda: self.jwks),
+            patch.dict(
+                os.environ,
+                {
+                    "CLERK_ISSUER": "https://clerk.test",
+                    "CLERK_JWKS_URL": "https://clerk.test/.well-known/jwks.json",
+                    "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                    "CLERK_AUTHORIZED_PARTIES": "http://localhost:8765,https://fantasy.test",
+                },
+                clear=False,
+            ),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+        self.app = create_app()
+        self.client_context = TestClient(self.app)
+        self.client = self.client_context.__enter__()
+
+    def tearDown(self) -> None:
+        self.client_context.__exit__(None, None, None)
+        for patcher in reversed(self.patches):
+            patcher.stop()
+        self.tmp.cleanup()
+
+    def test_no_token_redirects_html_and_rejects_api(self) -> None:
+        html_response = self.client.get("/", follow_redirects=False)
+        api_response = self.client.get("/api/attention")
+
+        self.assertEqual(html_response.status_code, 303)
+        self.assertEqual(html_response.headers["location"], "/login")
+        self.assertEqual(api_response.status_code, 401)
+
+    def test_valid_token_serves_home_and_auto_provisions_user(self) -> None:
+        response = self.client.get("/", cookies={"__session": self._token("user_valid")})
+
+        self.assertEqual(response.status_code, 200)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("SELECT clerk_user_id FROM users").fetchone()
+        self.assertEqual(row[0], "user_valid")
+
+    def test_expired_and_wrong_issuer_tokens_are_rejected(self) -> None:
+        expired = self._token("user_expired", exp=datetime.now(timezone.utc) - timedelta(minutes=5))
+        wrong_issuer = self._token("user_wrong", issuer="https://other-clerk.test")
+
+        self.assertEqual(self.client.get("/api/attention", headers={"Authorization": f"Bearer {expired}"}).status_code, 401)
+        self.assertEqual(self.client.get("/api/attention", headers={"Authorization": f"Bearer {wrong_issuer}"}).status_code, 401)
+
+    def test_azp_authorized_parties_reject_and_empty_config_accepts(self) -> None:
+        token = self._token("user_azp", azp="https://wrong.test")
+        self.assertEqual(self.client.get("/api/attention", headers={"Authorization": f"Bearer {token}"}).status_code, 401)
+
+        with patch.dict(os.environ, {"CLERK_AUTHORIZED_PARTIES": ""}, clear=False):
+            accepted = self.client.get("/api/attention", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(accepted.status_code, 200)
+
+    def test_league_serving_requires_owner_rejects_traversal_and_serves_index(self) -> None:
+        own_token = self._token("user_owner")
+        other_token = self._token("user_other")
+        self.client.get("/", cookies={"__session": own_token})
+        self.client.get("/", cookies={"__session": other_token})
+        owner_id = self._user_id("user_owner")
+        db.upsert_user_league(owner_id, {"league_id": "league-a", "season": "2026", "league_type": "dynasty", "name": "Alpha", "roster_id": 7})
+        site_dir = self.leagues_root / "league-a" / "site"
+        site_dir.mkdir(parents=True)
+        (site_dir / "index.html").write_text("<h1>Alpha</h1>", encoding="utf-8")
+        (self.tmp_path / "outside.txt").write_text("nope", encoding="utf-8")
+
+        other_response = self.client.get("/league/league-a/", cookies={"__session": other_token})
+        traversal = self.client.get("/league/league-a/%2e%2e/%2e%2e/outside.txt", cookies={"__session": own_token})
+        index = self.client.get("/league/league-a/", cookies={"__session": own_token})
+
+        self.assertEqual(other_response.status_code, 404)
+        self.assertEqual(traversal.status_code, 404)
+        self.assertEqual(index.status_code, 200)
+        self.assertIn("Alpha", index.text)
+
+    def test_link_leagues_upserts_and_returns_discovered_entries(self) -> None:
+        token = self._token("user_link")
+        entries = [
+            {"league_id": "l1", "name": "Linked", "season": "2026", "league_type": "dynasty", "roster_id": 3},
+        ]
+        with patch("app.main.discover_leagues", return_value=entries) as mocked_discover:
+            response = self.client.post(
+                "/api/leagues/link",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"sleeper_username": "sleeperjoe", "season": "2026"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["leagues"][0]["league_id"], "l1")
+        mocked_discover.assert_called_once()
+        stored = db.list_user_leagues(self._user_id("user_link"))
+        self.assertEqual(stored[0]["name"], "Linked")
+
+    def test_operator_endpoint_requires_auth_and_invokes_start_job(self) -> None:
+        unauthenticated = self.client.post("/api/operator/refresh", json={})
+        with patch("app.main.front_operator.start_job", return_value={"accepted": True}) as start_job:
+            authenticated = self.client.post(
+                "/api/operator/refresh",
+                headers={"Authorization": f"Bearer {self._token('user_operator')}"},
+                json={},
+            )
+
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertEqual(authenticated.status_code, 200)
+        start_job.assert_called_once()
+        self.assertEqual(start_job.call_args.args[0], "refresh")
+
+    def test_healthz_is_open(self) -> None:
+        self.assertEqual(self.client.get("/healthz").json(), {"ok": True})
+
+    def _token(
+        self,
+        sub: str,
+        exp: datetime | None = None,
+        issuer: str = "https://clerk.test",
+        azp: str = "http://localhost:8765",
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "iss": issuer,
+            "sub": sub,
+            "exp": exp or now + timedelta(minutes=10),
+            "nbf": now - timedelta(minutes=1),
+            "azp": azp,
+        }
+        return jwt.encode(payload, self.private_key, algorithm="RS256", headers={"kid": "test-key"})
+
+    def _user_id(self, clerk_user_id: str) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("SELECT id FROM users WHERE clerk_user_id = ?", (clerk_user_id,)).fetchone()
+        self.assertIsNotNone(row)
+        return int(row[0])
 
 if __name__ == "__main__":
     unittest.main()
