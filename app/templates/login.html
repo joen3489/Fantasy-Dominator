@@ -61,8 +61,10 @@
                     return;
                   }
                   window.Clerk.mountSignIn(document.getElementById("sign-in"), {
+                    forceRedirectUrl: "{{ redirect_url }}",
                     fallbackRedirectUrl: "{{ redirect_url }}",
-                    redirectUrl: "{{ redirect_url }}"
+                    signUpForceRedirectUrl: "{{ redirect_url }}",
+                    signUpFallbackRedirectUrl: "{{ redirect_url }}"
                   });
                 })
                 .catch(function (err) {
