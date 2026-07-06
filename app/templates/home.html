@@ -464,6 +464,43 @@
           node.textContent = `Queue built ${rel(node.dataset.relativeTime)}`;
         });
 
+        const linkForm = document.querySelector('form.link-row');
+        if (linkForm) {
+          linkForm.addEventListener('submit', async (event) => {
+            // The endpoint takes JSON; a native form post sends urlencoded and 422s.
+            event.preventDefault();
+            const submit = linkForm.querySelector('button[type="submit"]');
+            const username = (linkForm.querySelector('[name="sleeper_username"]').value || '').trim();
+            if (!username) return;
+            submit.disabled = true;
+            submit.textContent = 'Finding leagues';
+            try {
+              const response = await fetch('/api/leagues/link', {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({
+                  sleeper_username: username,
+                  season: linkForm.querySelector('[name="season"]').value,
+                }),
+              });
+              if (!response.ok) throw new Error(`link failed (${response.status})`);
+              submit.textContent = 'Building your queue';
+              // Kick the full refresh cycle so the first visit has data waiting.
+              // Await the kickoff (it returns as soon as the job is queued) --
+              // reloading mid-request would cancel it.
+              await fetch('/api/operator/refresh', {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({}),
+              }).catch(() => {});
+              window.location.reload();
+            } catch (error) {
+              submit.disabled = false;
+              submit.textContent = 'Try again';
+            }
+          });
+        }
+
         const button = document.querySelector('[data-refresh-button]');
         if (!button) return;
         button.addEventListener('click', async () => {
