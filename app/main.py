@@ -135,6 +135,16 @@ def create_app() -> FastAPI:
         save_registry(entries, user_id=user_id)
         return {"leagues": stored}
 
+    @app.post("/api/leagues/refresh")
+    def refresh_user_leagues(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        """Refresh the signed-in user's leagues without exposing operator actions."""
+
+        user_id = int(user["id"])
+        return front_operator.start_job(
+            "refresh",
+            lambda: _refresh_job(None, user_id),
+        )
+
     @app.post("/api/leagues/{league_id}/toggle")
     def toggle_league(
         league_id: str,
@@ -324,11 +334,18 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
     if league is None:
         return LeaguePaths.default()
     private = _private_paths(int(user["id"]), str(league["league_id"]))
-    if private.root.exists():
+    legacy = LeaguePaths.for_league(str(league["league_id"]))
+    # A failed or interrupted private refresh can leave the workspace root in
+    # place before it writes the browser bundle. Prefer a complete private
+    # edition, then a complete legacy edition, before falling back to whichever
+    # workspace is present so an incomplete private root cannot hide a usable
+    # migration fallback.
+    if (private.site_dir / "index.html").is_file():
         return private
+    if (legacy.site_dir / "index.html").is_file():
+        return legacy
     # Read-only migration fallback for v2 data generated before user roots
     # existed. New refreshes always use the private root below.
-    legacy = LeaguePaths.for_league(str(league["league_id"]))
     return legacy if legacy.root.exists() else private
 
 

@@ -440,6 +440,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="edition-hero"', html)
         self.assertIn("Your leagues, edited into a daily read.", html)
         self.assertIn("Evidence-backed briefs", html)
+        self.assertIn("fetch('/api/leagues/refresh'", html)
+        self.assertNotIn("fetch('/api/operator/refresh'", html)
 
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")
@@ -490,6 +492,23 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(traversal.status_code, 404)
         self.assertEqual(index.status_code, 200)
         self.assertIn("Alpha", index.text)
+
+    def test_league_serving_uses_legacy_bundle_when_private_root_is_incomplete(self) -> None:
+        token = self._token("user_migration_fallback")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_migration_fallback")
+        db.upsert_user_league(user_id, {"league_id": "league-fallback", "season": "2026", "league_type": "dynasty", "name": "Fallback", "roster_id": 7})
+        legacy_site = self.leagues_root / "league-fallback" / "site"
+        legacy_site.mkdir(parents=True)
+        (legacy_site / "index.html").write_text("<h1>Legacy edition</h1>", encoding="utf-8")
+
+        with patch("src.league_paths.USERS_ROOT", self.tmp_path / "users"):
+            private_root = self.tmp_path / "users" / str(user_id) / "leagues" / "league-fallback"
+            private_root.mkdir(parents=True)
+            response = self.client.get("/league/league-fallback/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Legacy edition", response.text)
 
     def test_link_leagues_upserts_and_returns_discovered_entries(self) -> None:
         token = self._token("user_link")
@@ -543,6 +562,19 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
+
+    def test_user_refresh_endpoint_is_not_operator_protected(self) -> None:
+        token = self._token("user_refresh")
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            with patch("app.main.front_operator.start_job", return_value={"accepted": True}) as start_job:
+                response = self.client.post(
+                    "/api/leagues/refresh",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        start_job.assert_called_once()
+        self.assertEqual(start_job.call_args.args[0], "refresh")
 
     def test_healthz_is_open(self) -> None:
         self.assertEqual(self.client.get("/healthz").json(), {"ok": True})
