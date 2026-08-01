@@ -359,6 +359,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.patches = [
             patch.object(db, "DB_PATH", self.db_path),
             patch("src.league_paths.LEAGUES_ROOT", self.leagues_root),
+            patch("src.league_paths.USERS_ROOT", self.tmp_path / "users"),
+            patch("src.league_registry.USERS_ROOT", self.tmp_path / "users"),
+            patch("src.attention.USERS_ROOT", self.tmp_path / "users"),
             patch.object(auth, "JWKS_PROVIDER", lambda: self.jwks),
             patch.dict(
                 os.environ,
@@ -367,6 +370,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                     "CLERK_JWKS_URL": "https://clerk.test/.well-known/jwks.json",
                     "CLERK_PUBLISHABLE_KEY": "pk_test_123",
                     "CLERK_AUTHORIZED_PARTIES": "http://localhost:8765,https://fantasy.test",
+                    "FRONT_OFFICE_SCHEDULER": "off",
                 },
                 clear=False,
             ),
@@ -409,6 +413,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         status_path = self.leagues_root / "alpha" / "site" / "refresh_status.json"
         status_path.parent.mkdir(parents=True)
         status_path.write_text(json.dumps({"state": "complete", "updated_at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
+        (status_path.parent / "index.html").write_text("<h1>Alpha edition</h1>", encoding="utf-8")
         items = [
             AttentionItem("alpha", "Alpha League", "dynasty", "deadline", 88, "Waivers process today", "Claims need a look.", "/league/alpha/#view-today", "e=1", "2026-07-05T12:00:00+00:00"),
             AttentionItem("alpha", "Alpha League", "dynasty", "roster_health", 72, "Player is Out", "Lineup math got worse.", "/league/alpha/#player-1", "e=2", "2026-07-05T12:00:00+00:00"),
@@ -440,6 +445,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="edition-hero"', html)
         self.assertIn("Your leagues, edited into a daily read.", html)
         self.assertIn("Evidence-backed briefs", html)
+        self.assertIn('data-testid="league-readiness"', html)
+        self.assertIn("Ready", html)
         self.assertIn("fetch('/api/leagues/refresh'", html)
         self.assertNotIn("fetch('/api/operator/refresh'", html)
 
@@ -575,6 +582,76 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
+
+    def test_league_readiness_reports_building_then_failed(self) -> None:
+        token = self._token("user_readiness")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_readiness")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "readiness", "season": "2026", "league_type": "dynasty", "name": "Readiness", "roster_id": 1},
+        )
+        run_id = db.start_refresh_run(user_id, "readiness", "2026")
+
+        building = self.client.get("/api/leagues/readiness/readiness", cookies={"__session": token})
+        self.assertEqual(building.status_code, 200)
+        self.assertEqual(building.json()["state"], "building")
+        self.assertEqual(building.json()["label"], "Building")
+
+        db.finish_refresh_run(run_id, "failed", "Sleeper timed out")
+        failed = self.client.get("/api/leagues/readiness/readiness", cookies={"__session": token})
+        self.assertEqual(failed.status_code, 200)
+        self.assertEqual(failed.json()["state"], "needs_refresh")
+        self.assertEqual(failed.json()["refresh_state"], "failed")
+        self.assertIn("Sleeper timed out", failed.json()["error"])
+
+        paths = LeaguePaths.for_user_league(str(user_id), "readiness")
+        paths.site_dir.mkdir(parents=True)
+        (paths.site_dir / "index.html").write_text("<h1>Last good edition</h1>", encoding="utf-8")
+        stale = self.client.get("/api/leagues/readiness/readiness", cookies={"__session": token})
+        self.assertEqual(stale.json()["state"], "stale")
+
+    def test_missing_league_bundle_returns_branded_recovery_page(self) -> None:
+        token = self._token("user_missing_bundle")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_missing_bundle")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "missing-bundle", "season": "2026", "league_type": "dynasty", "name": "Missing Bundle", "roster_id": 1},
+        )
+
+        response = self.client.get("/league/missing-bundle/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('data-testid="edition-recovery"', response.text)
+        self.assertIn("Your edition is Needs refresh.", response.text)
+        self.assertIn("Back to headquarters", response.text)
+        self.assertEqual(response.headers["retry-after"], "15")
+
+    def test_missing_bundle_rebuilds_from_processed_facts(self) -> None:
+        token = self._token("user_bundle_repair")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_bundle_repair")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "repair", "season": "2026", "league_type": "dynasty", "name": "Repair", "roster_id": 1},
+        )
+        paths = LeaguePaths.for_user_league(str(user_id), "repair")
+        paths.processed_dir.mkdir(parents=True)
+        (paths.processed_dir / "refresh_metadata.csv").write_text("generated_at\n2026-08-01T00:00:00+00:00\n", encoding="utf-8")
+
+        def fake_build(site_dir: Path, *args: object, **kwargs: object) -> Path:
+            site_dir.mkdir(parents=True, exist_ok=True)
+            index = site_dir / "index.html"
+            index.write_text("<h1>Recovered edition</h1>", encoding="utf-8")
+            return index
+
+        with patch("app.main.build_browser_site", side_effect=fake_build) as builder:
+            response = self.client.get("/league/repair/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Recovered edition", response.text)
+        builder.assert_called_once()
 
     def test_healthz_is_open(self) -> None:
         self.assertEqual(self.client.get("/healthz").json(), {"ok": True})

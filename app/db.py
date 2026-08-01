@@ -405,6 +405,26 @@ def list_users_with_sleeper() -> list[dict[str, Any]]:
         conn.close()
 
 
+def latest_refresh_run(user_id: int, league_id: str) -> dict[str, Any] | None:
+    """Return the latest durable refresh receipt for one user's league."""
+
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT id, user_id, league_id, season, status, started_at, finished_at, error
+            FROM refresh_runs
+            WHERE user_id = ? AND league_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id, str(league_id)),
+        ).fetchone()
+        return _row(row) if row is not None else None
+    finally:
+        conn.close()
+
+
 def toggle_league(user_id: int, league_id: str, enabled: bool | None = None) -> dict[str, Any] | None:
     conn = _connect()
     try:

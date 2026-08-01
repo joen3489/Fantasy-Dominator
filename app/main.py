@@ -8,7 +8,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
@@ -183,13 +183,19 @@ def create_app() -> FastAPI:
         )
         return db.upsert_team_profile(int(user["id"]), league_id, profile)
 
+    @app.get("/api/leagues/{league_id}/readiness")
+    def league_readiness(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        league = _owned_enabled_league(user, league_id)
+        return _edition_readiness(int(user["id"]), league)
+
+
     @app.get("/league/{league_id}/")
-    def league_index(league_id: str, user: dict[str, Any] = Depends(current_user)) -> FileResponse:
-        return _serve_league_file(user, league_id, "")
+    def league_index(request: Request, league_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        return _serve_league_file(request, user, league_id, "")
 
     @app.get("/league/{league_id}/{path:path}")
-    def league_file(league_id: str, path: str, user: dict[str, Any] = Depends(current_user)) -> FileResponse:
-        return _serve_league_file(user, league_id, path)
+    def league_file(request: Request, league_id: str, path: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        return _serve_league_file(request, user, league_id, path)
 
     @app.get("/api/operator/status")
     def operator_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -349,7 +355,42 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
     return legacy if legacy.root.exists() else private
 
 
-def _serve_league_file(user: dict[str, Any], league_id: str, requested_path: str) -> FileResponse:
+def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:
+    """Synchronously rebuild a missing static bundle when processed facts exist."""
+
+    candidates = [
+        _private_paths(int(user["id"]), str(league["league_id"])),
+        LeaguePaths.for_league(str(league["league_id"])),
+    ]
+    seen: set[str] = set()
+    for paths in candidates:
+        key = str(paths.root)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (paths.site_dir / "index.html").is_file():
+            return
+        if not (paths.processed_dir / "refresh_metadata.csv").is_file():
+            continue
+        try:
+            build_browser_site(
+                paths.site_dir,
+                paths.processed_dir,
+                paths.analysis_dir,
+                league_type=str(league.get("league_type") or "dynasty"),
+                league_id=str(league.get("league_id") or ""),
+            )
+            return
+        except Exception:  # noqa: BLE001 - the recovery page must remain available.
+            continue
+
+
+def _serve_league_file(
+    request: Request,
+    user: dict[str, Any],
+    league_id: str,
+    requested_path: str,
+) -> FileResponse | HTMLResponse:
     league = _owned_enabled_league(user, league_id)
     paths = _paths_for_user_league(user, league)
     site_dir = paths.site_dir.resolve()
@@ -363,6 +404,24 @@ def _serve_league_file(user: dict[str, Any], league_id: str, requested_path: str
         if not target.is_relative_to(site_dir):
             raise HTTPException(status_code=404, detail="league file not found")
     if not target.exists() or not target.is_file():
+        if requested_path in {"", "index.html"}:
+            _rebuild_missing_bundle(user, league)
+            paths = _paths_for_user_league(user, league)
+            site_dir = paths.site_dir.resolve()
+            target = (site_dir / (requested_path or "index.html")).resolve()
+            if target.is_dir():
+                target = (target / "index.html").resolve()
+            if target.exists() and target.is_file():
+                return FileResponse(target)
+            readiness = _edition_readiness(int(user["id"]), league)
+            response = templates.TemplateResponse(
+                request,
+                "edition_recovery.html",
+                {"request": request, "user": user, "league": league, "readiness": readiness},
+            )
+            response.status_code = 503
+            response.headers["Retry-After"] = "15"
+            return response
         raise HTTPException(status_code=404, detail="league file not found")
     return FileResponse(target)
 
@@ -435,11 +494,92 @@ def _rebuild_browser_job(league: dict[str, Any] | None, user_id: int) -> dict[st
     return {"state": "complete", "message": "Browser bundle rebuilt.", "site_path": str(path.as_posix())}
 
 
+def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Compile a truthful, user-scoped status for the league reader surface."""
+
+    user = {"id": user_id}
+    paths = _paths_for_user_league(user, league)
+    bundle_path = paths.site_dir / "index.html"
+    bundle_exists = bundle_path.is_file()
+    refresh_status = _refresh_status(str(league.get("league_id") or ""), user_id)
+    latest_run = db.latest_refresh_run(user_id, str(league.get("league_id") or ""))
+    run_state = str((latest_run or {}).get("status") or "").lower()
+    file_state = str((refresh_status or {}).get("state") or "").lower()
+    lifecycle_state = run_state or file_state
+    timestamp = str(
+        (latest_run or {}).get("finished_at")
+        or (latest_run or {}).get("started_at")
+        or (refresh_status or {}).get("generated_at")
+        or (refresh_status or {}).get("updated_at")
+        or ""
+    )
+    if not timestamp and bundle_exists:
+        try:
+            timestamp = datetime.fromtimestamp(bundle_path.stat().st_mtime, timezone.utc).isoformat()
+        except OSError:
+            timestamp = ""
+    freshness = _refresh_freshness({"updated_at": timestamp}) if timestamp else "unknown"
+    error = str((latest_run or {}).get("error") or (refresh_status or {}).get("message") or "")
+    receipt = None
+    if latest_run:
+        receipt = {
+            "status": latest_run.get("status"),
+            "started_at": latest_run.get("started_at"),
+            "finished_at": latest_run.get("finished_at"),
+            "error": latest_run.get("error"),
+        }
+
+    if lifecycle_state in {"running", "queued"}:
+        state, label, message, dot_class = (
+            "building",
+            "Building",
+            "The data is refreshing now. Your edition will appear when the bundle is ready.",
+            "building",
+        )
+    elif bundle_exists and (lifecycle_state == "failed" or freshness == "stale"):
+        state, label, message, dot_class = (
+            "stale",
+            "Stale",
+            "The last good edition is still available, but its refresh needs attention."
+            if lifecycle_state != "failed"
+            else "The last good edition is still available, but the latest refresh failed.",
+            "stale",
+        )
+    elif bundle_exists:
+        state, label, message, dot_class = "ready", "Ready", "The latest league edition is ready to read.", "fresh"
+    else:
+        state, label, message, dot_class = (
+            "needs_refresh",
+            "Needs refresh",
+            "No league edition is available yet. Refresh from headquarters to build it."
+            if lifecycle_state != "complete"
+            else "The data refresh completed, but the league edition bundle is missing. Refresh to rebuild it.",
+            "failed",
+        )
+
+    return {
+        "league_id": str(league.get("league_id") or ""),
+        "league_name": league.get("name") or league.get("league_id") or "League",
+        "state": state,
+        "label": label,
+        "message": message,
+        "dot_class": dot_class,
+        "bundle_exists": bundle_exists,
+        "bundle_source": "private" if paths.user_id else "legacy",
+        "updated_at": timestamp,
+        "refresh_state": lifecycle_state or "unknown",
+        "last_refresh": receipt,
+        "error": error if lifecycle_state == "failed" else "",
+    }
+
+
 def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, Any]:
     view = dict(row)
     view["enabled"] = bool(row.get("enabled"))
     view["refresh_status"] = _refresh_status(str(row.get("league_id") or ""), user_id)
-    view["refresh_freshness"] = _refresh_freshness(view["refresh_status"])
+    readiness = _edition_readiness(user_id, row) if user_id is not None else None
+    view["edition_readiness"] = readiness
+    view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     return view
 
 

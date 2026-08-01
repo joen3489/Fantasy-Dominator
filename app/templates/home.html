@@ -131,11 +131,13 @@
       .fresh-dot.fresh { background: var(--buy); }
       .fresh-dot.stale { background: var(--gold); }
       .fresh-dot.failed { background: var(--sell); }
+      .fresh-dot.building { background: var(--hold); }
       .league-pill-main {
         min-width: 0;
         display: flex;
         align-items: center;
         gap: 6px;
+        flex-wrap: wrap;
       }
       .league-name {
         min-width: 0;
@@ -162,6 +164,22 @@
       .type-badge.dynasty { background: var(--gold); color: var(--ink); }
       .type-badge.redraft { background: var(--buy); }
       .type-badge.best-ball { background: var(--muted); }
+      .readiness-badge {
+        flex: 0 0 auto;
+        padding: 4px 6px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        background: var(--bg);
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: .04em;
+        line-height: 1;
+        text-transform: uppercase;
+      }
+      .readiness-badge.ready { color: var(--buy); border-color: #b7d1c2; background: var(--buy-bg); }
+      .readiness-badge.building, .readiness-badge.stale { color: #70551b; border-color: #dfc98d; background: var(--watch-bg); }
+      .readiness-badge.needs_refresh { color: var(--sell); border-color: #dfb8ad; background: var(--sell-bg); }
       .feed-header {
         display: flex;
         align-items: end;
@@ -475,11 +493,13 @@
             {% for league in enabled_leagues %}
               {% set league_type = (league.league_type or "league")|replace("_", " ") %}
               {% set dot_class = league.refresh_freshness or "unknown" %}
-              <a class="league-pill" href="/league/{{ league.league_id }}/">
+              {% set readiness = league.edition_readiness or {} %}
+              <a class="league-pill" href="/league/{{ league.league_id }}/" aria-label="{{ league.name or league.league_id }} edition: {{ readiness.label or 'Needs refresh' }}">
                 <span class="fresh-dot {{ dot_class }}" aria-hidden="true"></span>
                 <span class="league-pill-main">
                   <span class="league-name">{{ league.name or league.league_id }}</span>
                   <span class="type-badge {{ (league.league_type or 'league')|replace('_', '-') }}">{{ league_type }}</span>
+                  <span class="readiness-badge {{ readiness.state or 'needs_refresh' }}" data-testid="league-readiness">{{ readiness.label or "Needs refresh" }}</span>
                 </span>
               </a>
             {% endfor %}
@@ -724,6 +744,20 @@
 
         const button = document.querySelector('[data-refresh-button]');
         if (!button) return;
+        const markLeaguesBuilding = () => {
+          document.querySelectorAll('[data-testid="league-readiness"]').forEach((badge) => {
+            badge.className = 'readiness-badge building';
+            badge.textContent = 'Building';
+          });
+          document.querySelectorAll('.fresh-dot').forEach((dot) => {
+            dot.classList.remove('fresh', 'stale', 'failed', 'unknown');
+            dot.classList.add('building');
+          });
+          document.querySelectorAll('.league-pill').forEach((pill) => {
+            const name = pill.querySelector('.league-name')?.textContent?.trim() || 'League';
+            pill.setAttribute('aria-label', name + ' edition: Building');
+          });
+        };
         button.addEventListener('click', async () => {
           button.disabled = true;
           button.textContent = 'Refreshing';
@@ -733,7 +767,11 @@
               headers: {'content-type': 'application/json'},
               body: JSON.stringify({}),
             });
-            button.textContent = response.ok ? 'Queued' : 'Try again';
+            const payload = await response.json().catch(() => ({}));
+            const queued = response.ok && payload.accepted !== false;
+            button.textContent = queued ? 'Queued' : 'Try again';
+            if (queued) markLeaguesBuilding();
+            else button.disabled = false;
           } catch (error) {
             button.disabled = false;
             button.textContent = 'Try again';
