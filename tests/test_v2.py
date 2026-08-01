@@ -437,6 +437,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-profile-form', html)
         self.assertIn('data-profile-league', html)
         self.assertIn('Save league profile', html)
+        self.assertIn('data-testid="edition-hero"', html)
+        self.assertIn("Your leagues, edited into a daily read.", html)
+        self.assertIn("Evidence-backed briefs", html)
 
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")

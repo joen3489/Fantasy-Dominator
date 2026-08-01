@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from .editorial import build_editorial_issue
+from .editorial_ui import inject_editorial_facade
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
@@ -73,7 +75,7 @@ def build_browser_site(
     analysis = _analysis_artifacts(analysis_dir)
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
     target = output_dir / "index.html"
-    target.write_text(_page(my_team_name, manifest, league_type), encoding="utf-8")
+    target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target
 
 
@@ -169,8 +171,17 @@ def _write_data_chunks(
     }
     table_counts = {name: len(rows) for name, rows in tables.items()}
     app_tables = {name: rows for name, rows in tables.items() if name not in audit_only_tables}
+    editorial = build_editorial_issue(
+        tables,
+        analysis,
+        league_id=league_id,
+        my_roster_id=my_roster_id,
+        my_team_name=my_team_name,
+        config=config,
+    )
     app_payload = {
         "tables": app_tables,
+        "editorial": editorial,
         "myRosterId": my_roster_id,
         "myTeamName": my_team_name,
         "strategyProfile": config.get("strategy_profile") or {},
@@ -202,6 +213,7 @@ def _write_data_chunks(
         "initialTables": sorted(app_tables),
         "payloadPolicy": "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded",
         "leagueId": str(league_id or ""),
+        "editorialSchema": editorial.get("schema_version", "issue_v1"),
     }
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),

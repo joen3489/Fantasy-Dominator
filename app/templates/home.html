@@ -275,6 +275,53 @@
         font-size: 14px;
         font-weight: 700;
       }
+      .edition-hero {
+        display: grid;
+        gap: 10px;
+        padding: 24px 20px;
+        border: 1px solid #c8d2c5;
+        border-radius: 12px;
+        color: #f8f4ea;
+        background: radial-gradient(circle at 88% 20%, rgba(196, 155, 68, .22), transparent 32%), linear-gradient(135deg, #202722 0%, #173f35 100%);
+        box-shadow: 0 8px 24px rgba(32, 39, 34, .09);
+      }
+      .edition-kicker {
+        color: #d4c38e;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .edition-hero h2 {
+        max-width: 560px;
+        margin: 0;
+        color: #fffaf0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(28px, 7vw, 42px);
+        line-height: 1;
+        letter-spacing: -.02em;
+      }
+      .edition-hero p {
+        max-width: 570px;
+        margin: 0;
+        color: #d7e2d8;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      .edition-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 4px;
+      }
+      .edition-meta span {
+        padding: 4px 8px;
+        border: 1px solid rgba(228, 239, 233, .22);
+        border-radius: 999px;
+        color: #e4efe9;
+        font-size: 11px;
+        font-weight: 800;
+      }
       .empty-hero {
         display: grid;
         gap: 13px;
@@ -407,7 +454,7 @@
       <div class="topbar-inner">
         <div>
           <h1 class="wordmark">The Front Office</h1>
-          <p class="tagline">Find the market leak, then pretend it was obvious all along.</p>
+          <p class="tagline">Your leagues, edited into a daily read with the data room underneath.</p>
         </div>
         <form class="logout-form" method="post" action="/logout">
           <button class="logout" type="submit">Logout</button>
@@ -418,6 +465,12 @@
     <main>
       {% if leagues %}
         {% if enabled_leagues %}
+          <section class="edition-hero" aria-labelledby="edition-title" data-testid="edition-hero">
+            <span class="edition-kicker">Personal headquarters</span>
+            <h2 id="edition-title">Your leagues, edited into a daily read.</h2>
+            <p>Start with the signal. Open a league edition when you want the players, managers, markets, and evidence behind it.</p>
+            <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span></div>
+          </section>
           <nav class="league-strip" aria-label="Enabled leagues">
             {% for league in enabled_leagues %}
               {% set league_type = (league.league_type or "league")|replace("_", " ") %}

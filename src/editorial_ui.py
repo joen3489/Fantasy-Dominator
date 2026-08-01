@@ -1,0 +1,354 @@
+from __future__ import annotations
+
+"""Presentation-only layer for the generated Front Office reader surface.
+
+Keeping this separate from the data-room template lets the issue evolve like a
+publication without making the canonical tables harder to inspect or test.
+"""
+
+
+EDITORIAL_STYLE = r"""
+    .issue-shell {
+      margin: 0 0 34px;
+      border: 1px solid #c8d2c5;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fbfcf8;
+      box-shadow: 0 10px 30px rgba(32, 39, 34, .08);
+    }
+    .issue-hero {
+      padding: clamp(22px, 4vw, 42px);
+      color: #f8f4ea;
+      background:
+        radial-gradient(circle at 88% 20%, rgba(196, 155, 68, .22), transparent 32%),
+        linear-gradient(135deg, #202722 0%, #173f35 100%);
+    }
+    .issue-kicker-row, .issue-byline, .story-kicker-row, .story-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .issue-kicker {
+      color: #d4c38e;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .issue-date, .issue-byline {
+      color: #b7c4b9;
+      font-size: 12px;
+    }
+    .issue-date { margin-left: auto; }
+    .issue-title-row {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .issue-title {
+      max-width: 860px;
+      margin: 0;
+      color: #fffaf0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(30px, 5vw, 56px);
+      font-weight: 700;
+      letter-spacing: -.025em;
+      line-height: .98;
+    }
+    .issue-dek {
+      max-width: 760px;
+      margin: 16px 0 0;
+      color: #d7e2d8;
+      font-size: clamp(15px, 2vw, 19px);
+      line-height: 1.45;
+    }
+    .issue-writer-mode { flex: 0 0 auto; background: #d4c38e; color: #202722; }
+    .issue-byline { margin-top: 22px; }
+    .issue-byline span { display: inline-flex; align-items: center; gap: 6px; }
+    .issue-byline span + span::before { content: "•"; color: #789181; }
+    .editorial-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 285px);
+      gap: 14px;
+      padding: 18px;
+      background: #eef2eb;
+    }
+    .editorial-story {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--info);
+      border-radius: 10px;
+      padding: 18px;
+      background: var(--panel);
+    }
+    .editorial-story.tone-market { border-left-color: var(--buy); }
+    .editorial-story.tone-sell { border-left-color: var(--sell); }
+    .editorial-story.tone-hold { border-left-color: var(--hold); }
+    .editorial-story.tone-news { border-left-color: var(--alert); }
+    .editorial-story.tone-manager { border-left-color: var(--watch); }
+    .editorial-lead {
+      min-height: 300px;
+      border: 0;
+      border-left: 5px solid var(--gold);
+      color: #f8f4ea;
+      background: #202722;
+      box-shadow: 0 8px 20px rgba(32, 39, 34, .12);
+    }
+    .editorial-lead .story-kicker { color: #d4c38e; }
+    .editorial-lead .story-title, .editorial-lead .story-title a { color: #fffaf0; }
+    .editorial-lead .story-dek { color: #d7e2d8; }
+    .editorial-lead .story-action { color: #f2dfaa; }
+    .editorial-lead .story-chip { color: #e4efe9; border-color: rgba(228, 239, 233, .22); background: rgba(228, 239, 233, .08); }
+    .editorial-lead .evidence-drawer { border-color: rgba(228, 239, 233, .22); }
+    .editorial-lead .evidence-drawer summary { color: #d4c38e; }
+    .editorial-lead .brief-card-evidence { color: #c5d0c6; }
+    .story-kicker {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .story-score { margin-left: auto; }
+    .story-title {
+      margin: 16px 0 8px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(22px, 3vw, 34px);
+      line-height: 1.05;
+      letter-spacing: -.015em;
+    }
+    .editorial-card .story-title { font-size: 22px; }
+    .story-title a { color: var(--ink); text-decoration: none; }
+    .story-title a:hover { text-decoration: underline; }
+    .story-dek { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+    .story-action { margin: 16px 0 0; color: var(--accent); font-size: 14px; line-height: 1.45; }
+    .story-meta { margin-top: 16px; }
+    .story-chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #34403b;
+      background: #fbfcf8;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .story-chip.confidence-high { color: var(--buy); background: var(--buy-bg); }
+    .story-chip.confidence-medium { color: #7a5f28; background: var(--watch-bg); }
+    .story-chip.confidence-low { color: var(--sell); background: var(--sell-bg); }
+    .story-details { margin-top: 18px; }
+    .story-details .claim-grid { margin-top: 10px; }
+    .claim-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 7px;
+    }
+    .claim-item { padding: 8px 9px; border-radius: 7px; background: rgba(15, 92, 74, .07); }
+    .claim-label { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .claim-value { display: block; margin-top: 3px; color: var(--ink); font-size: 13px; line-height: 1.25; }
+    .editorial-lead .claim-item { background: rgba(228, 239, 233, .08); }
+    .editorial-lead .claim-label { color: #9fb3a4; }
+    .editorial-lead .claim-value { color: #f8f4ea; }
+    .source-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .source-link { color: var(--accent); font-size: 12px; font-weight: 800; }
+    .editorial-lead .source-link { color: #d4c38e; }
+    .issue-pulse {
+      align-self: stretch;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .issue-pulse h3 { margin-bottom: 14px; font-family: Georgia, "Times New Roman", serif; font-size: 22px; }
+    .pulse-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .pulse-metric { padding: 10px; border-radius: 7px; background: #f1f3ed; }
+    .pulse-metric strong { display: block; font-size: 22px; line-height: 1; }
+    .pulse-metric span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.25; }
+    .health-heading { margin: 22px 0 8px; color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .health-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .health-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .health-row span:last-child { font-weight: 800; }
+    .health-current { color: var(--buy); }
+    .health-limited { color: var(--sell); }
+    .editorial-divider { display: flex; align-items: center; gap: 12px; margin: 22px 18px 12px; color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    .editorial-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+    .editorial-story-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 18px 18px; }
+    .editorial-story-grid .editorial-story { padding: 15px; }
+    .editorial-story-grid .story-action { margin-top: 12px; }
+    .issue-data-drawer { margin: 0 18px 12px; }
+    .issue-data-drawer:last-child { margin-bottom: 18px; }
+    .issue-data-drawer summary { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 3px 0; color: var(--ink); font-size: 14px; }
+    .summary-note { color: var(--muted); font-size: 12px; font-weight: 500; }
+    .issue-data-drawer[open] summary { margin-bottom: 12px; }
+    .issue-data-drawer .article-panel { border: 0; padding: 0; }
+    .data-room-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: #eef2eb; }
+    .data-room-intro p { margin: 0; }
+    @media (max-width: 900px) {
+      .editorial-layout { grid-template-columns: 1fr; }
+      .editorial-story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .issue-title-row { display: grid; align-items: start; }
+      .issue-date { margin-left: 0; }
+      .editorial-story-grid { grid-template-columns: 1fr; }
+      .issue-data-drawer { margin-left: 12px; margin-right: 12px; }
+      .editorial-story-grid { padding-left: 12px; padding-right: 12px; }
+      .editorial-divider { margin-left: 12px; margin-right: 12px; }
+      .data-room-intro { grid-template-columns: 1fr; }
+    }
+"""
+
+
+EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
+      <div class="issue-shell" data-testid="editorial-issue">
+        <div class="issue-hero">
+          <div class="issue-kicker-row">
+            <span id="issue-kicker" class="issue-kicker">Personal league edition</span>
+            <span id="issue-date" class="issue-date">Latest refresh</span>
+          </div>
+          <div class="issue-title-row">
+            <div>
+              <h2 id="issue-headline" class="issue-title">Your edition is loading</h2>
+              <p id="issue-dek" class="issue-dek">The analyst is assembling the current read from your league data.</p>
+            </div>
+            <span id="issue-writer-mode" class="tag issue-writer-mode">Evidence-led template</span>
+          </div>
+          <div class="issue-byline">
+            <span id="issue-as-of">As of the latest refresh</span>
+            <span id="issue-freshness">Freshness is loading</span>
+          </div>
+        </div>
+        <div class="editorial-layout">
+          <div id="issue-lead"></div>
+          <aside class="issue-pulse">
+            <h3>Signal pulse</h3>
+            <div id="issue-pulse-metrics" class="pulse-metrics"></div>
+            <div class="health-heading">Source health</div>
+            <ul id="issue-source-health" class="health-list"></ul>
+          </aside>
+        </div>
+        <div class="editorial-divider"><span>More from this edition</span></div>
+        <div id="issue-stories" class="editorial-story-grid"></div>
+        <details class="data-drawer issue-data-drawer">
+          <summary><span>Today's Board</span><span class="summary-note">ranked signals</span></summary>
+          <div id="today-priority-board"></div>
+        </details>
+        <details class="data-drawer issue-data-drawer">
+          <summary><span>Read the full analyst brief</span><span id="daily-gm-brief-mode" class="tag"></span></summary>
+          <div id="daily-gm-brief"></div>
+        </details>
+      </div>
+    </div>
+"""
+
+
+EDITORIAL_JS = r"""
+    function renderEditorial() {
+      const issue = editorial || {};
+      setText('issue-kicker', issue.kicker || 'Personal league edition');
+      setText('issue-date', issue.edition_label || 'Latest refresh');
+      setText('issue-headline', issue.headline || 'Your edition is waiting for a refresh');
+      setText('issue-dek', issue.dek || 'No editorial read has been compiled yet.');
+      setText('issue-as-of', issue.as_of_label || 'As of the latest refresh');
+      setText('issue-freshness', issue.freshness_label || 'Freshness unavailable');
+      setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
+      const freshness = issue.source_health_summary || {};
+      const freshnessNode = document.getElementById('issue-freshness');
+      if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';
+      document.getElementById('issue-lead').innerHTML = editorialStoryMarkup(issue.lead || {}, true);
+      document.getElementById('issue-stories').innerHTML = (issue.stories || []).length
+        ? (issue.stories || []).map(story => editorialStoryMarkup(story, false)).join('')
+        : '<p class="note">The edition has no secondary stories yet. That may be a quiet board, or a data problem worth opening below.</p>';
+      document.getElementById('issue-pulse-metrics').innerHTML = editorialPulse(issue.signal_summary || {});
+      document.getElementById('issue-source-health').innerHTML = editorialHealth(issue.source_health || []);
+    }
+
+    function editorialStoryMarkup(story, isLead) {
+      const tone = editorialTone(story.story_type);
+      const title = story.anchor
+        ? `<a href="#${escapeHtml(String(story.anchor))}">${escapeHtml(story.headline || story.entity_name || 'Untitled story')}</a>`
+        : escapeHtml(story.headline || story.entity_name || 'Untitled story');
+      const score = story.priority_score !== undefined && story.priority_score !== null && String(story.priority_score) !== ''
+        ? `<span class="score-tile score-high story-score">${escapeHtml(String(story.priority_score))}</span>`
+        : '';
+      const confidence = String(story.confidence || 'medium').toLowerCase();
+      const chips = [
+        story.team_name,
+        story.entity_type === 'manager' ? 'manager profile' : '',
+        `confidence ${confidence}`
+      ].filter(value => value !== undefined && value !== null && String(value) !== '');
+      const claims = (story.claims || []).map(claim => `<div class="claim-item"><span class="claim-label">${escapeHtml(claim.label || 'Claim')}</span><span class="claim-value">${escapeHtml(claim.value || '')}</span></div>`).join('');
+      const sources = (story.sources || []).map(source => `<a class="source-link" href="${safeSourceUrl(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.label || 'Source')}</a>`).join('');
+      const details = `<details class="evidence-drawer story-details"><summary>Show the evidence</summary><div class="brief-card-evidence">${claims ? `<div class="claim-grid">${claims}</div>` : ''}<p><strong>Watch:</strong> ${escapeHtml(story.watchout || 'Keep the evidence visible.')}</p><p><strong>Evidence:</strong> ${escapeHtml(story.evidence || story.dek || 'No evidence supplied.')}</p>${sources ? `<div class="source-list">${sources}</div>` : ''}</div></details>`;
+      return `<article class="editorial-story ${isLead ? 'editorial-lead' : 'editorial-card'} tone-${tone}"><div class="story-kicker-row"><span class="story-kicker">${escapeHtml(story.eyebrow || 'Analyst read')}</span>${score}</div><h3 class="story-title">${title}</h3><p class="story-dek">${escapeHtml(story.dek || '')}</p><p class="story-action"><strong>Read:</strong> ${escapeHtml(story.action || 'Open the evidence before acting.')}</p><div class="story-meta">${chips.map(chip => `<span class="story-chip${chip.startsWith('confidence ') ? ` confidence-${confidence}` : ''}">${escapeHtml(chip)}</span>`).join('')}</div>${details}</article>`;
+    }
+
+    function editorialPulse(summary) {
+      const metrics = [
+        ['priority_reads', 'ranked reads'],
+        ['market_consensus', 'market values'],
+        ['news_signals', 'news signals'],
+        ['manager_profiles', 'manager profiles']
+      ];
+      return metrics.map(([key, labelText]) => `<div class="pulse-metric"><strong>${escapeHtml(String(summary[key] ?? 0))}</strong><span>${escapeHtml(labelText)}</span></div>`).join('');
+    }
+
+    function editorialHealth(rows) {
+      if (!rows.length) return '<li class="note">No source-health receipt is available.</li>';
+      return rows.slice(0, 5).map(row => `<li class="health-row"><span>${escapeHtml(row.label || row.dataset || 'Source')}</span><span class="${row.healthy ? 'health-current' : 'health-limited'}">${escapeHtml(row.status_label || 'Unknown')}</span></li>`).join('');
+    }
+
+    function editorialTone(storyType) {
+      const type = String(storyType || '').toLowerCase();
+      if (type === 'market') return 'market';
+      if (type === 'sell') return 'sell';
+      if (type === 'hold') return 'hold';
+      if (type === 'news') return 'news';
+      if (type === 'manager') return 'manager';
+      return 'signal';
+    }
+
+    function safeSourceUrl(url) {
+      const value = String(url || '');
+      return value.startsWith('https://') || value.startsWith('http://') ? escapeHtml(value) : '#';
+    }
+
+"""
+
+
+def inject_editorial_facade(page: str) -> str:
+    """Add the issue facade to the generated page without touching its data-room core."""
+
+    page = page.replace("</style>", f"{EDITORIAL_STYLE}\n  </style>", 1)
+    page = page.replace(
+        '<div class="brand-kicker">Dynasty Command</div>',
+        '<div class="brand-kicker">Personal Edition</div>',
+        1,
+    )
+    page = page.replace(
+        "<p>Find the market leak, then pretend it was obvious all along.</p>",
+        "<p>Your league, edited into a morning read with the data room underneath.</p>",
+        1,
+    )
+    page = page.replace(
+        "weekly command surface. Read-only, because the league chat already has enough chaos.",
+        "personal edition. Deep data underneath, so every strong opinion can show its work.",
+        1,
+    )
+
+    start = page.find('    <div id="todays-board" class="view-block">')
+    end = page.find('    <div id="decision-board" class="view-block">', start)
+    if start >= 0 and end > start:
+        page = page[:start] + EDITORIAL_HTML + page[end:]
+
+    page = page.replace("let analysis = {};", "let analysis = {};\n    let editorial = {};", 1)
+    page = page.replace("analysis = app.analysis || {};", "analysis = app.analysis || {};\n      editorial = app.editorial || {};", 1)
+    page = page.replace(
+        "document.getElementById('active-team-label').textContent = teamName;",
+        "document.getElementById('active-team-label').textContent = teamName;\n      renderEditorial();",
+        1,
+    )
+    page = page.replace("    function priorityCards(rows) {", f"{EDITORIAL_JS}    function priorityCards(rows) {{", 1)
+    return page

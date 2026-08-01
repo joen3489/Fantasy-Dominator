@@ -1110,6 +1110,10 @@ class VModelTests(unittest.TestCase):
 
         self.assertIn("fantasy-dominator-production.up.railway.app", text)
         self.assertIn("The Front Office", text)
+        self.assertIn("Personal Edition", text)
+        self.assertIn("editorial-issue", text)
+        self.assertIn("Signal pulse", text)
+        self.assertIn("Show the evidence", text)
         self.assertIn("Today's Board", text)
         self.assertIn("brief-card", text)
         self.assertIn("Projection Board", text)
