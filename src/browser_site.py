@@ -10,7 +10,13 @@ import pandas as pd
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
 
-def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, analysis_dir: Path = ANALYSIS_DIR, league_type: str = "dynasty") -> Path:
+def build_browser_site(
+    output_dir: Path,
+    processed_dir: Path = PROCESSED_DIR,
+    analysis_dir: Path = ANALYSIS_DIR,
+    league_type: str = "dynasty",
+    league_id: str = "",
+) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -65,7 +71,7 @@ def build_browser_site(output_dir: Path, processed_dir: Path = PROCESSED_DIR, an
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
     config = load_config()
     analysis = _analysis_artifacts(analysis_dir)
-    manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis)
+    manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
     target = output_dir / "index.html"
     target.write_text(_page(my_team_name, manifest, league_type), encoding="utf-8")
     return target
@@ -154,6 +160,7 @@ def _write_data_chunks(
     my_team_name: str,
     config: dict[str, Any],
     analysis: dict[str, Any],
+    league_id: str = "",
 ) -> dict[str, Any]:
     audit_only_tables = {
         "players",
@@ -170,6 +177,7 @@ def _write_data_chunks(
         "trackedPicks": config.get("tracked_picks") or [],
         "currentSeason": config.get("current_season", ""),
         "configuredLeagues": config.get("leagues") or {},
+        "leagueId": str(league_id or ""),
         "analysis": analysis,
         "tableCounts": table_counts,
     }
@@ -193,6 +201,7 @@ def _write_data_chunks(
         "tableCounts": table_counts,
         "initialTables": sorted(app_tables),
         "payloadPolicy": "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded",
+        "leagueId": str(league_id or ""),
     }
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
@@ -1073,7 +1082,11 @@ def _page(
         const response = await fetch(path, {{
           method: 'POST',
           cache: 'no-store',
-          headers: {{ 'X-Front-Office-Token': state.operatorToken }}
+          headers: {{
+            'Content-Type': 'application/json',
+            'X-Front-Office-Token': state.operatorToken
+          }},
+          body: JSON.stringify({{ league_id: manifest.leagueId || '' }})
         }});
         state.operatorStatus = await response.json();
       }} catch (error) {{
@@ -1091,7 +1104,7 @@ def _page(
       }}
       statusEl.textContent = 'Building chat context...';
       try {{
-        const response = await fetch('/api/operator/chat-context', {{
+        const response = await fetch('/api/operator/chat-context?league_id=' + encodeURIComponent(manifest.leagueId || ''), {{
           method: 'GET',
           cache: 'no-store',
           headers: {{ 'X-Front-Office-Token': state.operatorToken }}
@@ -1130,7 +1143,7 @@ def _page(
             'Content-Type': 'application/json',
             'X-Front-Office-Token': state.operatorToken
           }},
-          body: JSON.stringify(payload)
+          body: JSON.stringify({{ ...payload, league_id: manifest.leagueId || '' }})
         }});
         state.operatorStatus = await response.json();
       }} catch (error) {{

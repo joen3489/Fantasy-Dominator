@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
+from src.context import FantasyContext, context_from_league_row, scoped_config
 from src.economics import build_economic_tables
 from src.external_sources import refresh_external_sources
 from src.league_paths import LeaguePaths
@@ -49,7 +50,10 @@ def main(
     roster_id: int | None = None,
     paths: "LeaguePaths | None" = None,
     league_type: str = "dynasty",
+    context: FantasyContext | None = None,
 ) -> None:
+    if paths is None and context is not None and context.user_id is not None:
+        paths = LeaguePaths.for_user_league(context.user_id, context.league_id)
     if paths is None:
         ensure_dirs()
         raw_dir = None
@@ -65,7 +69,7 @@ def main(
         site_dir = paths.site_dir
         analysis_dir = paths.analysis_dir
 
-    config = load_config()
+    config = scoped_config(load_config(), context) if context is not None else load_config()
     api = SleeperAPI(raw_dir=raw_dir) if raw_dir is not None else SleeperAPI()
     players = load_players(api, force=force)
     current_team = config.get("current_team", {}) or {}
@@ -253,8 +257,11 @@ def main(
                 "transaction_week_start": week_start,
                 "transaction_week_end": week_end,
                 "source_scope": "Sleeper public API plus open/legal external sources",
-                "raw_cache_root": str((Path("data") / "raw").as_posix()),
+                "raw_cache_root": str((raw_dir or Path("data") / "raw").as_posix()),
                 "raw_external_cache_root": str((Path("data") / "raw_external").as_posix()),
+                "user_id": context.user_id if context else "",
+                "league_id": context.league_id if context else league_id or "",
+                "team_scope_key": context.scope_key if context else "legacy",
                 "browser_is_primary_surface": True,
                 "recommendation_packets_status": "planned_contract_only",
                 "analysis_artifacts_status": analysis_metadata.get("status", "unknown"),
@@ -297,7 +304,13 @@ def main(
         config.get("strategy_profile") or {},
     )
     print(f"Wrote {reports_dir / 'weekly_hinkie_report.md'}")
-    site_path = build_browser_site(site_dir, processed_dir, analysis_dir, league_type=league_type)
+    site_path = build_browser_site(
+        site_dir,
+        processed_dir,
+        analysis_dir,
+        league_type=league_type,
+        league_id=context.league_id if context else league_id or "",
+    )
     print(f"Wrote {site_path}")
 
 
@@ -308,11 +321,28 @@ def _sqlite_connection(path: Path):
     return sqlite3.connect(path)
 
 
-def refresh_user(username: str, season: str, force: bool = False) -> dict[str, dict[str, str]]:
+def refresh_user(
+    username: str,
+    season: str,
+    force: bool = False,
+    user_id: int | str | None = None,
+) -> dict[str, dict[str, str]]:
     api = SleeperAPI()
     entries = discover_leagues(api, username, str(season))
-    save_registry(entries)
+    save_registry(entries, user_id=user_id)
     statuses: dict[str, dict[str, str]] = {}
+
+    app_db = None
+    db_user_id: int | None = None
+    if user_id is not None:
+        try:
+            db_user_id = int(user_id)
+            from app import db as app_db_module
+
+            app_db = app_db_module
+            app_db.init_db()
+        except (TypeError, ValueError):
+            db_user_id = None
 
     for entry in entries:
         league_id = str(entry.get("league_id") or "")
@@ -321,17 +351,42 @@ def refresh_user(username: str, season: str, force: bool = False) -> dict[str, d
             continue
         if league_type == "best_ball":
             continue
+        run_id: int | None = None
         try:
+            if app_db and db_user_id is not None:
+                run_id = app_db.start_refresh_run(
+                    db_user_id,
+                    league_id,
+                    str(entry.get("season") or season),
+                )
+            profile = app_db.get_team_profile(db_user_id, league_id) if app_db and db_user_id is not None else None
+            if app_db and db_user_id is not None and profile is None:
+                app_db.migrate_legacy_team_profile(db_user_id, entry, load_config())
+                profile = app_db.get_team_profile(db_user_id, league_id)
+            context = (
+                context_from_league_row(str(user_id), entry, profile)
+                if user_id is not None
+                else None
+            )
             roster_id = entry.get("roster_id")
             main(
                 force=force,
                 league_id=league_id,
                 roster_id=int(roster_id) if roster_id not in (None, "") else None,
-                paths=LeaguePaths.for_league(league_id),
+                paths=(
+                    LeaguePaths.for_user_league(str(user_id), league_id)
+                    if user_id is not None
+                    else LeaguePaths.for_league(league_id)
+                ),
                 league_type=league_type,
+                context=context,
             )
+            if app_db and run_id is not None:
+                app_db.finish_refresh_run(run_id, "complete")
             statuses[league_id] = {"state": "complete", "message": "Refresh complete.", "league_type": league_type}
         except Exception as exc:  # noqa: BLE001 - one league failing must not stop the rest.
+            if app_db and run_id is not None:
+                app_db.finish_refresh_run(run_id, "failed", str(exc))
             statuses[league_id] = {
                 "state": "failed",
                 "message": f"Refresh failed: {exc}",

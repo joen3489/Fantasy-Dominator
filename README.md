@@ -1,12 +1,12 @@
 # Fantasy Dominator
 
-Local structured data repository for a Sleeper dynasty fantasy football league.
+Personal, browser-first fantasy football headquarters for Sleeper leagues.
 
-This project pulls read-only public Sleeper API data, caches raw JSON for audit/debugging, normalizes it into CSV files, writes a SQLite database, and produces a browser-first local surface for manager tendencies, pick ownership, trades, waivers, and weekly Hinkie-style roster workflow.
+The app pulls read-only public Sleeper API data, caches raw JSON for audit/debugging, normalizes it into CSV files and SQLite, and produces decision support for roster health, manager tendencies, pick ownership, trades, waivers, projections, and weekly Hinkie-style roster workflow. Deterministic analysis is the source of truth; the API writers turn that evidence into cited personal content.
 
-The second sprint adds an economic market layer. Sleeper remains the league source of truth, while open/legal external sources such as nflverse and DynastyProcess are used for usage, value, scarcity, and liquidity context when available. If an external source is unavailable, the app still builds with clearly labeled internal proxy values and source diagnostics.
+Sleeper remains the league source of truth, while open/legal external sources such as nflverse and DynastyProcess provide usage, value, scarcity, liquidity, projection, and news context when available. If an external source is unavailable, the app still builds with clearly labeled internal proxy values and source diagnostics.
 
-## League
+## Legacy league seed
 
 - Platform: Sleeper
 - Current league ID: `1313490073630547968`
@@ -14,6 +14,23 @@ The second sprint adds an economic market layer. Sleeper remains the league sour
 - My Sleeper display name: `joe3489`
 - My team name: `Melkor Lord of Light`
 - Format: 12-team dynasty superflex, 0.5 PPR, TE reception bonus
+
+## Ownership model
+
+The old config/leagues.yml singleton is retained as a legacy seed and CLI default. New authenticated work is scoped as:
+
+~~~text
+user
+└── league
+    ├── managed team identity and strategy profile
+    ├── refresh and attention receipts
+    ├── deterministic processed tables and analysis
+    └── writer artifacts and browser site
+~~~
+
+Shared external source facts remain in data/raw_external/. User/league-derived state is written under data/users/<user_id>/leagues/<league_id>/. The database stores users, linked leagues, team profiles, content-artifact receipts, and refresh history. A read-only fallback can serve older data/leagues/<league_id>/ artifacts during migration.
+
+Each league can customize team name/display name, strategy direction, contention window, structured strategy values, and writer preferences. Manager trade profiles are generated inside that league/team context, so one user's strategy cannot change another user's recommendations.
 
 ## Setup
 
@@ -23,13 +40,13 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Refresh All Data
+## Refresh data
 
 ```powershell
 python scripts/refresh_all.py
 ```
 
-The refresh writes:
+This is the legacy/default workspace refresh. The authenticated scheduler and operator routes use the linked user's private workspace. The refresh writes:
 
 - Raw API responses to `data/raw/`
 - Raw external source files to `data/raw_external/`
@@ -39,12 +56,14 @@ The refresh writes:
 - Markdown report to `data/reports/weekly_hinkie_report.md`
 - Browser workspace to `data/site/index.html`
 
-## Open The Browser Surface
+For an authenticated user's linked leagues, the equivalent workflow is scripts.refresh_all.refresh_user(username, season, user_id=...); the scheduler calls this per user and rebuilds that user's attention queue.
+
+## Run the authenticated app
 
 After refreshing:
 
 ```powershell
-python scripts/serve.py
+python -m app.main
 ```
 
 Then open:
@@ -53,30 +72,26 @@ Then open:
 http://localhost:8765
 ```
 
-The browser surface is the primary weekly workspace. CSV, SQLite, and markdown outputs are supporting artifacts for auditability and ChatGPT sharing.
+The app exposes /healthz, /login, the personal headquarters at /, and owned league sites at /league/<league_id>/. Use the home-screen Sleeper link flow to discover leagues. The headquarters includes a per-league team strategy editor backed by GET and PUT /api/leagues/<league_id>/profile.
+
+The browser surface is the primary weekly workspace. CSV, SQLite, and markdown outputs are supporting artifacts for auditability and ChatGPT sharing. scripts/serve.py remains a legacy static/local server for the default workspace.
 
 ## Railway Production
 
-Railway should run the app as a Python service with:
+Railway runs the authenticated app with:
 
 ```text
-python scripts/start.py
+python -m app.main
 ```
 
-The production start script:
-
-- Uses Railway's `PORT` environment variable.
-- Binds to `0.0.0.0` so the service is externally reachable.
-- Runs `python scripts/refresh_all.py` on first boot when `data/site/index.html` is missing.
-- Serves the generated browser surface from `data/site/`.
+railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and ANTHROPIC_API_KEY only for explicit writer actions.
 
 Optional environment variables:
 
-- `FANTASY_REFRESH_ON_START=true` refreshes data on every boot.
-- `FANTASY_FORCE_REFRESH=true` bypasses existing raw/cache files during startup refresh.
-- `HOST=0.0.0.0` is the production default; local `scripts/serve.py` still defaults to `127.0.0.1`.
+- FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN=true fails operator actions closed even when the token variable is missing.
+- HOST=0.0.0.0 and PORT=8765 are the app defaults.
 
-## Config
+## Config and migration
 
 Edit `config/leagues.yml` to add prior league IDs by season:
 
@@ -88,6 +103,12 @@ leagues:
 ```
 
 Blank league IDs are skipped.
+
+The config file is now a legacy/default seed. Authenticated users link their own Sleeper account from the home screen. When a linked roster matches current_team.roster_id, its strategy profile is copied idempotently into the user's team profile; later edits are stored per league and take precedence over the seed.
+
+## Writers and evidence
+
+Writer actions are explicit and cost-incurring. They read only the selected league's deterministic analysis and write section articles, manager/player insight packets, and the Daily GM Brief into that league's private analysis/operator workspace. Every generated artifact is indexed by user, league, season, and artifact key in content_artifacts; no writer is scheduled automatically.
 
 ## Tables
 
@@ -145,8 +166,15 @@ Analysis artifacts are generated separately under `data/analysis/`:
 
 ## Notes
 
-- The API is read-only and does not require a token.
+- Sleeper and fantasy transaction APIs are read-only; the authenticated app requires Clerk, and operator mutations require the configured operator token.
 - Raw JSON is cached before normalization.
 - Player data is cached because `/players/nfl` is large.
 - This project does not execute fantasy transactions.
 - Analyst artifacts are interpretation only and must cite deterministic processed outputs.
+
+## Verification
+
+~~~powershell
+python -m unittest discover -s tests
+python -m py_compile app\main.py app\scheduler.py src\context.py scripts\refresh_all.py
+~~~

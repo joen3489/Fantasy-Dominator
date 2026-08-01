@@ -6,10 +6,15 @@ from pathlib import Path
 from typing import Any
 
 from .sleeper_api import SleeperAPI
+from .league_paths import USERS_ROOT, _safe_component
 from .utils import DATA_DIR, dump_json, load_json
 
 
 REGISTRY_PATH = DATA_DIR / "league_registry.json"
+
+
+def user_registry_path(user_id: str | int) -> Path:
+    return USERS_ROOT / _safe_component(str(user_id), "user") / "league_registry.json"
 
 
 def classify_league(league: dict[str, Any]) -> str:
@@ -46,11 +51,17 @@ def discover_leagues(api: SleeperAPI, username: str, season: str) -> list[dict[s
     return entries
 
 
-def save_registry(entries: list[dict[str, Any]], path: Path = REGISTRY_PATH) -> None:
+def save_registry(
+    entries: list[dict[str, Any]],
+    path: Path | None = None,
+    user_id: str | int | None = None,
+) -> None:
+    path = path or (user_registry_path(user_id) if user_id is not None else REGISTRY_PATH)
     dump_json(path, entries)
 
 
-def load_registry(path: Path = REGISTRY_PATH) -> list[dict[str, Any]]:
+def load_registry(path: Path | None = None, user_id: str | int | None = None) -> list[dict[str, Any]]:
+    path = path or (user_registry_path(user_id) if user_id is not None else REGISTRY_PATH)
     if not path.exists():
         return []
     data = load_json(path)

@@ -434,6 +434,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("DYNASTY", html.upper())
         self.assertIn("fresh-dot fresh", html)
         self.assertNotIn("/league/beta/", html)
+        self.assertIn('data-profile-form', html)
+        self.assertIn('data-profile-league', html)
+        self.assertIn('Save league profile', html)
 
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")
@@ -516,6 +519,27 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(authenticated.status_code, 200)
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
+
+    def test_operator_endpoint_requires_configured_operator_token(self) -> None:
+        token = self._token("user_operator_token")
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            denied = self.client.post(
+                "/api/operator/refresh",
+                headers={"Authorization": f"Bearer {token}"},
+                json={},
+            )
+            with patch("app.main.front_operator.start_job", return_value={"accepted": True}):
+                allowed = self.client.post(
+                    "/api/operator/refresh",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "x-front-office-token": "operator-secret",
+                    },
+                    json={},
+                )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
 
     def test_healthz_is_open(self) -> None:
         self.assertEqual(self.client.get("/healthz").json(), {"ok": True})

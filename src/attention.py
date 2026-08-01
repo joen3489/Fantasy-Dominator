@@ -8,11 +8,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .league_paths import LeaguePaths
+from .league_paths import USERS_ROOT, LeaguePaths, _safe_component
 from .utils import DATA_DIR, dump_json, load_json
 
 
 ATTENTION_QUEUE_PATH = DATA_DIR / "attention_queue.json"
+
+
+def user_attention_path(user_id: str | int) -> Path:
+    """Path for a user's cross-league inbox."""
+
+    return USERS_ROOT / _safe_component(str(user_id), "user") / "attention_queue.json"
 
 
 @dataclass
@@ -309,7 +315,11 @@ def build_league_attention(entry: dict[str, Any], paths: LeaguePaths, now: datet
     return sorted(items, key=lambda item: (-item.severity, item.league_name, item.headline))
 
 
-def build_user_attention(registry_entries: list[dict[str, Any]], now: datetime | None = None) -> list[AttentionItem]:
+def build_user_attention(
+    registry_entries: list[dict[str, Any]],
+    now: datetime | None = None,
+    user_id: str | int | None = None,
+) -> list[AttentionItem]:
     """Merge leagues while making broken league state loud but non-fatal."""
     generated_at = _now(now).isoformat()
     items: list[AttentionItem] = []
@@ -336,7 +346,11 @@ def build_user_attention(registry_entries: list[dict[str, Any]], now: datetime |
             )
             continue
         try:
-            paths = LeaguePaths.for_league(league_id)
+            paths = (
+                LeaguePaths.for_user_league(user_id, league_id)
+                if user_id is not None
+                else LeaguePaths.for_league(league_id)
+            )
             if not paths.root.exists():
                 raise FileNotFoundError(f"missing league root: {paths.root}")
             items.extend(build_league_attention(entry, paths, now))
@@ -358,12 +372,14 @@ def build_user_attention(registry_entries: list[dict[str, Any]], now: datetime |
     return sorted(items, key=lambda item: (-item.severity, item.league_name, item.headline))
 
 
-def save_attention(items: list[AttentionItem], path: Path = ATTENTION_QUEUE_PATH) -> None:
+def save_attention(items: list[AttentionItem], path: Path | None = None, user_id: str | int | None = None) -> None:
+    path = path or (user_attention_path(user_id) if user_id is not None else ATTENTION_QUEUE_PATH)
     generated_at = items[0].generated_at if items else datetime.now(timezone.utc).isoformat()
     dump_json(path, {"generated_at": generated_at, "items": [asdict(item) for item in items]})
 
 
-def load_attention(path: Path = ATTENTION_QUEUE_PATH) -> list[AttentionItem]:
+def load_attention(path: Path | None = None, user_id: str | int | None = None) -> list[AttentionItem]:
+    path = path or (user_attention_path(user_id) if user_id is not None else ATTENTION_QUEUE_PATH)
     data = load_json(path)
     rows = data.get("items", []) if isinstance(data, dict) else []
     return [AttentionItem(**row) for row in rows if isinstance(row, dict)]

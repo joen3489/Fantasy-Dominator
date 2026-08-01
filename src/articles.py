@@ -30,6 +30,12 @@ class ArticleContext:
     active_roster_id: int | None
     section_outputs: dict[str, str] = field(default_factory=dict)
     claimed_players: set[str] = field(default_factory=set)
+    processed_dir: Path = PROCESSED_DIR
+    user_id: str | None = None
+    league_id: str = ""
+    season: str = ""
+    team_name: str = ""
+    writer_preferences: dict[str, Any] = field(default_factory=dict)
 
 
 def apply_entity_dedup(ctx: ArticleContext, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -100,8 +106,8 @@ def resolve_active_roster_id(config: dict[str, Any] | None = None) -> int | None
 
 # --- evidence helpers -------------------------------------------------------------------
 
-def _load_processed_csv(filename: str) -> list[dict[str, Any]]:
-    path = PROCESSED_DIR / filename
+def _load_processed_csv(filename: str, processed_dir: Path = PROCESSED_DIR) -> list[dict[str, Any]]:
+    path = processed_dir / filename
     if not path.exists():
         return []
     try:
@@ -140,7 +146,7 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
     # The player_dossiers.json artifact is only the top ~120 players by team name, which usually
     # excludes the user's own roster -- so a team report reads the full player_dossiers.csv and
     # filters to the active roster, the one place an article needs the complete per-team data.
-    players = _load_processed_csv("player_dossiers.csv")
+    players = _load_processed_csv("player_dossiers.csv", ctx.processed_dir)
     if ctx.active_roster_id is not None:
         mine = [row for row in players if _as_int(row.get("roster_id")) == ctx.active_roster_id]
         players = mine or players
@@ -190,7 +196,7 @@ def _scope_market_watch(ctx: ArticleContext) -> list[dict[str, Any]]:
             index += 1
     # Opportunity-vs-output evidence (Sprint 18): the players whose usage is outrunning their
     # points are the sharpest buy-lows -- give the writer the numbers to say so in plain English.
-    opp = _load_processed_csv("player_opportunity_scores.csv")
+    opp = _load_processed_csv("player_opportunity_scores.csv", ctx.processed_dir)
     buy_low = sorted(opp, key=lambda row: _as_float(row.get("xfp_regression_score")), reverse=True)
     for row in buy_low[:8]:
         if _as_float(row.get("xfp_regression_score")) < 55 or _as_float(row.get("opportunity_score")) < 50:

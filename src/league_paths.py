@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from .utils import (
     ANALYSIS_DIR,
@@ -24,6 +25,16 @@ from .utils import (
 # path here would silently write league state to the wrong place when the server process is
 # started from a different working directory.
 LEAGUES_ROOT = DATA_DIR / "leagues"
+USERS_ROOT = DATA_DIR / "users"
+
+
+def _safe_component(value: str, label: str) -> str:
+    """Allow only path components, never user-controlled path fragments."""
+
+    component = str(value).strip()
+    if not component or component in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9_-]+", component):
+        raise ValueError(f"invalid {label} path component")
+    return component
 
 
 @dataclass(frozen=True)
@@ -42,13 +53,15 @@ class LeaguePaths:
     operator_inbox_dir: Path
     operator_outbox_dir: Path
     operator_status_dir: Path
+    user_id: str | None = None
 
     @classmethod
     def for_league(cls, league_id: str) -> LeaguePaths:
-        root = LEAGUES_ROOT / str(league_id)
+        safe_league_id = _safe_component(league_id, "league")
+        root = LEAGUES_ROOT / safe_league_id
         operator_dir = root / "operator"
         return cls(
-            league_id=str(league_id),
+            league_id=safe_league_id,
             root=root,
             raw_dir=root / "raw",
             raw_external_dir=RAW_EXTERNAL_DIR,
@@ -60,6 +73,30 @@ class LeaguePaths:
             operator_inbox_dir=operator_dir / "inbox",
             operator_outbox_dir=operator_dir / "outbox",
             operator_status_dir=operator_dir / "status",
+        )
+
+    @classmethod
+    def for_user_league(cls, user_id: str | int, league_id: str | int) -> LeaguePaths:
+        """Return the private workspace for one user's managed league."""
+
+        safe_user_id = _safe_component(str(user_id), "user")
+        safe_league_id = _safe_component(str(league_id), "league")
+        root = USERS_ROOT / safe_user_id / "leagues" / safe_league_id
+        operator_dir = root / "operator"
+        return cls(
+            league_id=safe_league_id,
+            root=root,
+            raw_dir=root / "raw",
+            raw_external_dir=RAW_EXTERNAL_DIR,
+            processed_dir=root / "processed",
+            cache_dir=root / "cache",
+            reports_dir=root / "reports",
+            site_dir=root / "site",
+            analysis_dir=root / "analysis",
+            operator_inbox_dir=operator_dir / "inbox",
+            operator_outbox_dir=operator_dir / "outbox",
+            operator_status_dir=operator_dir / "status",
+            user_id=safe_user_id,
         )
 
     @classmethod

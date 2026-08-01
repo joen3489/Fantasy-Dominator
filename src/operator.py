@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import traceback
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -13,6 +14,8 @@ import requests
 
 from . import articles
 from .browser_site import build_browser_site
+from .context import FantasyContext
+from .league_paths import LeaguePaths
 from .utils import (
     ANALYSIS_DIR,
     OPERATOR_INBOX_DIR,
@@ -20,7 +23,6 @@ from .utils import (
     OPERATOR_STATUS_DIR,
     PROCESSED_DIR,
     SITE_DIR,
-    ensure_dirs,
     load_json,
 )
 
@@ -121,6 +123,48 @@ DAILY_GM_BRIEF_TOOL = {
 }
 
 _LOCK = threading.Lock()
+_ACTIVE_JOB = False
+
+
+@contextmanager
+def operator_scope(paths: LeaguePaths | None):
+    """Temporarily point legacy operator globals at one private workspace.
+
+    The operator module predates multi-user workspaces and intentionally keeps
+    its internal helpers simple.  Jobs are serialized by _LOCK, so a scoped
+    adapter lets the existing validation code keep its behavior while making
+    every receipt, packet, and article land under the selected league.
+    """
+
+    if paths is None:
+        yield
+        return
+
+    paths.ensure()
+    replacements = {
+        "ANALYSIS_DIR": paths.analysis_dir,
+        "OPERATOR_INBOX_DIR": paths.operator_inbox_dir,
+        "OPERATOR_OUTBOX_DIR": paths.operator_outbox_dir,
+        "OPERATOR_STATUS_DIR": paths.operator_status_dir,
+        "PROCESSED_DIR": paths.processed_dir,
+        "SITE_DIR": paths.site_dir,
+        "STATUS_PATH": paths.operator_status_dir / "operator_status.json",
+        "INSIGHT_PACKET_PATH": paths.operator_inbox_dir / "front_office_insight_packet.json",
+        "INSIGHT_OUTPUT_PATH": paths.operator_outbox_dir / "front_office_insight_cards.json",
+        "VALIDATED_INSIGHTS_PATH": paths.analysis_dir / "validated_insight_cards.json",
+        "INSIGHT_VALIDATION_PATH": paths.analysis_dir / "insight_card_validation.json",
+        "DAILY_GM_BRIEF_PATH": paths.analysis_dir / "daily_gm_brief.md",
+        "DAILY_GM_BRIEF_VALIDATION_PATH": paths.analysis_dir / "daily_gm_brief_validation.json",
+    }
+    saved = {name: globals()[name] for name in replacements}
+    saved_article_processed_dir = articles.PROCESSED_DIR
+    try:
+        globals().update(replacements)
+        articles.PROCESSED_DIR = paths.processed_dir
+        yield
+    finally:
+        globals().update(saved)
+        articles.PROCESSED_DIR = saved_article_processed_dir
 
 
 def operator_enabled() -> bool:
@@ -135,8 +179,18 @@ def token_valid(headers: dict[str, str]) -> bool:
     return supplied == expected
 
 
-def status() -> dict[str, Any]:
-    ensure_dirs()
+def status(paths: LeaguePaths | None = None) -> dict[str, Any]:
+    if paths is not None:
+        status_path = paths.operator_status_dir / "operator_status.json"
+        if status_path.exists():
+            try:
+                payload = load_json(status_path)
+                if isinstance(payload, dict):
+                    return payload
+            except (OSError, json.JSONDecodeError):
+                pass
+        return _base_status("idle", "Operator loop is ready.", paths=paths)
+    OPERATOR_STATUS_DIR.mkdir(parents=True, exist_ok=True)
     if STATUS_PATH.exists():
         try:
             payload = load_json(STATUS_PATH)
@@ -147,18 +201,28 @@ def status() -> dict[str, Any]:
     return _base_status("idle", "Operator loop is ready.")
 
 
-def start_job(name: str, job: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+def start_job(
+    name: str,
+    job: Callable[[], dict[str, Any]],
+    paths: LeaguePaths | None = None,
+) -> dict[str, Any]:
+    global _ACTIVE_JOB
     with _LOCK:
-        current = status()
-        if current.get("state") == "running":
-            return current | {"accepted": False, "message": "Another operator job is already running."}
-        _write_status(_base_status("running", f"{name} started.", job=name))
-    thread = threading.Thread(target=_run_job, args=(name, job), daemon=True)
+        with operator_scope(paths):
+            current = status()
+            if _ACTIVE_JOB or current.get("state") == "running":
+                return current | {"accepted": False, "message": "Another operator job is already running."}
+            _write_status(_base_status("running", f"{name} started.", job=name))
+            _ACTIVE_JOB = True
+    thread = threading.Thread(target=_run_job, args=(name, job, paths), daemon=True)
     thread.start()
-    return status() | {"accepted": True}
+    return status(paths) | {"accepted": True}
 
 
-def build_insight_packet() -> dict[str, Any]:
+def build_insight_packet(paths: LeaguePaths | None = None) -> dict[str, Any]:
+    if paths is not None:
+        with operator_scope(paths):
+            return build_insight_packet()
     generated_at = _now()
     packet = {
         "packet_type": "front_office_insight_packet",
@@ -206,7 +270,10 @@ def build_insight_packet() -> dict[str, Any]:
     }
 
 
-def validate_insight_output() -> dict[str, Any]:
+def validate_insight_output(paths: LeaguePaths | None = None) -> dict[str, Any]:
+    if paths is not None:
+        with operator_scope(paths):
+            return validate_insight_output()
     generated_at = _now()
     packet = _safe_json(INSIGHT_PACKET_PATH)
     output = _safe_json(INSIGHT_OUTPUT_PATH)
@@ -261,7 +328,10 @@ def validate_insight_output() -> dict[str, Any]:
     return validation
 
 
-def import_insight_output(payload: dict[str, Any]) -> dict[str, Any]:
+def import_insight_output(payload: dict[str, Any], paths: LeaguePaths | None = None) -> dict[str, Any]:
+    if paths is not None:
+        with operator_scope(paths):
+            return import_insight_output(payload)
     if not isinstance(payload, dict):
         return {"state": "failed", "message": "Insight output must be a JSON object."}
     _write_json(INSIGHT_OUTPUT_PATH, payload)
@@ -453,11 +523,14 @@ def _front_matter_value(text: str, key: str) -> str:
     return ""
 
 
-def generate_insights_automatically() -> dict[str, Any]:
+def generate_insights_automatically(paths: LeaguePaths | None = None) -> dict[str, Any]:
     """Explicit, user-triggered, cost-incurring action -- fails loud on any problem
     rather than degrading silently like the free read-only source fetches do. Runs both
     the entity-card pipeline and the narrative-brief pipeline in one action; each is
     independently wrapped so one failing never hides or blocks the other's result."""
+    if paths is not None:
+        with operator_scope(paths):
+            return generate_insights_automatically()
     generated_at = _now()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -636,17 +709,36 @@ def _render_article_markdown(article: articles.Article, narrative: str, generate
     return "\n".join(front_lines) + f"\n\n# {article.title}\n\n{narrative.strip()}\n"
 
 
-def generate_articles_workflow() -> dict[str, Any]:
+def generate_articles_workflow(
+    paths: LeaguePaths | None = None,
+    context: FantasyContext | None = None,
+) -> dict[str, Any]:
     """Explicit, user-triggered, cost-incurring action. Generates one article per meaningful
     section (each independently validated, each falling back to its deterministic .md on failure),
     then a daily brief that synthesizes across them. Fails loud only on missing API key."""
+    if paths is not None:
+        with operator_scope(paths):
+            return generate_articles_workflow(context=context)
     generated_at = _now()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return {"state": "failed", "message": "ANTHROPIC_API_KEY is not set. No LLM call was attempted.", "generated_at": generated_at, "articles": {}}
     model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
 
-    ctx = articles.ArticleContext(analysis_dir=ANALYSIS_DIR, active_roster_id=articles.resolve_active_roster_id())
+    ctx = articles.ArticleContext(
+        analysis_dir=ANALYSIS_DIR,
+        active_roster_id=(
+            context.roster_id
+            if context is not None
+            else articles.resolve_active_roster_id()
+        ),
+        processed_dir=PROCESSED_DIR,
+        user_id=context.user_id if context else None,
+        league_id=context.league_id if context else "",
+        season=context.season if context else "",
+        team_name=context.team_name if context else "",
+        writer_preferences=context.writer_preferences if context else {},
+    )
     results: dict[str, Any] = {}
 
     for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
@@ -665,6 +757,7 @@ def generate_articles_workflow() -> dict[str, Any]:
             if validation["valid"]:
                 output_path = ANALYSIS_DIR / article.output_filename
                 output_path.write_text(_render_article_markdown(article, validation["narrative"], generated_at, output_path), encoding="utf-8")
+                _record_article_artifact(context, article, output_path, validation)
                 if not article.is_summary:
                     ctx.section_outputs[article.key] = validation["narrative"]
                 results[article.key] = {"state": "complete", "message": f"{article.title} written.", "warnings": validation["warnings"]}
@@ -689,9 +782,41 @@ def generate_articles_workflow() -> dict[str, Any]:
     }
 
 
-def build_chat_context_markdown() -> dict[str, Any]:
+def _record_article_artifact(
+    context: FantasyContext | None,
+    article: articles.Article,
+    output_path: Path,
+    validation: dict[str, Any],
+) -> None:
+    if context is None or context.user_id is None:
+        return
+    try:
+        from app import db as app_db
+
+        app_db.record_content_artifact(
+            int(context.user_id),
+            context.league_id,
+            context.season,
+            "article",
+            article.key,
+            str(output_path),
+            source={
+                "mode": "automatic_llm",
+                "valid": bool(validation.get("valid")),
+                "writer_preferences": context.writer_preferences,
+            },
+        )
+    except (TypeError, ValueError, OSError):
+        # Artifact indexing must not erase a successfully written article.
+        return
+
+
+def build_chat_context_markdown(paths: LeaguePaths | None = None) -> dict[str, Any]:
     """Renders the current evidence packet as clean markdown instead of raw JSON --
     a better hand-off for pasting into an ad-hoc chat than the manual copy-paste loop."""
+    if paths is not None:
+        with operator_scope(paths):
+            return build_chat_context_markdown()
     build_insight_packet()
     packet = _safe_json(INSIGHT_PACKET_PATH)
     evidence = packet.get("evidence", [])
@@ -713,20 +838,42 @@ def build_chat_context_markdown() -> dict[str, Any]:
     return {"state": "complete", "markdown": "\n".join(lines).strip(), "generated_at": packet.get("generated_at", "")}
 
 
-def rebuild_browser() -> dict[str, Any]:
-    path = build_browser_site(SITE_DIR, PROCESSED_DIR, ANALYSIS_DIR)
+def rebuild_browser(
+    paths: LeaguePaths | None = None,
+    league_type: str = "dynasty",
+    league_id: str = "",
+) -> dict[str, Any]:
+    if paths is not None:
+        with operator_scope(paths):
+            return rebuild_browser(league_type=league_type, league_id=paths.league_id)
+    path = build_browser_site(
+        SITE_DIR,
+        PROCESSED_DIR,
+        ANALYSIS_DIR,
+        league_type=league_type,
+        league_id=league_id,
+    )
     return {"state": "complete", "message": "Browser bundle rebuilt.", "site_path": str(path.as_posix()), "generated_at": _now()}
 
 
-def _run_job(name: str, job: Callable[[], dict[str, Any]]) -> None:
-    try:
-        result = job()
-        _write_status(_base_status("complete", result.get("message", f"{name} complete."), job=name) | result)
-    except Exception as exc:  # pragma: no cover - status path is the behavior under test.
-        _write_status(
-            _base_status("failed", f"{name} failed: {exc}", job=name)
-            | {"traceback": traceback.format_exc()}
-        )
+def _run_job(
+    name: str,
+    job: Callable[[], dict[str, Any]],
+    paths: LeaguePaths | None = None,
+) -> None:
+    global _ACTIVE_JOB
+    with _LOCK:
+        with operator_scope(paths):
+            try:
+                result = job()
+                _write_status(_base_status("complete", result.get("message", f"{name} complete."), job=name) | result)
+            except Exception as exc:  # pragma: no cover - status path is the behavior under test.
+                _write_status(
+                    _base_status("failed", f"{name} failed: {exc}", job=name)
+                    | {"traceback": traceback.format_exc()}
+                )
+            finally:
+                _ACTIVE_JOB = False
 
 
 def _evidence_items(generated_at: str) -> list[dict[str, Any]]:
@@ -757,16 +904,24 @@ def _evidence_items(generated_at: str) -> list[dict[str, Any]]:
     return items
 
 
-def _base_status(state: str, message: str, job: str = "") -> dict[str, Any]:
+def _base_status(
+    state: str,
+    message: str,
+    job: str = "",
+    paths: LeaguePaths | None = None,
+) -> dict[str, Any]:
+    packet_path = paths.operator_inbox_dir / "front_office_insight_packet.json" if paths else INSIGHT_PACKET_PATH
+    output_path = paths.operator_outbox_dir / "front_office_insight_cards.json" if paths else INSIGHT_OUTPUT_PATH
+    validated_path = paths.analysis_dir / "validated_insight_cards.json" if paths else VALIDATED_INSIGHTS_PATH
     return {
         "state": state,
         "job": job,
         "message": message,
         "updated_at": _now(),
         "operator_enabled": operator_enabled(),
-        "packet_path": str(INSIGHT_PACKET_PATH.as_posix()),
-        "output_path": str(INSIGHT_OUTPUT_PATH.as_posix()),
-        "validated_path": str(VALIDATED_INSIGHTS_PATH.as_posix()),
+        "packet_path": str(packet_path.as_posix()),
+        "output_path": str(output_path.as_posix()),
+        "validated_path": str(validated_path.as_posix()),
     }
 
 

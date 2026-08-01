@@ -10,15 +10,16 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src import operator as front_operator
 from src.attention import load_attention
 from src.browser_site import build_browser_site
+from src.context import context_from_league_row
 from src.league_paths import LeaguePaths
-from src.league_registry import discover_leagues
+from src.league_registry import discover_leagues, save_registry
 from src.sleeper_api import SleeperAPI
-from src.utils import load_json
+from src.utils import load_config, load_json
 
 from . import db
 from .auth import current_user
@@ -39,6 +40,16 @@ class ToggleLeagueBody(BaseModel):
 
 class OperatorBody(BaseModel):
     league_id: str | None = None
+
+
+class TeamProfileBody(BaseModel):
+    team_name: str = ""
+    display_name: str = ""
+    strategy_name: str = ""
+    team_direction: str = ""
+    contention_window: str = ""
+    strategy_profile: dict[str, Any] = Field(default_factory=dict)
+    writer_preferences: dict[str, Any] = Field(default_factory=dict)
 
 
 def create_app() -> FastAPI:
@@ -89,8 +100,9 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, user: dict[str, Any] = Depends(current_user)) -> HTMLResponse:
-        leagues = [_league_view(row) for row in db.list_user_leagues(int(user["id"]))]
-        attention_items = [_attention_view(item) for item in _load_attention_safe()]
+        user_id = int(user["id"])
+        leagues = [_league_view(row, user_id) for row in db.list_user_leagues(user_id)]
+        attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
         return templates.TemplateResponse(
             request,
             "home.html",
@@ -101,21 +113,26 @@ def create_app() -> FastAPI:
                 "enabled_leagues": [league for league in leagues if league.get("enabled")],
                 "attention": attention_items,
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
-                "operator_status": front_operator.status(),
+                "operator_status": _operator_status_for_user(user_id),
             },
         )
 
     @app.get("/api/attention")
     def attention(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-        items = _load_attention_safe()
+        items = _load_attention_safe(int(user["id"]))
         generated_at = items[0].generated_at if items else ""
         return {"generated_at": generated_at, "items": [_attention_view(item) for item in items]}
 
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         entries = discover_leagues(SleeperAPI(), body.sleeper_username, body.season)
-        db.set_sleeper_username(int(user["id"]), body.sleeper_username)
-        stored = [db.upsert_user_league(int(user["id"]), entry) for entry in entries]
+        user_id = int(user["id"])
+        db.set_sleeper_username(user_id, body.sleeper_username)
+        stored = [db.upsert_user_league(user_id, entry) for entry in entries]
+        config = _legacy_config()
+        for entry in stored:
+            db.migrate_legacy_team_profile(user_id, entry, config)
+        save_registry(entries, user_id=user_id)
         return {"leagues": stored}
 
     @app.post("/api/leagues/{league_id}/toggle")
@@ -129,6 +146,33 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="league not found")
         return row
 
+    @app.get("/api/leagues/{league_id}/profile")
+    def team_profile(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        return db.get_team_profile(int(user["id"]), league_id) or {
+            "league_id": league_id,
+            "roster_id": league.get("roster_id"),
+            "season": league.get("season") or "",
+            "strategy_profile": {},
+            "writer_preferences": {},
+        }
+
+    @app.put("/api/leagues/{league_id}/profile")
+    def update_team_profile(
+        league_id: str,
+        body: TeamProfileBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        profile = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+        profile.update(
+            {
+                "roster_id": league.get("roster_id"),
+                "season": league.get("season") or "",
+            }
+        )
+        return db.upsert_team_profile(int(user["id"]), league_id, profile)
+
     @app.get("/league/{league_id}/")
     def league_index(league_id: str, user: dict[str, Any] = Depends(current_user)) -> FileResponse:
         return _serve_league_file(user, league_id, "")
@@ -139,18 +183,84 @@ def create_app() -> FastAPI:
 
     @app.get("/api/operator/status")
     def operator_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-        return front_operator.status()
+        return _operator_status_for_user(int(user["id"]))
+
+    @app.post("/api/operator/build-packet")
+    def operator_build_packet(
+        request: Request,
+        body: OperatorBody | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, body.league_id) if body and body.league_id else None
+        paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
+        return front_operator.build_insight_packet(paths)
+
+    @app.post("/api/operator/validate-insights")
+    def operator_validate_insights(
+        request: Request,
+        body: OperatorBody | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, body.league_id) if body and body.league_id else None
+        paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
+        return front_operator.validate_insight_output(paths)
+
+    @app.get("/api/operator/chat-context")
+    def operator_chat_context(
+        request: Request,
+        league_id: str | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, league_id) if league_id else None
+        paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
+        return front_operator.build_chat_context_markdown(paths)
+
+    @app.post("/api/operator/import-insights")
+    def operator_import_insights(
+        request: Request,
+        payload: dict[str, Any],
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        _require_operator_access(request)
+        league_id = str(payload.get("league_id") or "")
+        league = _owned_enabled_league(user, league_id) if league_id else None
+        paths = _private_paths(int(user["id"]), league_id) if league else None
+        imported = dict(payload)
+        imported.pop("league_id", None)
+        return front_operator.import_insight_output(imported, paths)
 
     @app.post("/api/operator/{action}")
-    def operator_action(action: str, body: OperatorBody | None = None, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    def operator_action(
+        action: str,
+        request: Request,
+        body: OperatorBody | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
         if action not in {"refresh", "generate-insights", "rebuild-browser"}:
             raise HTTPException(status_code=404, detail="operator action not found")
+        _require_operator_access(request)
         league = _owned_enabled_league(user, body.league_id if body else None) if body and body.league_id else None
+        paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
         if action == "refresh":
-            return front_operator.start_job("refresh", lambda: _refresh_job(league))
+            return front_operator.start_job(
+                "refresh",
+                lambda: _refresh_job(league, int(user["id"])),
+                paths=paths,
+            )
         if action == "generate-insights":
-            return front_operator.start_job("generate-insights", lambda: _generate_insights_job(league))
-        return front_operator.start_job("rebuild-browser", lambda: _rebuild_browser_job(league))
+            return front_operator.start_job(
+                "generate-insights",
+                lambda: _generate_insights_job(league, int(user["id"])),
+                paths=paths,
+            )
+        return front_operator.start_job(
+            "rebuild-browser",
+            lambda: _rebuild_browser_job(league, int(user["id"])),
+            paths=paths,
+        )
 
     return app
 
@@ -175,18 +285,56 @@ def _clerk_js_url(publishable_key: str) -> str:
     return "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
 
 
-def _owned_enabled_league(user: dict[str, Any], league_id: str | None) -> dict[str, Any] | None:
-    if league_id is None:
-        return None
+def _require_operator_access(request: Request) -> None:
+    """Require the deployment operator token for mutation/cost endpoints.
+
+    Local development remains usable when no operator token is configured;
+    production deployments set FRONT_OFFICE_OPERATOR_TOKEN and therefore fail
+    closed for ordinary authenticated users.
+    """
+
+    token_required = bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN")) or os.environ.get(
+        "FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN", ""
+    ).lower() in {"1", "true", "yes", "on"}
+    if token_required and not front_operator.token_valid(dict(request.headers)):
+        raise HTTPException(status_code=403, detail="operator authorization required")
+
+
+def _owned_league(user: dict[str, Any], league_id: str) -> dict[str, Any]:
     for row in db.list_user_leagues(int(user["id"])):
-        if str(row["league_id"]) == str(league_id) and int(row["enabled"]):
+        if str(row["league_id"]) == str(league_id):
             return row
     raise HTTPException(status_code=404, detail="league not found")
 
 
+def _owned_enabled_league(user: dict[str, Any], league_id: str | None) -> dict[str, Any] | None:
+    if league_id is None:
+        return None
+    row = _owned_league(user, league_id)
+    if int(row["enabled"]):
+        return row
+    raise HTTPException(status_code=404, detail="league not found")
+
+
+def _private_paths(user_id: int | str, league_id: str) -> LeaguePaths:
+    return LeaguePaths.for_user_league(str(user_id), str(league_id))
+
+
+def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) -> LeaguePaths:
+    if league is None:
+        return LeaguePaths.default()
+    private = _private_paths(int(user["id"]), str(league["league_id"]))
+    if private.root.exists():
+        return private
+    # Read-only migration fallback for v2 data generated before user roots
+    # existed. New refreshes always use the private root below.
+    legacy = LeaguePaths.for_league(str(league["league_id"]))
+    return legacy if legacy.root.exists() else private
+
+
 def _serve_league_file(user: dict[str, Any], league_id: str, requested_path: str) -> FileResponse:
-    _owned_enabled_league(user, league_id)
-    paths = LeaguePaths.for_league(league_id)
+    league = _owned_enabled_league(user, league_id)
+    paths = _paths_for_user_league(user, league)
     site_dir = paths.site_dir.resolve()
     target = (site_dir / (requested_path or "index.html")).resolve()
     # SECURITY: resolved path containment blocks ../ path traversal from escaping the generated league site.
@@ -202,7 +350,12 @@ def _serve_league_file(user: dict[str, Any], league_id: str, requested_path: str
     return FileResponse(target)
 
 
-def _refresh_job(league: dict[str, Any] | None) -> dict[str, Any]:
+def _context_for_league(user_id: int, league: dict[str, Any]):
+    profile = db.get_team_profile(user_id, str(league.get("league_id") or ""))
+    return context_from_league_row(str(user_id), league, profile)
+
+
+def _refresh_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     from scripts.refresh_all import main as refresh_all
 
     if league is None:
@@ -211,48 +364,76 @@ def _refresh_job(league: dict[str, Any] | None) -> dict[str, Any]:
         # single-league refresh only runs when a specific league is named.
         from . import scheduler as front_scheduler
 
-        front_scheduler.run_cycle()
+        front_scheduler.run_cycle(user_id=user_id)
         return {"state": "complete", "message": "All leagues refreshed and attention queue rebuilt."}
+    context = _context_for_league(user_id, league)
     refresh_all(
-            force=True,
-            league_id=str(league["league_id"]),
-            roster_id=league.get("roster_id"),
-            paths=LeaguePaths.for_league(str(league["league_id"])),
-        )
+        force=True,
+        league_id=str(league["league_id"]),
+        roster_id=league.get("roster_id"),
+        paths=_private_paths(user_id, str(league["league_id"])),
+        league_type=str(league.get("league_type") or "dynasty"),
+        context=context,
+    )
     return {"state": "complete", "message": "Data refresh complete."}
 
 
-def _generate_insights_job(league: dict[str, Any] | None) -> dict[str, Any]:
+def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     if league is None:
-        from scripts.refresh_all import main as refresh_all
+        _refresh_job(None, user_id)
+        results: dict[str, Any] = {}
+        for row in db.list_user_leagues(user_id):
+            if not int(row.get("enabled")):
+                continue
+            paths = _private_paths(user_id, str(row["league_id"]))
+            context = _context_for_league(user_id, row)
+            article_result = front_operator.generate_articles_workflow(paths, context)
+            _rebuild_browser_job(row, user_id)
+            results[str(row["league_id"])] = article_result
+        return {"state": "complete", "message": "All league writers and browser bundles rebuilt.", "leagues": results}
+    _refresh_job(league, user_id)
+    paths = _private_paths(user_id, str(league["league_id"]))
+    context = _context_for_league(user_id, league)
+    result = front_operator.generate_articles_workflow(paths, context)
+    _rebuild_browser_job(league, user_id)
+    return result | {"message": "League refreshed, writers run, and browser bundle rebuilt."}
 
-        refresh_all(force=True)
-        result = front_operator.generate_articles_workflow()
-        front_operator.rebuild_browser()
-        return result
-    _refresh_job(league)
-    _rebuild_browser_job(league)
-    return {"state": "complete", "message": "League refreshed and browser bundle rebuilt."}
 
-
-def _rebuild_browser_job(league: dict[str, Any] | None) -> dict[str, Any]:
+def _rebuild_browser_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     if league is None:
-        return front_operator.rebuild_browser()
-    paths = LeaguePaths.for_league(str(league["league_id"]))
-    path = build_browser_site(paths.site_dir, paths.processed_dir, paths.analysis_dir)
+        rebuilt = []
+        for row in db.list_user_leagues(user_id):
+            if not int(row.get("enabled")):
+                continue
+            rebuilt.append(_rebuild_browser_job(row, user_id))
+        return {"state": "complete", "message": "Browser bundles rebuilt.", "leagues": rebuilt}
+    paths = _private_paths(user_id, str(league["league_id"]))
+    path = build_browser_site(
+        paths.site_dir,
+        paths.processed_dir,
+        paths.analysis_dir,
+        league_type=str(league.get("league_type") or "dynasty"),
+        league_id=str(league.get("league_id") or ""),
+    )
     return {"state": "complete", "message": "Browser bundle rebuilt.", "site_path": str(path.as_posix())}
 
 
-def _league_view(row: dict[str, Any]) -> dict[str, Any]:
+def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, Any]:
     view = dict(row)
     view["enabled"] = bool(row.get("enabled"))
-    view["refresh_status"] = _refresh_status(str(row.get("league_id") or ""))
+    view["refresh_status"] = _refresh_status(str(row.get("league_id") or ""), user_id)
     view["refresh_freshness"] = _refresh_freshness(view["refresh_status"])
     return view
 
 
-def _refresh_status(league_id: str) -> dict[str, Any] | None:
-    path = LeaguePaths.for_league(league_id).site_dir / "refresh_status.json"
+def _refresh_status(league_id: str, user_id: int | None = None) -> dict[str, Any] | None:
+    if user_id is not None:
+        private = _private_paths(user_id, league_id)
+        path = private.site_dir / "refresh_status.json"
+        if not path.exists():
+            path = LeaguePaths.for_league(league_id).site_dir / "refresh_status.json"
+    else:
+        path = LeaguePaths.for_league(league_id).site_dir / "refresh_status.json"
     if not path.exists():
         return None
     try:
@@ -293,11 +474,38 @@ def _attention_view(item: Any) -> dict[str, Any]:
     }
 
 
-def _load_attention_safe() -> list[Any]:
+def _load_attention_safe(user_id: int | None = None) -> list[Any]:
     try:
-        return load_attention()
-    except FileNotFoundError:
+        return load_attention(user_id=user_id) if user_id is not None else load_attention()
+    except (FileNotFoundError, OSError, ValueError):
         return []
+
+
+def _legacy_config() -> dict[str, Any]:
+    try:
+        return load_config()
+    except (OSError, ValueError):
+        return {}
+
+
+def _operator_status_for_user(user_id: int) -> dict[str, Any]:
+    statuses = []
+    for league in db.list_user_leagues(user_id):
+        if not int(league.get("enabled")):
+            continue
+        statuses.append(
+            front_operator.status(_private_paths(user_id, str(league["league_id"])))
+            | {"league_id": str(league["league_id"]), "league_name": league.get("name", "")}
+        )
+    if not statuses:
+        return {"state": "idle", "message": "No enabled league workspaces yet.", "leagues": []}
+    if any(item.get("state") == "running" for item in statuses):
+        state = "running"
+    elif any(item.get("state") == "failed" for item in statuses):
+        state = "failed"
+    else:
+        state = "complete"
+    return {"state": state, "leagues": statuses, "updated_at": max(item.get("updated_at", "") for item in statuses)}
 
 
 app = create_app()

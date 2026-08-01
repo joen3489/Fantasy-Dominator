@@ -332,6 +332,64 @@
         color: var(--muted);
         background: var(--info-bg);
       }
+      .profile-panel {
+        display: grid;
+        gap: 11px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+      .profile-panel h2 {
+        margin: 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+      }
+      .profile-panel p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      .profile-grid {
+        display: grid;
+        gap: 9px;
+      }
+      .profile-grid label {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .profile-grid input,
+      .profile-grid select,
+      .profile-grid textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 9px 10px;
+        color: var(--ink);
+        background: #fbfcf8;
+      }
+      .profile-grid textarea {
+        min-height: 58px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      .profile-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .profile-status {
+        min-height: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .profile-status.error { color: var(--sell); }
       .empty-feed {
         margin: 4px 2px;
         color: var(--muted);
@@ -382,6 +440,46 @@
             <input name="sleeper_username" autocomplete="username" placeholder="Sleeper username" aria-label="Sleeper username">
             <input type="hidden" name="season" value="2026">
             <button class="primary-button" type="submit">Find leagues</button>
+          </form>
+        </section>
+      {% endif %}
+
+      {% if enabled_leagues %}
+        <section class="profile-panel" aria-labelledby="profile-title">
+          <h2 id="profile-title">Team strategy profile</h2>
+          <p>These settings belong to the selected league only. They shape manager trade reads and future writer preferences.</p>
+          <form data-profile-form>
+            <div class="profile-grid">
+              <label>League
+                <select data-profile-league aria-label="League profile">
+                  {% for league in enabled_leagues %}
+                    <option value="{{ league.league_id }}">{{ league.name or league.league_id }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Team name
+                <input data-profile-field="team_name" autocomplete="organization">
+              </label>
+              <label>Sleeper display name
+                <input data-profile-field="display_name" autocomplete="nickname">
+              </label>
+              <label>Strategy name
+                <input data-profile-field="strategy_name" placeholder="Contend, rebuild, balanced...">
+              </label>
+              <label>Team direction
+                <input data-profile-field="team_direction" placeholder="contend, rebuild, retool...">
+              </label>
+              <label>Contention window
+                <input data-profile-field="contention_window" placeholder="2026-2028">
+              </label>
+              <label>Writer preferences JSON
+                <textarea data-profile-field="writer_preferences" spellcheck="false">{}</textarea>
+              </label>
+            </div>
+            <div class="profile-actions">
+              <button class="primary-button" type="submit">Save league profile</button>
+              <span class="profile-status" data-profile-status role="status"></span>
+            </div>
           </form>
         </section>
       {% endif %}
@@ -499,6 +597,76 @@
               submit.textContent = 'Try again';
             }
           });
+        }
+
+        const profileForm = document.querySelector('[data-profile-form]');
+        if (profileForm) {
+          const profileLeague = profileForm.querySelector('[data-profile-league]');
+          const profileStatus = profileForm.querySelector('[data-profile-status]');
+          const profileField = (name) => profileForm.querySelector('[data-profile-field="' + name + '"]');
+
+          const loadProfile = async () => {
+            const leagueId = profileLeague.value;
+            profileStatus.className = 'profile-status';
+            profileStatus.textContent = 'Loading profile';
+            try {
+              const response = await fetch('/api/leagues/' + encodeURIComponent(leagueId) + '/profile', {cache: 'no-store'});
+              if (!response.ok) throw new Error('profile load failed (' + response.status + ')');
+              const profile = await response.json();
+              const strategy = profile.strategy_profile || {};
+              profileField('team_name').value = profile.team_name || '';
+              profileField('display_name').value = profile.display_name || '';
+              profileField('strategy_name').value = profile.strategy_name || strategy.name || '';
+              profileField('team_direction').value = profile.team_direction || strategy.team_direction || '';
+              profileField('contention_window').value = profile.contention_window || strategy.contention_window || '';
+              profileField('writer_preferences').value = JSON.stringify(profile.writer_preferences || {}, null, 2);
+              profileStatus.textContent = 'Loaded for this league';
+            } catch (error) {
+              profileStatus.className = 'profile-status error';
+              profileStatus.textContent = error.message;
+            }
+          };
+
+          profileLeague.addEventListener('change', loadProfile);
+          profileForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            let writerPreferences = {};
+            try {
+              writerPreferences = JSON.parse(profileField('writer_preferences').value || '{}');
+            } catch (error) {
+              profileStatus.className = 'profile-status error';
+              profileStatus.textContent = 'Writer preferences must be valid JSON';
+              return;
+            }
+            const strategyProfile = {
+              name: profileField('strategy_name').value.trim(),
+              team_direction: profileField('team_direction').value.trim(),
+              contention_window: profileField('contention_window').value.trim(),
+            };
+            profileStatus.className = 'profile-status';
+            profileStatus.textContent = 'Saving profile';
+            try {
+              const response = await fetch('/api/leagues/' + encodeURIComponent(profileLeague.value) + '/profile', {
+                method: 'PUT',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({
+                  team_name: profileField('team_name').value.trim(),
+                  display_name: profileField('display_name').value.trim(),
+                  strategy_name: strategyProfile.name,
+                  team_direction: strategyProfile.team_direction,
+                  contention_window: strategyProfile.contention_window,
+                  strategy_profile: strategyProfile,
+                  writer_preferences: writerPreferences,
+                }),
+              });
+              if (!response.ok) throw new Error('profile save failed (' + response.status + ')');
+              profileStatus.textContent = 'Saved for this league';
+            } catch (error) {
+              profileStatus.className = 'profile-status error';
+              profileStatus.textContent = error.message;
+            }
+          });
+          loadProfile();
         }
 
         const button = document.querySelector('[data-refresh-button]');

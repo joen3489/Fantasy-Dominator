@@ -21,6 +21,7 @@ from typing import Any
 
 from scripts.refresh_all import refresh_user
 from src.attention import build_user_attention, save_attention
+from src.league_paths import USERS_ROOT, _safe_component
 from src.league_registry import load_registry
 from src.utils import DATA_DIR, load_config
 
@@ -39,7 +40,7 @@ def refresh_interval_seconds() -> int:
         return DEFAULT_INTERVAL_SECONDS
 
 
-def run_cycle(now: datetime | None = None) -> dict[str, Any]:
+def run_cycle(now: datetime | None = None, user_id: int | str | None = None) -> dict[str, Any]:
     """One full refresh cycle: every linked user's leagues, then the attention queue.
 
     Pure enough to call from tests and from the operator's manual-refresh path; the thread
@@ -48,33 +49,38 @@ def run_cycle(now: datetime | None = None) -> dict[str, Any]:
     started_at = (now or datetime.now(timezone.utc)).isoformat()
     season = str(load_config().get("current_season", ""))
     cycle: dict[str, Any] = {"state": "running", "started_at": started_at, "users": {}}
-    _write_status(cycle)
+    _write_status(cycle, user_id=user_id)
 
     any_failure = False
-    for user in db.list_users_with_sleeper():
+    users = db.list_users_with_sleeper()
+    if user_id is not None:
+        users = [user for user in users if str(user.get("id")) == str(user_id)]
+    for user in users:
         username = str(user.get("sleeper_username") or "")
         if not username:
             continue
         try:
-            league_statuses = refresh_user(username, season)
+            scoped_user_id = int(user["id"])
+            league_statuses = refresh_user(username, season, user_id=scoped_user_id)
             cycle["users"][username] = league_statuses
             if any(status.get("state") == "failed" for status in league_statuses.values()):
                 any_failure = True
+
+            try:
+                entries = load_registry(user_id=scoped_user_id)
+                items = build_user_attention(entries, user_id=scoped_user_id)
+                save_attention(items, user_id=scoped_user_id)
+                cycle.setdefault("attention_items", {})[username] = len(items)
+            except Exception as exc:  # noqa: BLE001 - one user's queue must not stop others.
+                any_failure = True
+                cycle.setdefault("attention_errors", {})[username] = f"{type(exc).__name__}: {exc}"
         except Exception as exc:  # noqa: BLE001 - one user failing must not kill the cycle.
             any_failure = True
             cycle["users"][username] = {"state": "failed", "message": f"{type(exc).__name__}: {exc}"}
 
-    try:
-        items = build_user_attention(load_registry())
-        save_attention(items)
-        cycle["attention_items"] = len(items)
-    except Exception as exc:  # noqa: BLE001 - queue rebuild failure is loud but not fatal.
-        any_failure = True
-        cycle["attention_error"] = f"{type(exc).__name__}: {exc}"
-
     cycle["state"] = "complete_with_failures" if any_failure else "complete"
     cycle["finished_at"] = datetime.now(timezone.utc).isoformat()
-    _write_status(cycle)
+    _write_status(cycle, user_id=user_id)
     return cycle
 
 
@@ -102,16 +108,24 @@ def start_scheduler() -> None:
     threading.Thread(target=loop, daemon=True, name="front-office-scheduler").start()
 
 
-def load_status() -> dict[str, Any]:
+def load_status(user_id: int | str | None = None) -> dict[str, Any]:
+    path = _status_path(user_id)
     try:
-        return json.loads(SCHEDULER_STATUS_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"state": "never_run"}
 
 
-def _write_status(payload: dict[str, Any]) -> None:
+def _write_status(payload: dict[str, Any], user_id: int | str | None = None) -> None:
+    path = _status_path(user_id)
     try:
-        SCHEDULER_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SCHEDULER_STATUS_PATH.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     except OSError:
         pass
+
+
+def _status_path(user_id: int | str | None = None) -> Path:
+    if user_id is None:
+        return SCHEDULER_STATUS_PATH
+    return USERS_ROOT / _safe_component(str(user_id), "user") / "scheduler_status.json"
