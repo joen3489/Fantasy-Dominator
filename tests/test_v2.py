@@ -46,6 +46,39 @@ def _write_complete_bundle(site_dir: Path, html: str, editorial: dict | None = N
     (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}}), encoding="utf-8")
 
 
+def _write_writer_brief(
+    analysis_dir: Path,
+    text: str,
+    *,
+    persona_id: str = "scout",
+    mode: str = "deterministic_template",
+) -> None:
+    """Write the private markdown artifact surfaced by the headquarters preview."""
+
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    (analysis_dir / "daily_gm_brief.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "artifact_type: daily_gm_brief",
+                "generated_at: 2026-08-22T19:19:09+00:00",
+                f"model_mode: {mode}",
+                f"reporter_persona: {persona_id}",
+                "---",
+                "",
+                "# Daily GM Brief: Private Team",
+                "",
+                text,
+                "",
+                "## Evidence",
+                "",
+                "- Confirmed league signal.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 class MultiLeagueLayerTests(unittest.TestCase):
     def test_classify_league_handles_known_and_missing_settings(self) -> None:
         self.assertEqual(classify_league({"settings": {"type": 2}}), "dynasty")
@@ -700,6 +733,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         status_path = self.leagues_root / "alpha" / "site" / "refresh_status.json"
         status_path.parent.mkdir(parents=True)
         status_path.write_text(json.dumps({"state": "complete", "updated_at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
+        _write_writer_brief(
+            self.tmp_path / "users" / str(user_id) / "leagues" / "alpha" / "analysis",
+            "Alpha's private read: protect the young receiver and wait for the next usage spike.",
+        )
         _write_complete_bundle(
             status_path.parent,
             "<h1>Alpha edition</h1>",
@@ -786,6 +823,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Edition:", html)
         self.assertIn("#view-draft-room", html)
         self.assertIn('data-testid="front-page"', html)
+        self.assertIn('data-testid="writer-preview"', html)
+        self.assertIn("Alpha&#39;s private read", html)
+        self.assertIn("Evidence-led fallback", html)
+        self.assertIn("Read the full brief", html)
         self.assertIn("Your rookie receiver is the morning", html)
         self.assertIn("A rival is buying the wrong window", html)
         self.assertIn("Your leagues, edited into a daily read.", html)
@@ -850,6 +891,53 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Alpha focus headline", fallback.text)
         self.assertIn("Beta focus headline", fallback.text)
         self.assertIn("In focus: <strong>Alpha League</strong>", fallback.text)
+
+    def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
+        token = self._token("user_writer_preview")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_preview")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha League", "roster_id": 1},
+        )
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "beta", "season": "2026", "league_type": "redraft", "name": "Beta League", "roster_id": 2},
+        )
+        _write_writer_brief(
+            self.tmp_path / "users" / str(user_id) / "leagues" / "alpha" / "analysis",
+            "Alpha-only writer read.",
+            persona_id="quant",
+            mode="automatic_llm",
+        )
+        _write_writer_brief(
+            self.tmp_path / "users" / str(user_id) / "leagues" / "beta" / "analysis",
+            "Beta-only writer read.",
+            persona_id="commissioner",
+        )
+        _write_writer_brief(
+            self.tmp_path / "users" / "other-user" / "leagues" / "alpha" / "analysis",
+            "Foreign user's writer read.",
+            persona_id="front_office",
+        )
+
+        with patch("app.main.load_attention", return_value=[]):
+            alpha = self.client.get("/?league_id=alpha", cookies={"__session": token})
+            beta = self.client.get("/?league_id=beta", cookies={"__session": token})
+
+        self.assertEqual(alpha.status_code, 200)
+        self.assertIn("Alpha-only writer read.", alpha.text)
+        self.assertIn("The Quant", alpha.text)
+        self.assertIn("API reporter", alpha.text)
+        self.assertNotIn("Beta-only writer read.", alpha.text)
+        self.assertNotIn("Foreign user's writer read.", alpha.text)
+
+        self.assertEqual(beta.status_code, 200)
+        self.assertIn("Beta-only writer read.", beta.text)
+        self.assertIn("The Commissioner", beta.text)
+        self.assertIn("Evidence-led fallback", beta.text)
+        self.assertNotIn("Alpha-only writer read.", beta.text)
+        self.assertNotIn("Foreign user's writer read.", beta.text)
 
     def test_manager_trade_profiles_are_private_league_scoped_and_reach_writer_context(self) -> None:
         token = self._token("user_manager_trade_profiles")

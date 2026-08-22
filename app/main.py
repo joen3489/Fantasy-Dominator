@@ -19,7 +19,7 @@ from src.browser_site import browser_bundle_is_complete, browser_bundle_missing,
 from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
-from src.personas import public_reporter_personas
+from src.personas import persona_metadata, public_reporter_personas
 from src.sleeper_api import SleeperAPI
 from src.utils import DATA_DIR, load_config, load_json
 
@@ -801,6 +801,11 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
     view["source_receipt"] = _source_receipt_view(view["editorial"])
+    view["writer_preview"] = (
+        _load_writer_preview(user_id, view)
+        if user_id is not None
+        else {"available": False}
+    )
     view["content_status"] = (
         db.content_artifact_status(
             user_id,
@@ -825,6 +830,88 @@ def _load_editorial_issue(user_id: int, league: dict[str, Any]) -> dict[str, Any
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Load a short, escaped preview from this user's private Daily GM Brief.
+
+    The headquarters may use a legacy bundle as a read-only migration fallback,
+    but generated writing is personal customization.  Never source this preview
+    from the shared legacy league root or from another user's workspace.
+    """
+
+    empty = {
+        "available": False,
+        "text": "",
+        "mode": "",
+        "mode_label": "Not yet published",
+        "generated_at": "",
+        "generated_at_label": "",
+        "reporter_persona": "",
+        "reporter_name": "The Front Office",
+    }
+    path = _private_paths(user_id, str(league.get("league_id") or "")).analysis_dir / "daily_gm_brief.md"
+    if not path.is_file():
+        return empty
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return empty
+
+    front_matter: dict[str, str] = {}
+    body_lines = raw.splitlines()
+    if body_lines and body_lines[0].strip() == "---":
+        end = next((index for index, line in enumerate(body_lines[1:], start=1) if line.strip() == "---"), None)
+        if end is not None:
+            for line in body_lines[1:end]:
+                if ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                front_matter[key.strip()] = value.strip()
+            body_lines = body_lines[end + 1 :]
+
+    preview_lines: list[str] = []
+    skipped_title = False
+    for raw_line in body_lines:
+        line = raw_line.strip()
+        if not line:
+            if preview_lines and preview_lines[-1] != "":
+                preview_lines.append("")
+            continue
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+            if not skipped_title:
+                skipped_title = True
+                continue
+        line = line.replace("**", "").replace("__", "")
+        if line.startswith("-"):
+            line = f"• {line[1:].strip()}"
+        preview_lines.append(line)
+
+    preview = "\n".join(preview_lines).strip()
+    if not preview:
+        return empty
+    if len(preview) > 900:
+        preview = preview[:897].rsplit(" ", 1)[0].rstrip() + "…"
+
+    mode = front_matter.get("model_mode", "").strip()
+    mode_label = {
+        "automatic_llm": "API reporter",
+        "deterministic_template": "Evidence-led fallback",
+    }.get(mode, "Writer output")
+    generated_at = front_matter.get("generated_at", "").strip()
+    generated_at_label = generated_at.replace("T", " ").replace("+00:00", " UTC")
+    persona = persona_metadata({"persona_id": front_matter.get("reporter_persona", "")})
+    return {
+        "available": True,
+        "text": preview,
+        "mode": mode,
+        "mode_label": mode_label,
+        "generated_at": generated_at,
+        "generated_at_label": generated_at_label,
+        "reporter_persona": persona["persona_id"],
+        "reporter_name": persona["name"],
+    }
 
 
 def _manager_trade_profile_views(user_id: int, league: dict[str, Any]) -> list[dict[str, Any]]:

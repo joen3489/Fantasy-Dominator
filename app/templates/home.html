@@ -417,6 +417,24 @@
       .issue-empty { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
       .front-page-action { display: flex; justify-content: flex-end; }
       .front-page-action a { color: var(--accent); font-size: 13px; font-weight: 900; text-decoration: none; }
+      .writer-preview {
+        display: grid;
+        gap: 11px;
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid #c8d5ce;
+        border-radius: 10px;
+        background: #f2f7f3;
+      }
+      .writer-preview-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+      .writer-preview-heading h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 25px; line-height: 1.05; }
+      .writer-preview-kicker { color: var(--accent); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+      .writer-preview-meta { margin: 0; color: var(--muted); font-size: 11px; font-weight: 800; line-height: 1.35; }
+      .writer-preview-body { margin: 0; color: var(--ink); white-space: pre-line; font-size: 14px; line-height: 1.5; }
+      .writer-preview-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 14px; align-items: center; }
+      .writer-preview-footer a { color: var(--accent); font-size: 13px; font-weight: 900; text-decoration: none; }
+      .writer-preview-footer span { color: var(--muted); font-size: 11px; }
+      .writer-preview-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
       .empty-hero {
         display: grid;
         gap: 13px;
@@ -756,6 +774,27 @@
             {% else %}
               <p class="issue-empty">No published issue is available yet. {{ featured_league.edition_readiness.message or "Refresh this league to build its first read." }}</p>
               <div class="front-page-action"><a href="/league/{{ featured_league.league_id }}/#view-today">Open edition status →</a></div>
+            {% endif %}
+          </section>
+          {% set writer_preview = featured_league.writer_preview or {} %}
+          <section class="writer-preview" aria-labelledby="writer-preview-title" data-testid="writer-preview">
+            <div class="writer-preview-heading">
+              <div>
+                <span class="writer-preview-kicker">Latest from the desk</span>
+                <h2 id="writer-preview-title">Daily GM Brief</h2>
+              </div>
+              {% if writer_preview.available %}<span class="readiness-badge ready">{{ writer_preview.mode_label }}</span>{% endif %}
+            </div>
+            {% if writer_preview.available %}
+              <p class="writer-preview-meta">{{ writer_preview.reporter_name }}{% if writer_preview.generated_at_label %} · {{ writer_preview.generated_at_label }}{% endif %}</p>
+              <p class="writer-preview-body">{{ writer_preview.text }}</p>
+              <div class="writer-preview-footer">
+                <a href="/league/{{ featured_league.league_id }}/#view-today">Read the full brief →</a>
+                <span>Private to {{ featured_league.name or featured_league.league_id }}</span>
+              </div>
+            {% else %}
+              <p class="writer-preview-empty">The league has a published issue receipt, but its private writer brief is not available yet. Refresh the edition to assemble the first league-specific read.</p>
+              <div class="writer-preview-footer"><a href="/league/{{ featured_league.league_id }}/#view-today">Open edition status →</a></div>
             {% endif %}
           </section>
           <section class="article-shelf" aria-labelledby="article-shelf-title" data-testid="article-shelf">
