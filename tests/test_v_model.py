@@ -1292,6 +1292,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Player dossier rows", html)
         self.assertIn("Player profile tag rows", html)
         self.assertIn("Draft Room", html)
+        self.assertIn("Draft feed", html)
         self.assertIn('id="view-draft-room"', html)
         self.assertIn("function renderDraftRoom", html)
         self.assertIn("Usage rows", html)
@@ -1344,6 +1345,7 @@ class VModelTests(unittest.TestCase):
         # undefined client-side (this crashed render() until caught by manual browser
         # verification, since HTML-string assertions alone don't execute the JS).
         self.assertIn("today_priority_board", bundle["tables"])
+        self.assertIn("drafts", bundle["tables"])
         self.assertEqual(bundle["draftRoom"]["schema_version"], "draft_room_v1")
         self.assertTrue(draft_room_exists)
 
@@ -1373,6 +1375,13 @@ class VModelTests(unittest.TestCase):
                 ],
                 "pick_market_values": [{"pick_season": "2027", "round": 1, "market_value": "", "ranking_value": 33, "value_status": "rank_only"}],
                 "source_freshness": [{"source": "dynastyprocess", "dataset": "pick_values", "status": "refreshed"}],
+                "drafts": [{
+                    "season": "2026",
+                    "draft_id": "draft-2026",
+                    "status": "complete",
+                    "type": "linear",
+                    "settings": json.dumps({"rounds": 4, "teams": 12, "pick_timer": 28800}),
+                }],
             },
             {"current_season": "2026", "strategy_profile": {"name": "Rebuild"}, "tracked_picks": [{"pick_season": "2027", "round": 1, "priority": "major_reacquisition_target"}]},
             league_id="league-1",
@@ -1397,6 +1406,10 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(room["pick_leverage"][0]["value_source"], "internal_round_curve")
         self.assertEqual(room["pick_leverage"][0]["priority"], "major_reacquisition_target")
         self.assertTrue(room["pick_leverage"][1]["ownership_status"] == "your_original_pick_away")
+        self.assertEqual(room["draft_context"]["status"], "complete")
+        self.assertEqual(room["draft_context"]["rounds"], 4)
+        self.assertEqual(room["draft_context"]["teams"], 12)
+        self.assertIn("preparation board", room["draft_context"]["message"])
 
     def test_dynastyprocess_pick_rank_file_is_not_presented_as_trade_value(self) -> None:
         frame = _normalize_pick_values(
@@ -1409,6 +1422,18 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(row["market_value"], "")
         self.assertEqual(row["ranking_value"], 33.7)
         self.assertEqual(row["value_status"], "rank_only")
+
+    def test_draft_room_is_honest_when_no_draft_event_is_confirmed(self) -> None:
+        room = build_draft_room(
+            {},
+            {"current_season": "2026"},
+            league_id="no-draft-event",
+            my_roster_id=2,
+            my_team_name="Prep Team",
+        )
+
+        self.assertEqual(room["draft_context"]["status"], "unavailable")
+        self.assertIn("No 2026 draft event", room["draft_context"]["message"])
 
     def test_browser_surface_accepts_explicit_league_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

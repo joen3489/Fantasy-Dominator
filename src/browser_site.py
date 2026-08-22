@@ -32,6 +32,7 @@ def build_browser_site(
         "pick_ownership": _records(processed_dir / "pick_ownership.csv"),
         "trades": _records(processed_dir / "trades.csv"),
         "waivers": _records(processed_dir / "waivers.csv"),
+        "drafts": _records(processed_dir / "drafts.csv"),
         "draft_picks": _records(processed_dir / "draft_picks.csv"),
         "refresh_metadata": _records(processed_dir / "refresh_metadata.csv"),
         "player_usage_weekly": _records(processed_dir / "player_usage_weekly.csv"),
@@ -2139,15 +2140,20 @@ def _page(
     function draftRoomStatus(room) {{
       const team = room.team || {{}};
       const summary = room.summary || {{}};
+      const draft = room.draft_context || {{}};
       const needs = Object.entries(team.needs || {{}})
         .filter(([, value]) => value && value !== 'unknown')
         .map(([position, value]) => `${{position}}: ${{value}}`)
         .join(' · ');
       const posture = team.team_direction || team.team_shape || 'team posture unavailable';
       const unconfirmed = Number(summary.unconfirmed_player_count || 0);
+      const draftType = draft.draft_type && draft.draft_type !== 'unknown' ? ` · ${{draft.draft_type}}` : '';
+      const draftTimer = draft.pick_timer_seconds ? ` · ${{Math.round(Number(draft.pick_timer_seconds) / 60)}} min pick timer` : '';
+      const draftFormat = draft.rounds && draft.teams ? `${{draft.rounds}} rounds · ${{draft.teams}} teams${{draftType}}${{draftTimer}}` : 'format not recorded';
+      const draftNote = `Draft feed: ${{draft.label || 'Status unavailable'}} · ${{draftFormat}}. ${{draft.message || 'Draft event status is not available from the confirmed feed.'}}`;
       const identityNote = unconfirmed
-        ? `${{unconfirmed}} market name${{unconfirmed === 1 ? '' : 's'}} still need Sleeper confirmation before draft use.`
-        : 'Market-board identities are linked or uniquely matched to Sleeper.';
+        ? `${{unconfirmed}} market name${{unconfirmed === 1 ? '' : 's'}} still need Sleeper confirmation before draft use. ${{draftNote}}`
+        : `Market-board identities are linked or uniquely matched to Sleeper. ${{draftNote}}`;
       return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
     }}
 

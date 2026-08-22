@@ -8,6 +8,7 @@ one usable draft-season workflow while keeping every read traceable to a
 source, a model table, or an explicitly named internal curve.
 """
 
+import json
 from typing import Any, Iterable
 
 
@@ -59,6 +60,7 @@ def build_draft_room(
         my_roster_id,
         tables.get("draft_picks", []),
     )
+    draft_context = _draft_context(tables.get("drafts", []), season)
 
     pick_value_rows = [row for row in tables.get("pick_market_values", []) if _number(row.get("market_value")) > 0]
     market_rows = [row for row in tables.get("player_market_values", []) if _number(row.get("market_value")) > 0]
@@ -87,6 +89,7 @@ def build_draft_room(
             "owned_pick_count": sum(row["ownership_status"] == "owned_by_you" for row in pick_leverage),
             "original_picks_away": sum(row["ownership_status"] == "your_original_pick_away" for row in pick_leverage),
         },
+        "draft_context": draft_context,
         "draft_board": draft_board,
         "trade_targets": trade_targets,
         "fades": fades,
@@ -337,6 +340,77 @@ def _source_health(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for row in rows
         if row.get("source")
     ]
+
+
+def _draft_context(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
+    """Describe the confirmed draft feed without implying an upcoming event exists."""
+
+    normalized = [row for row in rows if isinstance(row, dict)]
+    current = [row for row in normalized if str(row.get("season", "")) == str(season)]
+    selected = current[0] if current else None
+    latest = max(
+        normalized,
+        key=lambda row: _int(row.get("season")),
+        default=None,
+    )
+    if selected is None and latest is None:
+        return {
+            "status": "unavailable",
+            "label": "No confirmed draft event",
+            "message": (
+                f"No {season or 'current-season'} draft event is present in the confirmed Sleeper feed; "
+                "this room is using roster, market, and pick data for preparation."
+            ),
+            "source": "Sleeper draft feed",
+            "source_season": "",
+            "rounds": 0,
+            "teams": 0,
+            "pick_timer_seconds": 0,
+        }
+
+    selected = selected or latest or {}
+    source_season = str(selected.get("season") or "")
+    status = str(selected.get("status") or "unknown").strip().lower()
+    settings = selected.get("settings") or {}
+    if isinstance(settings, str):
+        try:
+            settings = json.loads(settings)
+        except (TypeError, ValueError):
+            settings = {}
+    if not isinstance(settings, dict):
+        settings = {}
+
+    is_current = source_season == str(season)
+    if is_current:
+        label = {
+            "pre_draft": "Upcoming draft",
+            "drafting": "Draft in progress",
+            "paused": "Draft paused",
+            "complete": "Latest draft complete",
+        }.get(status, "Current draft status unknown")
+        message = (
+            f"The confirmed {source_season} Sleeper draft is {status.replace('_', ' ')}. "
+            "This room is the preparation board for the next decision window."
+        )
+    else:
+        label = f"No {season or 'current-season'} draft event"
+        message = (
+            f"No {season or 'current-season'} draft event is present in the confirmed Sleeper feed. "
+            f"The latest confirmed draft is {source_season} ({status.replace('_', ' ')}); "
+            "this room uses current roster, market, and pick data for preparation."
+        )
+    return {
+        "draft_id": str(selected.get("draft_id") or ""),
+        "status": status,
+        "label": label,
+        "message": message,
+        "source": "Sleeper draft feed",
+        "source_season": source_season,
+        "draft_type": str(selected.get("type") or "unknown"),
+        "rounds": _int(settings.get("rounds")),
+        "teams": _int(settings.get("teams")),
+        "pick_timer_seconds": _int(settings.get("pick_timer")),
+    }
 
 
 def _current_rows(rows: list[dict[str, Any]], season: str, key: str) -> list[dict[str, Any]]:
