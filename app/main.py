@@ -99,6 +99,7 @@ def create_app() -> FastAPI:
             "no",
             "off",
         }
+        deployment_gate = _production_gate()
         return {
             "ok": True,
             "auth_mode": auth_mode,
@@ -113,6 +114,8 @@ def create_app() -> FastAPI:
             "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
             "scheduler_enabled": scheduler_enabled,
+            "deployment_ready": deployment_gate["ready"],
+            "deployment_blockers": deployment_gate["blockers"],
         }
 
     @app.get("/login", response_class=HTMLResponse)
@@ -126,6 +129,7 @@ def create_app() -> FastAPI:
                 "publishable_key": publishable_key,
                 "clerk_js_url": _clerk_js_url(publishable_key),
                 "redirect_url": _public_home_url(request),
+                "deployment_gate": _production_gate(),
             },
         )
 
@@ -155,6 +159,7 @@ def create_app() -> FastAPI:
                 "writer_personas": public_reporter_personas(),
                 "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
                 "continuity": _continuity_view(user_id),
+                "deployment_gate": _production_gate(),
             },
         )
 
@@ -180,6 +185,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        _require_deployment_ready()
         entries = discover_leagues(SleeperAPI(), body.sleeper_username, body.season)
         user_id = int(user["id"])
         db.set_sleeper_username(user_id, body.sleeper_username)
@@ -194,6 +200,7 @@ def create_app() -> FastAPI:
     def refresh_user_leagues(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         """Refresh the signed-in user's leagues without exposing operator actions."""
 
+        _require_deployment_ready()
         user_id = int(user["id"])
         return front_operator.start_job(
             "refresh",
@@ -206,6 +213,7 @@ def create_app() -> FastAPI:
         body: ToggleLeagueBody | None = None,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
+        _require_deployment_ready()
         row = db.toggle_league(int(user["id"]), league_id, None if body is None else body.enabled)
         if row is None:
             raise HTTPException(status_code=404, detail="league not found")
@@ -228,6 +236,7 @@ def create_app() -> FastAPI:
         body: TeamProfileBody,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
+        _require_deployment_ready()
         league = _owned_league(user, league_id)
         profile = body.model_dump() if hasattr(body, "model_dump") else body.dict()
         profile.update(
@@ -364,6 +373,46 @@ def _clerk_key_mode(publishable_key: str) -> str:
     if publishable_key.startswith("pk_test_"):
         return "development"
     return "unknown" if publishable_key else "not_configured"
+
+
+def _production_gate() -> dict[str, Any]:
+    """Describe whether a deployed instance is safe to use as a personal headquarters.
+
+    Local development intentionally stays open.  A Railway deployment with a
+    development Clerk key or an unset data root must not invite the user to
+    link leagues into an ephemeral or wrong identity store.
+    """
+
+    deployed = bool(
+        os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        or os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+    )
+    if not deployed:
+        return {"deployed": False, "ready": True, "blockers": []}
+
+    blockers: list[str] = []
+    publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
+    if _clerk_key_mode(publishable_key) != "live":
+        blockers.append("Use a live Clerk publishable key for production authentication.")
+    if not os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip():
+        blockers.append("Mount the durable application volume and set FRONT_OFFICE_DATA_DIR.")
+    if not db.storage_health().get("database_schema_ready"):
+        blockers.append("Initialize the application database schema before opening the headquarters.")
+    if not os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip():
+        blockers.append("Set FRONT_OFFICE_OPERATOR_TOKEN before enabling protected writes.")
+    scheduler_value = os.environ.get("FRONT_OFFICE_SCHEDULER", "on").lower()
+    if scheduler_value in {"0", "false", "no", "off"}:
+        blockers.append("Enable FRONT_OFFICE_SCHEDULER for automatic league freshness.")
+    return {"deployed": True, "ready": not blockers, "blockers": blockers}
+
+
+def _require_deployment_ready() -> None:
+    gate = _production_gate()
+    if gate["deployed"] and not gate["ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail="Production setup is incomplete. Repair the deployment before linking or refreshing leagues.",
+        )
 
 
 def _public_home_url(request: Request) -> str:

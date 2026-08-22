@@ -68,6 +68,9 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
         errors.append("FRONT_OFFICE_OPERATOR_TOKEN is not configured for protected writes")
     if payload.get("scheduler_enabled") is not True:
         errors.append("FRONT_OFFICE_SCHEDULER is disabled")
+    if "deployment_ready" in payload and payload.get("deployment_ready") is not True:
+        blockers = payload.get("deployment_blockers") or ["the deployment gate is not ready"]
+        errors.append("deployment gate is not ready: " + "; ".join(str(blocker) for blocker in blockers))
     if payload.get("writer_api_configured") is not True:
         warnings.append("ANTHROPIC_API_KEY is not configured; only deterministic editions are available")
     return errors, warnings

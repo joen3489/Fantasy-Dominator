@@ -19,12 +19,13 @@
       }
       a, button { color: #0f5c4a; }
       .tagline { color: #a23f2d; font-weight: 700; }
+      .setup-list { padding-left: 20px; line-height: 1.6; }
     </style>
   </head>
   <body>
     <main>
       <p class="tagline">Find the market leak, then pretend it was obvious all along.</p>
-      {% if publishable_key %}
+      {% if publishable_key and ((deployment_gate or {}).deployed == false or (deployment_gate or {}).ready) %}
         <h1>Sign in to the Front Office.</h1>
         <p>Hold the clipboard. The auth bouncer is checking names.</p>
         <div id="sign-in"></div>
@@ -74,6 +75,15 @@
             boot();
           })();
         </script>
+      {% elif publishable_key %}
+        <h1>Production setup incomplete.</h1>
+        <p>The front office is deliberately holding the door until its identity and durable store are configured.</p>
+        <ul class="setup-list">
+          {% for blocker in (deployment_gate or {}).blockers or [] %}
+            <li>{{ blocker }}</li>
+          {% endfor %}
+        </ul>
+        <p>Do not reconnect Sleeper while this message is shown; that could create a new workspace in the wrong store.</p>
       {% else %}
         <h1>Auth is not configured.</h1>
         <p>Set <code>CLERK_PUBLISHABLE_KEY</code> before asking the front office to open the door.</p>

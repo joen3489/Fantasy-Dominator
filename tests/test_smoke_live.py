@@ -50,6 +50,26 @@ class LiveSmokeContractTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(len(warnings), 1)
 
+    def test_health_rejects_explicit_deployment_gate_blockers(self) -> None:
+        errors, _ = validate_health_payload(
+            {
+                "ok": True,
+                "auth_mode": "live",
+                "auth_configuration_ready": True,
+                "public_url_ready": True,
+                "data_root_configured": True,
+                "database_present": True,
+                "database_schema_ready": True,
+                "operator_token_configured": True,
+                "scheduler_enabled": True,
+                "deployment_ready": False,
+                "deployment_blockers": ["durable store missing"],
+                "writer_api_configured": True,
+            }
+        )
+
+        self.assertIn("deployment gate is not ready: durable store missing", errors)
+
     def test_edition_bundle_requires_facts_analysis_and_source_receipts(self) -> None:
         errors = validate_edition_bundle(
             {

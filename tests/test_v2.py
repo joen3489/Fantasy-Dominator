@@ -429,13 +429,40 @@ class FastAPIClerkAppTests(unittest.TestCase):
     def test_login_uses_railway_public_domain_when_explicit_url_is_unset(self) -> None:
         with patch.dict(
             os.environ,
-            {"FRONT_OFFICE_PUBLIC_URL": "", "RAILWAY_PUBLIC_DOMAIN": "fantasy.test"},
+            {
+                "FRONT_OFFICE_PUBLIC_URL": "",
+                "RAILWAY_PUBLIC_DOMAIN": "fantasy.test",
+                "CLERK_PUBLISHABLE_KEY": "pk_live_123",
+                "FRONT_OFFICE_DATA_DIR": "/app/data",
+                "FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret",
+                "FRONT_OFFICE_SCHEDULER": "on",
+            },
             clear=False,
         ):
             response = self.client.get("/login")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('forceRedirectUrl: "https://fantasy.test/"', response.text)
+
+    def test_login_blocks_unready_railway_deployment(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RAILWAY_PUBLIC_DOMAIN": "fantasy.test",
+                "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_DATA_DIR": "",
+                "FRONT_OFFICE_OPERATOR_TOKEN": "",
+                "FRONT_OFFICE_SCHEDULER": "on",
+            },
+            clear=False,
+        ):
+            response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Production setup incomplete", response.text)
+        self.assertIn("live Clerk publishable key", response.text)
+        self.assertIn("FRONT_OFFICE_DATA_DIR", response.text)
+        self.assertNotIn("mountSignIn", response.text)
 
     def test_healthz_reports_safe_deployment_signals(self) -> None:
         with patch.dict(
@@ -467,6 +494,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "writer_api_configured": False,
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
+                "deployment_ready": True,
+                "deployment_blockers": [],
             },
         )
 
@@ -709,6 +738,29 @@ class FastAPIClerkAppTests(unittest.TestCase):
         stored = db.list_user_leagues(self._user_id("user_link"))
         self.assertEqual(stored[0]["name"], "Linked")
 
+    def test_unready_railway_blocks_linking_into_ephemeral_store(self) -> None:
+        token = self._token("user_unready_link")
+        with patch.dict(
+            os.environ,
+            {
+                "RAILWAY_PUBLIC_DOMAIN": "fantasy.test",
+                "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_DATA_DIR": "",
+                "FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret",
+                "FRONT_OFFICE_SCHEDULER": "on",
+            },
+            clear=False,
+        ):
+            with patch("app.main.discover_leagues") as discover:
+                response = self.client.post(
+                    "/api/leagues/link",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"sleeper_username": "joe", "season": "2026"},
+                )
+
+        self.assertEqual(response.status_code, 503)
+        discover.assert_not_called()
+
     def test_operator_endpoint_requires_auth_and_invokes_start_job(self) -> None:
         unauthenticated = self.client.post("/api/operator/refresh", json={})
         with patch("app.main.front_operator.start_job", return_value={"accepted": True}) as start_job:
@@ -927,6 +979,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("writer_api_configured", payload)
         self.assertIn("operator_token_configured", payload)
         self.assertIn("scheduler_enabled", payload)
+        self.assertIn("deployment_ready", payload)
+        self.assertIn("deployment_blockers", payload)
 
     def _token(
         self,

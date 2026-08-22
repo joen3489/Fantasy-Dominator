@@ -434,6 +434,19 @@
         font-size: 14px;
         line-height: 1.4;
       }
+      .deployment-gate {
+        display: grid;
+        gap: 9px;
+        padding: 16px;
+        border: 1px solid #dfb8ad;
+        border-left: 4px solid var(--sell);
+        border-radius: 8px;
+        background: var(--sell-bg);
+      }
+      .deployment-gate h2, .deployment-gate p { margin: 0; }
+      .deployment-gate h2 { font-size: 18px; line-height: 1.15; }
+      .deployment-gate p, .deployment-gate li { color: #6f3a30; font-size: 13px; line-height: 1.4; }
+      .deployment-gate ul { margin: 0; padding-left: 20px; }
       .link-row {
         display: grid;
         gap: 9px;
@@ -607,6 +620,18 @@
     </header>
 
     <main>
+      {% if (deployment_gate or {}).deployed and not (deployment_gate or {}).ready %}
+        <section class="deployment-gate" data-testid="deployment-gate" aria-labelledby="deployment-gate-title">
+          <h2 id="deployment-gate-title">Production setup incomplete</h2>
+          <p>The Front Office is protecting your league workspace until its identity and durable store are ready.</p>
+          <ul>
+            {% for blocker in (deployment_gate or {}).blockers or [] %}
+              <li>{{ blocker }}</li>
+            {% endfor %}
+          </ul>
+          <p>Do not link Sleeper again while this warning is present.</p>
+        </section>
+      {% endif %}
       {% if leagues %}
         {% if enabled_leagues %}
           <section class="edition-hero" aria-labelledby="edition-title" data-testid="edition-hero">
@@ -672,16 +697,20 @@
       {% else %}
         <section class="empty-hero">
           <h2>Link Sleeper</h2>
-          {% if (continuity or {}).identity_state == "identity_check" %}
+          {% if (deployment_gate or {}).deployed and not (deployment_gate or {}).ready %}
+            <p data-testid="deployment-gate-message">Production setup is incomplete. Repair the durable store and Clerk identity before reconnecting Sleeper.</p>
+          {% elif (continuity or {}).identity_state == "identity_check" %}
             <p data-testid="identity-check-message">This login is valid, but it has no leagues attached. Verify the Clerk production identity before reconnecting your Sleeper account; the Front Office will not guess across users.</p>
           {% else %}
             <p>Point me at your Sleeper username. I'll find the bodies.</p>
           {% endif %}
-          <form class="link-row" method="post" action="/api/leagues/link">
-            <input name="sleeper_username" autocomplete="username" placeholder="Sleeper username" aria-label="Sleeper username">
-            <input type="hidden" name="season" value="2026">
-            <button class="primary-button" type="submit">Find leagues</button>
-          </form>
+          {% if not ((deployment_gate or {}).deployed and not (deployment_gate or {}).ready) %}
+            <form class="link-row" method="post" action="/api/leagues/link">
+              <input name="sleeper_username" autocomplete="username" placeholder="Sleeper username" aria-label="Sleeper username">
+              <input type="hidden" name="season" value="2026">
+              <button class="primary-button" type="submit">Find leagues</button>
+            </form>
+          {% endif %}
         </section>
       {% endif %}
 

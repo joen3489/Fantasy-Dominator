@@ -92,9 +92,13 @@ back to Railway's `RAILWAY_PUBLIC_DOMAIN` when present). The login page uses
 that canonical URL for every Clerk redirect, which avoids Railway's internal
 HTTP hop being mistaken for the public HTTPS origin. `/healthz` exposes only
 safe configuration signals (`auth_mode`, Clerk issuer/JWKS readiness,
-`public_url_configured`, `data_root_configured`, SQLite schema readiness, and
-`writer_api_configured`) so a deploy can be checked without exposing
-credentials or user data.
+`public_url_configured`, `data_root_configured`, SQLite schema readiness,
+`writer_api_configured`, `deployment_ready`, and safe blocker messages) so a
+deploy can be checked without exposing credentials or user data. In a Railway
+environment, the login surface refuses to mount Clerk and league-linking or
+refreshing returns a setup error until live auth, durable storage, and the
+protected scheduler configuration are ready. This prevents an ephemeral or
+wrong-identity deployment from looking like an empty personal headquarters.
 
 Generated state is intentionally not stored in Git. For production continuity,
 mount a durable Railway volume at `/app/data` and set
