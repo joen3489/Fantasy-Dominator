@@ -340,6 +340,16 @@
         font-size: 11px;
         font-weight: 800;
       }
+      .edition-proof {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        padding-top: 4px;
+        color: #cbd9ce;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      .edition-proof strong { color: #fffaf0; }
       .front-page {
         display: grid;
         gap: 13px;
@@ -604,6 +614,13 @@
             <h2 id="edition-title">Your leagues, edited into a daily read.</h2>
             <p>Start with the signal. Open a league edition when you want the players, managers, markets, and evidence behind it.</p>
             <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span><span>{{ (continuity or {}).label or "Workspace status unknown" }}</span></div>
+            {% set featured_receipt = (enabled_leagues[0].source_receipt or {}) %}
+            <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
+              <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
+              <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
+              <span>{{ featured_receipt.as_of_label or "Latest refresh" }}</span>
+              <span>Reporter: {{ featured_receipt.reporter_name or "The Front Office" }}</span>
+            </div>
           </section>
           <nav class="league-strip" aria-label="Enabled leagues">
             {% for league in enabled_leagues %}

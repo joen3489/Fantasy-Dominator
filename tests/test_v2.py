@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, db
 from app import main as app_main
-from app.main import create_app
+from app.main import _source_receipt_view, create_app
 from scripts import refresh_all
 from src.attention import (
     AttentionItem,
@@ -543,6 +543,18 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "stories": [
                     {"eyebrow": "Manager lens", "headline": "A rival is buying the wrong window", "dek": "Observed behavior gives us an angle."}
                 ],
+                "as_of_label": "As of today's refresh",
+                "reporter_persona": {"name": "The Scout"},
+                "source_health": [
+                    {
+                        "label": "News desk",
+                        "status": "refreshed",
+                        "status_label": "Current",
+                        "healthy": True,
+                        "checked_at": "2026-07-05T12:00:00+00:00",
+                        "row_count": 3,
+                    }
+                ],
             },
         )
         items = [
@@ -582,6 +594,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-storage-audit-button', html)
         self.assertIn("fetch('/api/operator/storage-audit'", html)
         self.assertIn('data-testid="edition-hero"', html)
+        self.assertIn('data-testid="edition-proof"', html)
+        self.assertIn("news rows", html)
+        self.assertIn("news sources current", html)
         self.assertIn('data-testid="front-page"', html)
         self.assertIn("Your rookie receiver is the morning", html)
         self.assertIn("A rival is buying the wrong window", html)
@@ -591,6 +606,23 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Ready", html)
         self.assertIn("fetch('/api/leagues/refresh'", html)
         self.assertNotIn("fetch('/api/operator/refresh'", html)
+
+    def test_source_receipt_view_summarizes_news_and_limited_sources(self) -> None:
+        receipt = _source_receipt_view(
+            {
+                "as_of_label": "As of today's refresh",
+                "reporter_persona": {"name": "The Scout"},
+                "source_health": [
+                    {"label": "News desk", "status_label": "Current", "healthy": True, "row_count": 3, "checked_at": "2026-07-05T12:00:00+00:00"},
+                    {"label": "Market and usage", "status_label": "Limited", "healthy": False, "row_count": 0, "checked_at": "2026-07-05T11:00:00+00:00"},
+                ],
+            }
+        )
+
+        self.assertEqual(receipt["label"], "1/2 current; 1 limited")
+        self.assertEqual(receipt["news_row_count"], 3)
+        self.assertEqual(receipt["news_current"], 1)
+        self.assertEqual(receipt["reporter_name"], "The Scout")
 
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")

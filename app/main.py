@@ -682,6 +682,7 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["edition_readiness"] = readiness
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
+    view["source_receipt"] = _source_receipt_view(view["editorial"])
     return view
 
 
@@ -697,6 +698,61 @@ def _load_editorial_issue(user_id: int, league: dict[str, Any]) -> dict[str, Any
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
+    """Summarize source provenance for the headquarters without copying the data room."""
+
+    rows = editorial.get("source_health") if isinstance(editorial, dict) else []
+    rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+    def is_current(row: dict[str, Any]) -> bool:
+        return row.get("healthy") is True or str(row.get("status_label") or "").lower() == "current"
+
+    current = sum(1 for row in rows if is_current(row))
+    limited = sum(1 for row in rows if str(row.get("status_label") or "").lower() == "limited")
+    failed = sum(
+        1
+        for row in rows
+        if str(row.get("status") or "").lower() in {"failed", "error"}
+        or str(row.get("status_label") or "").lower() in {"failed", "error"}
+    )
+    news_rows = [row for row in rows if str(row.get("label") or "").lower() == "news desk"]
+
+    def row_count(row: dict[str, Any]) -> int:
+        try:
+            return max(0, int(row.get("row_count") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    if not rows:
+        label = "No source receipt"
+    elif failed:
+        label = f"{current}/{len(rows)} current; {failed} failed"
+    elif limited:
+        label = f"{current}/{len(rows)} current; {limited} limited"
+    else:
+        label = f"{current}/{len(rows)} sources current"
+
+    checked_at = max(
+        (str(row.get("checked_at") or "") for row in rows),
+        default="",
+    )
+    reporter = editorial.get("reporter_persona") if isinstance(editorial, dict) else {}
+    reporter_name = reporter.get("name") if isinstance(reporter, dict) else ""
+    return {
+        "label": label,
+        "current": current,
+        "limited": limited,
+        "failed": failed,
+        "total": len(rows),
+        "news_current": sum(1 for row in news_rows if is_current(row)),
+        "news_total": len(news_rows),
+        "news_row_count": sum(row_count(row) for row in news_rows),
+        "checked_at": checked_at,
+        "as_of_label": str(editorial.get("as_of_label") or "Latest refresh"),
+        "reporter_name": str(reporter_name or "The Front Office"),
+    }
 
 
 def _refresh_status(league_id: str, user_id: int | None = None) -> dict[str, Any] | None:
