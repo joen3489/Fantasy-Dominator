@@ -637,10 +637,11 @@
           <section class="edition-hero" aria-labelledby="edition-title" data-testid="edition-hero">
             <span class="edition-kicker">Personal headquarters</span>
             <h2 id="edition-title">Your leagues, edited into a daily read.</h2>
-            <p>Start with the signal. Open a league edition when you want the players, managers, markets, and evidence behind it.</p>
+            <p>Start with the signal. Put one league in focus, then open its players, managers, markets, and evidence underneath.</p>
             <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span><span>{{ (continuity or {}).label or "Workspace status unknown" }}</span></div>
-            {% set featured_receipt = (enabled_leagues[0].source_receipt or {}) %}
+            {% set featured_receipt = (featured_league.source_receipt or {}) %}
             <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
+              <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
               <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
               <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
               <span>{{ featured_receipt.as_of_label or "Latest refresh" }}</span>
@@ -652,7 +653,7 @@
               {% set league_type = (league.league_type or "league")|replace("_", " ") %}
               {% set dot_class = league.refresh_freshness or "unknown" %}
               {% set readiness = league.edition_readiness or {} %}
-              <a class="league-pill" href="/league/{{ league.league_id }}/" aria-label="{{ league.name or league.league_id }} edition: {{ readiness.label or 'Needs refresh' }}">
+              <a class="league-pill{% if league.league_id == featured_league_id %} selected{% endif %}" href="/?league_id={{ league.league_id }}" aria-current="{{ 'page' if league.league_id == featured_league_id else 'false' }}" aria-label="{{ league.name or league.league_id }} edition: {{ readiness.label or 'Needs refresh' }}">
                 <span class="fresh-dot {{ dot_class }}" aria-hidden="true"></span>
                 <span class="league-pill-main">
                   <span class="league-name">{{ league.name or league.league_id }}</span>
@@ -662,7 +663,6 @@
               </a>
             {% endfor %}
           </nav>
-          {% set featured_league = enabled_leagues[0] %}
           {% set edition = featured_league.editorial or {} %}
           <section class="front-page" aria-labelledby="front-page-title" data-testid="front-page">
             <div class="front-page-heading">
@@ -723,7 +723,7 @@
               <label>League
                 <select data-profile-league aria-label="League profile">
                   {% for league in enabled_leagues %}
-                    <option value="{{ league.league_id }}">{{ league.name or league.league_id }}</option>
+                    <option value="{{ league.league_id }}"{% if league.league_id == featured_league_id %} selected{% endif %}>{{ league.name or league.league_id }}</option>
                   {% endfor %}
                 </select>
               </label>

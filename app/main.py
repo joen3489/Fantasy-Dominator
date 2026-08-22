@@ -141,9 +141,18 @@ def create_app() -> FastAPI:
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def home(request: Request, user: dict[str, Any] = Depends(current_user)) -> HTMLResponse:
+    def home(
+        request: Request,
+        league_id: str | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> HTMLResponse:
         user_id = int(user["id"])
         leagues = [_league_view(row, user_id) for row in db.list_user_leagues(user_id)]
+        enabled_leagues = [league for league in leagues if league.get("enabled")]
+        featured_league = next(
+            (league for league in enabled_leagues if str(league.get("league_id")) == str(league_id)),
+            enabled_leagues[0] if enabled_leagues else None,
+        )
         attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
         return templates.TemplateResponse(
             request,
@@ -152,7 +161,9 @@ def create_app() -> FastAPI:
                 "request": request,
                 "user": user,
                 "leagues": leagues,
-                "enabled_leagues": [league for league in leagues if league.get("enabled")],
+                "enabled_leagues": enabled_leagues,
+                "featured_league": featured_league,
+                "featured_league_id": str((featured_league or {}).get("league_id") or ""),
                 "attention": attention_items,
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
                 "operator_status": _operator_status_for_user(user_id),

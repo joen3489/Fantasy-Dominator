@@ -714,7 +714,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("quiet-divider", html)
         self.assertIn("All quiet", html)
         self.assertEqual(html.count('<span class="score-tile'), 4)
-        self.assertIn('class="league-pill" href="/league/alpha/"', html)
+        self.assertIn('class="league-pill selected" href="/?league_id=alpha"', html)
         self.assertIn("type-badge dynasty", html)
         self.assertIn("DYNASTY", html.upper())
         self.assertIn("fresh-dot fresh", html)
@@ -746,6 +746,62 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Ready", html)
         self.assertIn("fetch('/api/leagues/refresh'", html)
         self.assertNotIn("fetch('/api/operator/refresh'", html)
+
+    def test_home_query_focuses_selected_owned_league_and_falls_back_safely(self) -> None:
+        token = self._token("user_home_focus")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_home_focus")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha League", "roster_id": 1},
+        )
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "beta", "season": "2026", "league_type": "redraft", "name": "Beta League", "roster_id": 2},
+        )
+        for league_id, headline in (("alpha", "Alpha focus headline"), ("beta", "Beta focus headline")):
+            site_dir = self.leagues_root / league_id / "site"
+            _write_complete_bundle(
+                site_dir,
+                f"<h1>{headline}</h1>",
+                {
+                    "kicker": "Personal league edition",
+                    "edition_label": "Today",
+                    "headline": headline,
+                    "dek": f"{league_id.title()} evidence-led read.",
+                    "reporter_persona": {"name": "The Scout"},
+                    "source_health": [
+                        {
+                            "label": "News desk",
+                            "status": "refreshed",
+                            "status_label": "Current",
+                            "healthy": True,
+                            "checked_at": "2026-07-05T12:00:00+00:00",
+                            "row_count": 3,
+                        }
+                    ],
+                },
+            )
+
+        with patch("app.main.load_attention", return_value=[]):
+            response = self.client.get("/?league_id=beta", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn("Beta focus headline", html)
+        self.assertNotIn("Alpha focus headline", html)
+        self.assertIn("In focus: <strong>Beta League</strong>", html)
+        self.assertIn('class="league-pill selected" href="/?league_id=beta"', html)
+        self.assertIn('value="beta" selected', html)
+        self.assertIn('href="/?league_id=alpha"', html)
+
+        with patch("app.main.load_attention", return_value=[]):
+            fallback = self.client.get("/?league_id=not-owned", cookies={"__session": token})
+
+        self.assertEqual(fallback.status_code, 200)
+        self.assertIn("Alpha focus headline", fallback.text)
+        self.assertNotIn("Beta focus headline", fallback.text)
+        self.assertIn("In focus: <strong>Alpha League</strong>", fallback.text)
 
     def test_source_receipt_view_summarizes_news_and_limited_sources(self) -> None:
         receipt = _source_receipt_view(
