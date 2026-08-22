@@ -74,6 +74,12 @@ http://localhost:8765
 
 The app exposes /healthz, /login, the personal headquarters at /, and owned league sites at /league/<league_id>/. Use the home-screen Sleeper link flow to discover leagues. The headquarters includes a per-league team strategy and reporter editor backed by GET and PUT /api/leagues/<league_id>/profile, plus an authenticated `/api/continuity` receipt showing whether the current identity sees a configured durable workspace. Each league can choose a bounded reporter persona (The Front Office, The Scout, The Commissioner, or The Quant) plus a short editor note; the selected voice is carried into generated article prompts and published issue metadata.
 
+The headquarters also exposes league-scoped manager trade profiles at
+`/api/leagues/<league_id>/manager-trade-profiles`. These are private editorial
+notes about how to frame a conversation with a manager (approach, preferred
+assets, protected assets, and an editor note). They are passed to the selected
+league's writers as context only and are never treated as observed evidence.
+
 The browser surface is the primary weekly workspace. CSV, SQLite, and markdown outputs are supporting artifacts for auditability and ChatGPT sharing. scripts/serve.py remains a legacy static/local server for the default workspace.
 
 ## Railway Production

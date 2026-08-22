@@ -667,10 +667,27 @@ class VModelTests(unittest.TestCase):
                         "roster_id": details["roster_id"],
                     }
                     db.upsert_user_league(user_id, league)
+                    db.upsert_manager_trade_profile(
+                        user_id,
+                        league_id,
+                        11,
+                        {
+                            "manager_name": f"{league_id} manager",
+                            "trade_style": "pick seller",
+                            "preferred_assets": "young receivers",
+                            "protected_assets": "future firsts",
+                            "editor_note": f"Keep the {league_id} manager note private and contextual.",
+                        },
+                    )
                     paths = LeaguePaths.for_user_league(user_id, league_id)
                     paths.ensure()
                     paths_by_league[league_id] = paths
-                    contexts[league_id] = context_from_league_row(str(user_id), league, profile)
+                    contexts[league_id] = context_from_league_row(
+                        str(user_id),
+                        league,
+                        profile,
+                        manager_trade_profiles=db.list_manager_trade_profiles(user_id, league_id),
+                    )
 
                     prefix = "Alpha" if league_id.endswith("alpha") else "Beta"
                     pd.DataFrame(
@@ -758,6 +775,7 @@ class VModelTests(unittest.TestCase):
                     self.assertEqual(bundle["myTeamName"], details["team_name"])
                     self.assertEqual(bundle["reporterPersona"]["persona_id"], details["persona_id"])
                     self.assertEqual(bundle["strategyProfile"]["name"], details["strategy"])
+                    self.assertEqual(bundle["managerTradeProfiles"][0]["trade_style"], "pick seller")
                     self.assertIn("Alpha" if league_id.endswith("alpha") else "Beta", bundle["analysis"]["teamReport"])
 
                 self.assertTrue(prompts["alpha"])

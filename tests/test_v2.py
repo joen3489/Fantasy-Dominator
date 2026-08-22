@@ -490,7 +490,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
-                "database_table_count": 5,
+                "database_table_count": 6,
                 "writer_api_configured": False,
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
@@ -723,6 +723,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-profile-league', html)
         self.assertIn('Save league profile', html)
         self.assertIn('data-profile-field="persona_id"', html)
+        self.assertIn("Build manager trade profiles", html)
+        self.assertIn('data-manager-trade-form', html)
+        self.assertIn('data-manager-trade-field="trade_style"', html)
         self.assertIn("The Scout", html)
         self.assertIn("The Commissioner", html)
         self.assertIn('data-writer-button', html)
@@ -802,6 +805,68 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Alpha focus headline", fallback.text)
         self.assertNotIn("Beta focus headline", fallback.text)
         self.assertIn("In focus: <strong>Alpha League</strong>", fallback.text)
+
+    def test_manager_trade_profiles_are_private_league_scoped_and_reach_writer_context(self) -> None:
+        token = self._token("user_manager_trade_profiles")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_manager_trade_profiles")
+        league = {
+            "league_id": "alpha",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Alpha League",
+            "roster_id": 1,
+        }
+        db.upsert_user_league(user_id, league)
+
+        initial = self.client.get(
+            "/api/leagues/alpha/manager-trade-profiles",
+            cookies={"__session": token},
+        )
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.json()["profiles"], [])
+
+        saved = self.client.put(
+            "/api/leagues/alpha/manager-trade-profiles/7",
+            cookies={"__session": token},
+            json={
+                "manager_name": "The Semiquincentennials",
+                "trade_style": "pick seller / win-now buyer",
+                "preferred_assets": "young pass catchers",
+                "protected_assets": "future firsts",
+                "editor_note": "Lead with the role window and keep the first-round ask visible.",
+            },
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertTrue(saved.json()["customized"])
+        self.assertEqual(saved.json()["roster_id"], "7")
+        self.assertEqual(saved.json()["trade_style"], "pick seller / win-now buyer")
+
+        listed = self.client.get(
+            "/api/leagues/alpha/manager-trade-profiles",
+            cookies={"__session": token},
+        ).json()["profiles"]
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["editor_note"], "Lead with the role window and keep the first-round ask visible.")
+
+        context = app_main._context_for_league(user_id, league)
+        self.assertEqual(context.manager_trade_profiles[0]["manager_name"], "The Semiquincentennials")
+        from src import operator
+
+        prompt = operator._article_context_prompt_block(context)
+        self.assertIn("Personal manager trade profiles", prompt)
+        self.assertIn("pick seller / win-now buyer", prompt)
+        self.assertIn("The Semiquincentennials", prompt)
+
+        other_token = self._token("different_manager_profile_user")
+        self.client.get("/", cookies={"__session": other_token})
+        self.assertEqual(
+            self.client.get(
+                "/api/leagues/alpha/manager-trade-profiles",
+                cookies={"__session": other_token},
+            ).status_code,
+            404,
+        )
 
     def test_source_receipt_view_summarizes_news_and_limited_sources(self) -> None:
         receipt = _source_receipt_view(

@@ -767,6 +767,46 @@
       {% endif %}
 
       {% if enabled_leagues %}
+        <details class="profile-panel manager-trade-panel" data-manager-trade-panel>
+          <summary class="profile-summary">Build manager trade profiles</summary>
+          <p>These private notes tell the reporters how to frame a conversation with a specific manager. They are editorial context, not observed evidence or claims about intent.</p>
+          <form data-manager-trade-form>
+            <div class="profile-grid">
+              <label>League
+                <select data-manager-trade-league aria-label="Manager trade profile league">
+                  {% for league in enabled_leagues %}
+                    <option value="{{ league.league_id }}"{% if league.league_id == featured_league_id %} selected{% endif %}>{{ league.name or league.league_id }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Manager
+                <select data-manager-trade-manager aria-label="Manager trade profile manager"></select>
+              </label>
+              <label>Manager name
+                <input data-manager-trade-field="manager_name" maxlength="160" placeholder="Observed team name">
+              </label>
+              <label>Trade style
+                <input data-manager-trade-field="trade_style" maxlength="400" placeholder="pick seller, win-now buyer, patient...">
+              </label>
+              <label>Likely to chase
+                <input data-manager-trade-field="preferred_assets" maxlength="400" placeholder="young WRs, future picks, RB depth...">
+              </label>
+              <label>Likely to protect
+                <input data-manager-trade-field="protected_assets" maxlength="400" placeholder="their firsts, cornerstone QB...">
+              </label>
+              <label>Private editor note
+                <textarea data-manager-trade-field="editor_note" maxlength="800" placeholder="What should the reporter remember before framing an offer?" ></textarea>
+              </label>
+            </div>
+            <div class="profile-actions">
+              <button class="primary-button" type="submit">Save manager profile</button>
+              <span class="profile-status" data-manager-trade-status role="status"></span>
+            </div>
+          </form>
+        </details>
+      {% endif %}
+
+      {% if enabled_leagues %}
         <section class="writer-panel" data-writer-panel>
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
@@ -987,6 +1027,91 @@
           profileField('persona_id').addEventListener('change', updatePersonaDescription);
           updatePersonaDescription();
           loadProfile();
+        }
+
+        const managerTradeForm = document.querySelector('[data-manager-trade-form]');
+        if (managerTradeForm) {
+          const managerTradeLeague = managerTradeForm.querySelector('[data-manager-trade-league]');
+          const managerTradeManager = managerTradeForm.querySelector('[data-manager-trade-manager]');
+          const managerTradeStatus = managerTradeForm.querySelector('[data-manager-trade-status]');
+          const managerTradeField = (name) => managerTradeForm.querySelector('[data-manager-trade-field="' + name + '"]');
+          let managerTradeProfiles = [];
+
+          const clearManagerTradeFields = () => {
+            ['manager_name', 'trade_style', 'preferred_assets', 'protected_assets', 'editor_note'].forEach((name) => {
+              managerTradeField(name).value = '';
+            });
+          };
+
+          const loadManagerTradeFields = () => {
+            const profile = managerTradeProfiles.find((item) => String(item.roster_id) === String(managerTradeManager.value));
+            clearManagerTradeFields();
+            if (!profile) return;
+            ['manager_name', 'trade_style', 'preferred_assets', 'protected_assets', 'editor_note'].forEach((name) => {
+              managerTradeField(name).value = profile[name] || '';
+            });
+          };
+
+          const loadManagerTradeProfiles = async () => {
+            managerTradeStatus.className = 'profile-status';
+            managerTradeStatus.textContent = 'Loading manager room';
+            managerTradeManager.replaceChildren();
+            try {
+              const response = await fetch('/api/leagues/' + encodeURIComponent(managerTradeLeague.value) + '/manager-trade-profiles', {cache: 'no-store'});
+              if (!response.ok) throw new Error('manager profiles failed (' + response.status + ')');
+              const payload = await response.json();
+              managerTradeProfiles = payload.profiles || [];
+              managerTradeProfiles.forEach((profile) => {
+                const option = document.createElement('option');
+                option.value = profile.roster_id;
+                option.textContent = profile.manager_name || ('Roster ' + profile.roster_id);
+                managerTradeManager.appendChild(option);
+              });
+              managerTradeManager.disabled = !managerTradeProfiles.length;
+              if (managerTradeProfiles.length) {
+                loadManagerTradeFields();
+                managerTradeStatus.textContent = 'Private notes loaded for this league';
+              } else {
+                clearManagerTradeFields();
+                managerTradeStatus.textContent = 'No manager profiles are available until this league has a completed refresh';
+              }
+            } catch (error) {
+              managerTradeManager.disabled = true;
+              clearManagerTradeFields();
+              managerTradeStatus.className = 'profile-status error';
+              managerTradeStatus.textContent = error.message;
+            }
+          };
+
+          managerTradeManager.addEventListener('change', loadManagerTradeFields);
+          managerTradeLeague.addEventListener('change', loadManagerTradeProfiles);
+          managerTradeForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!managerTradeManager.value) return;
+            managerTradeStatus.className = 'profile-status';
+            managerTradeStatus.textContent = 'Saving manager profile';
+            const payload = {};
+            ['manager_name', 'trade_style', 'preferred_assets', 'protected_assets', 'editor_note'].forEach((name) => {
+              payload[name] = managerTradeField(name).value.trim();
+            });
+            try {
+              const response = await fetch('/api/leagues/' + encodeURIComponent(managerTradeLeague.value) + '/manager-trade-profiles/' + encodeURIComponent(managerTradeManager.value), {
+                method: 'PUT',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify(payload),
+              });
+              const saved = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(saved.detail || 'manager profile save failed (' + response.status + ')');
+              const index = managerTradeProfiles.findIndex((item) => String(item.roster_id) === String(saved.roster_id));
+              if (index >= 0) managerTradeProfiles[index] = saved;
+              loadManagerTradeFields();
+              managerTradeStatus.textContent = 'Saved privately for this league';
+            } catch (error) {
+              managerTradeStatus.className = 'profile-status error';
+              managerTradeStatus.textContent = error.message;
+            }
+          });
+          loadManagerTradeProfiles();
         }
 
         const writerButton = document.querySelector('[data-writer-button]');

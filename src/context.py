@@ -30,6 +30,7 @@ class FantasyContext:
     display_name: str = ""
     strategy_profile: dict[str, Any] = field(default_factory=dict)
     writer_preferences: dict[str, Any] = field(default_factory=dict)
+    manager_trade_profiles: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def scope_key(self) -> str:
@@ -81,6 +82,7 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         else deepcopy(context.strategy_profile or config.get("strategy_profile") or {})
     )
     config["writer_preferences"] = normalize_writer_preferences(context.writer_preferences)
+    config["manager_trade_profiles"] = deepcopy(context.manager_trade_profiles)
 
     # These fields are intentionally metadata rather than configuration used
     # by the legacy analytics modules.  They make the selected scope visible
@@ -95,6 +97,7 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         "team_name": context.team_name,
         "display_name": context.display_name,
         "writer_preferences": normalize_writer_preferences(context.writer_preferences),
+        "manager_trade_profiles": deepcopy(context.manager_trade_profiles),
     }
     return config
 
@@ -103,6 +106,7 @@ def context_from_league_row(
     user_id: str | int,
     league: Mapping[str, Any],
     profile: Mapping[str, Any] | None = None,
+    manager_trade_profiles: list[Mapping[str, Any]] | None = None,
 ) -> FantasyContext:
     """Build a context from a row returned by ``app.db.list_user_leagues``."""
 
@@ -135,4 +139,5 @@ def context_from_league_row(
         display_name=str(profile.get("display_name", "")),
         strategy_profile=deepcopy(dict(strategy)),
         writer_preferences=deepcopy(dict(writer_preferences)),
+        manager_trade_profiles=[deepcopy(dict(item)) for item in (manager_trade_profiles or []) if isinstance(item, Mapping)],
     )

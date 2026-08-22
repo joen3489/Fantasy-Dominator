@@ -264,6 +264,7 @@ def _write_data_chunks(
         "myTeamName": my_team_name,
         "strategyProfile": config.get("strategy_profile") or {},
         "writerPreferences": config.get("writer_preferences") or {},
+        "managerTradeProfiles": config.get("manager_trade_profiles") or [],
         "reporterPersona": editorial.get("reporter_persona") or {},
         "trackedPicks": config.get("tracked_picks") or [],
         "currentSeason": config.get("current_season", ""),
@@ -871,6 +872,7 @@ def _page(
         <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
         <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
       </div>
+      <div class="panel"><h3>Personal Trade Profiles</h3><p class="note">Your private notes shape reporter emphasis; they are never presented as observed league evidence.</p><div id="manager-trade-profiles"></div></div>
       <h3>Manager Cycle Profiles</h3>
       <div id="manager-cycle-table"></div>
       <h3>Manager Tag Evidence</h3>
@@ -1503,6 +1505,18 @@ def _page(
       }})).join('')}}</div>`;
     }}
 
+    function managerTradeProfileCards() {{
+      const profiles = (app.managerTradeProfiles || []).filter(row => row.customized);
+      if (!profiles.length) return '<p class="note">No personal trade profiles saved yet. Add them from headquarters when you want a reporter to remember the room.</p>';
+      return `<div class="brief-list">${{profiles.map(row => `<article class="brief-card">
+        <div class="brief-card-top"><strong>${{escapeHtml(row.manager_name || `Roster ${{row.roster_id}}`)}}</strong><span class="tag">Private editor note</span></div>
+        ${{row.trade_style ? `<p><strong>Approach:</strong> ${{escapeHtml(row.trade_style)}}</p>` : ''}}
+        ${{row.preferred_assets ? `<p><strong>Will chase:</strong> ${{escapeHtml(row.preferred_assets)}}</p>` : ''}}
+        ${{row.protected_assets ? `<p><strong>Protects:</strong> ${{escapeHtml(row.protected_assets)}}</p>` : ''}}
+        ${{row.editor_note ? `<p class="note">${{escapeHtml(row.editor_note)}}</p>` : ''}}
+      </article>`).join('')}}</div>`;
+    }}
+
     function playerBrowserCards() {{
       const rows = sortRows(applySearch(tables.player_dossiers), ['market_value']).reverse().slice(0, 24);
       if (!rows.length) return '<p class="note">No player dossiers yet.</p>';
@@ -1652,6 +1666,7 @@ def _page(
       document.getElementById('player-browser').innerHTML = playerBrowserCards();
       document.getElementById('active-manager-dossier').innerHTML = activeManagerDossier();
       document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16), false);
+      document.getElementById('manager-trade-profiles').innerHTML = managerTradeProfileCards();
       document.getElementById('manager-cycle-table').innerHTML = table(filteredManagerCycles(), managerCycleColumns);
       document.getElementById('manager-profile-tag-table').innerHTML = table(filteredManagerTags(), profileTagColumns);
       document.getElementById('player-dossier-cards').innerHTML = playerDossierCards(filteredPlayerDossiers().slice(0, 12));

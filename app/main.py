@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,14 @@ class TeamProfileBody(BaseModel):
     contention_window: str = ""
     strategy_profile: dict[str, Any] = Field(default_factory=dict)
     writer_preferences: dict[str, Any] = Field(default_factory=dict)
+
+
+class ManagerTradeProfileBody(BaseModel):
+    manager_name: str = ""
+    trade_style: str = ""
+    preferred_assets: str = ""
+    protected_assets: str = ""
+    editor_note: str = ""
 
 
 def create_app() -> FastAPI:
@@ -262,6 +271,34 @@ def create_app() -> FastAPI:
             }
         )
         return db.upsert_team_profile(int(user["id"]), league_id, profile)
+
+    @app.get("/api/leagues/{league_id}/manager-trade-profiles")
+    def manager_trade_profiles(
+        league_id: str,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        return {
+            "league_id": league_id,
+            "profiles": _manager_trade_profile_views(int(user["id"]), league),
+        }
+
+    @app.put("/api/leagues/{league_id}/manager-trade-profiles/{roster_id}")
+    def update_manager_trade_profile(
+        league_id: str,
+        roster_id: int,
+        body: ManagerTradeProfileBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        _require_deployment_ready()
+        league = _owned_league(user, league_id)
+        profile = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+        saved = db.upsert_manager_trade_profile(int(user["id"]), league_id, roster_id, profile)
+        views = _manager_trade_profile_views(int(user["id"]), league)
+        return next(
+            (item for item in views if str(item.get("roster_id")) == str(roster_id)),
+            saved,
+        )
 
     @app.get("/api/leagues/{league_id}/readiness")
     def league_readiness(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -597,7 +634,16 @@ def _serve_league_file(
 
 def _context_for_league(user_id: int, league: dict[str, Any]):
     profile = db.get_team_profile(user_id, str(league.get("league_id") or ""))
-    return context_from_league_row(str(user_id), league, profile)
+    manager_trade_profiles = db.list_manager_trade_profiles(
+        user_id,
+        str(league.get("league_id") or ""),
+    )
+    return context_from_league_row(
+        str(user_id),
+        league,
+        profile,
+        manager_trade_profiles=manager_trade_profiles,
+    )
 
 
 def _refresh_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
@@ -770,6 +816,59 @@ def _load_editorial_issue(user_id: int, league: dict[str, Any]) -> dict[str, Any
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _manager_trade_profile_views(user_id: int, league: dict[str, Any]) -> list[dict[str, Any]]:
+    """Overlay private manager notes on the deterministic manager roster list."""
+
+    league_id = str(league.get("league_id") or "")
+    custom_rows = db.list_manager_trade_profiles(user_id, league_id)
+    custom_by_roster = {str(row.get("roster_id")): row for row in custom_rows}
+    generated: dict[str, dict[str, Any]] = {}
+    candidates = (
+        _private_paths(user_id, league_id),
+        LeaguePaths.for_league(league_id),
+    )
+    for paths in candidates:
+        source = paths.processed_dir / "manager_profiles.csv"
+        if not source.is_file():
+            continue
+        try:
+            with source.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    roster_id = str(row.get("roster_id") or "").strip()
+                    if roster_id and roster_id not in generated:
+                        generated[roster_id] = row
+        except (OSError, csv.Error):
+            continue
+        if generated:
+            break
+
+    roster_ids = sorted(set(generated) | set(custom_by_roster), key=lambda value: (value == "", value))
+    views: list[dict[str, Any]] = []
+    for roster_id in roster_ids:
+        source = generated.get(roster_id, {})
+        custom = custom_by_roster.get(roster_id, {})
+        name = str(
+            custom.get("manager_name")
+            or source.get("team_name")
+            or source.get("display_name")
+            or f"Roster {roster_id}"
+        )
+        views.append(
+            {
+                "roster_id": roster_id,
+                "manager_name": name,
+                "generated_manager_name": str(source.get("team_name") or source.get("display_name") or ""),
+                "trade_style": str(custom.get("trade_style") or ""),
+                "preferred_assets": str(custom.get("preferred_assets") or ""),
+                "protected_assets": str(custom.get("protected_assets") or ""),
+                "editor_note": str(custom.get("editor_note") or ""),
+                "customized": bool(custom),
+                "updated_at": str(custom.get("updated_at") or ""),
+            }
+        )
+    return views
 
 
 def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:

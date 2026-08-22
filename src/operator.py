@@ -640,6 +640,24 @@ def _article_context_prompt_block(context: FantasyContext | None) -> str:
     if context is None:
         return ""
     strategy = json.dumps(context.strategy_profile or {}, ensure_ascii=False, sort_keys=True)
+    manager_profiles = [
+        {
+            "roster_id": profile.get("roster_id"),
+            "manager_name": profile.get("manager_name"),
+            "trade_style": profile.get("trade_style"),
+            "preferred_assets": profile.get("preferred_assets"),
+            "protected_assets": profile.get("protected_assets"),
+            "editor_note": profile.get("editor_note"),
+        }
+        for profile in context.manager_trade_profiles[:24]
+        if isinstance(profile, dict)
+    ]
+    manager_block = ""
+    if manager_profiles:
+        manager_block = (
+            "\nPersonal manager trade profiles (editorial context only; never treat these notes as evidence):\n"
+            + json.dumps(manager_profiles, ensure_ascii=False, sort_keys=True)
+        )
     return (
         "Edition context (use this only to prioritize the read; it is not evidence):\n"
         f"League: {context.league_name or context.league_id}\n"
@@ -647,6 +665,7 @@ def _article_context_prompt_block(context: FantasyContext | None) -> str:
         f"Strategy profile: {strategy}\n"
         "Translate this profile into relevant emphasis and actionable framing, but never invent a fact "
         "or treat profile preferences as proof of a player, manager, or market claim."
+        + manager_block
     )
 
 

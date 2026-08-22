@@ -16,6 +16,7 @@ REQUIRED_TABLES = {
     "users",
     "user_leagues",
     "team_profiles",
+    "manager_trade_profiles",
     "content_artifacts",
     "refresh_runs",
 }
@@ -58,6 +59,20 @@ def init_db(path: Path | None = None) -> None:
                 writer_preferences_json TEXT NOT NULL DEFAULT '{}',
                 updated_at TEXT,
                 PRIMARY KEY(user_id, league_id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS manager_trade_profiles (
+                user_id INTEGER NOT NULL,
+                league_id TEXT NOT NULL,
+                roster_id INTEGER NOT NULL,
+                manager_name TEXT NOT NULL DEFAULT '',
+                trade_style TEXT NOT NULL DEFAULT '',
+                preferred_assets TEXT NOT NULL DEFAULT '',
+                protected_assets TEXT NOT NULL DEFAULT '',
+                editor_note TEXT NOT NULL DEFAULT '',
+                updated_at TEXT,
+                PRIMARY KEY(user_id, league_id, roster_id),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
@@ -228,10 +243,12 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
             "other_users": 0,
             "other_user_leagues": 0,
             "team_profiles": 0,
+            "manager_trade_profiles": 0,
             "content_artifacts": 0,
             "refresh_runs": 0,
             "orphan_user_leagues": 0,
             "orphan_team_profiles": 0,
+            "orphan_manager_trade_profiles": 0,
         }
 
     try:
@@ -268,16 +285,26 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
                 WHERE users.id IS NULL
                 """
             )
+            orphan_manager_profiles = count(
+                """
+                SELECT COUNT(*)
+                FROM manager_trade_profiles AS profiles
+                LEFT JOIN users ON users.id = profiles.user_id
+                WHERE users.id IS NULL
+                """
+            )
             return result | {
                 "current_user_present": current_present,
                 "current_user_leagues": current_leagues,
                 "other_users": max(0, total_users - (1 if current_present else 0)),
                 "other_user_leagues": max(0, total_leagues - current_leagues),
                 "team_profiles": count("SELECT COUNT(*) FROM team_profiles"),
+                "manager_trade_profiles": count("SELECT COUNT(*) FROM manager_trade_profiles"),
                 "content_artifacts": count("SELECT COUNT(*) FROM content_artifacts"),
                 "refresh_runs": count("SELECT COUNT(*) FROM refresh_runs"),
                 "orphan_user_leagues": orphan_leagues,
                 "orphan_team_profiles": orphan_profiles,
+                "orphan_manager_trade_profiles": orphan_manager_profiles,
             }
         finally:
             conn.close()
@@ -288,10 +315,12 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
             "other_users": 0,
             "other_user_leagues": 0,
             "team_profiles": 0,
+            "manager_trade_profiles": 0,
             "content_artifacts": 0,
             "refresh_runs": 0,
             "orphan_user_leagues": 0,
             "orphan_team_profiles": 0,
+            "orphan_manager_trade_profiles": 0,
         }
 
 
@@ -411,6 +440,91 @@ def get_team_profile(user_id: int, league_id: str) -> dict[str, Any] | None:
             result.pop("writer_preferences_json", "{}")
         )
         return result
+    finally:
+        conn.close()
+
+
+def upsert_manager_trade_profile(
+    user_id: int,
+    league_id: str,
+    roster_id: int,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist private, user-authored trade context for one league manager."""
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO manager_trade_profiles(
+                user_id, league_id, roster_id, manager_name, trade_style,
+                preferred_assets, protected_assets, editor_note, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, league_id, roster_id) DO UPDATE SET
+                manager_name = excluded.manager_name,
+                trade_style = excluded.trade_style,
+                preferred_assets = excluded.preferred_assets,
+                protected_assets = excluded.protected_assets,
+                editor_note = excluded.editor_note,
+                updated_at = excluded.updated_at
+            """,
+            (
+                user_id,
+                str(league_id),
+                int(roster_id),
+                str(profile.get("manager_name") or "")[:160],
+                str(profile.get("trade_style") or "")[:400],
+                str(profile.get("preferred_assets") or "")[:400],
+                str(profile.get("protected_assets") or "")[:400],
+                str(profile.get("editor_note") or "")[:800],
+                now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    result = get_manager_trade_profile(user_id, league_id, int(roster_id))
+    if result is None:
+        raise RuntimeError("manager trade profile upsert failed")
+    return result
+
+
+def get_manager_trade_profile(
+    user_id: int,
+    league_id: str,
+    roster_id: int,
+) -> dict[str, Any] | None:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT user_id, league_id, roster_id, manager_name, trade_style,
+                   preferred_assets, protected_assets, editor_note, updated_at
+            FROM manager_trade_profiles
+            WHERE user_id = ? AND league_id = ? AND roster_id = ?
+            """,
+            (user_id, str(league_id), int(roster_id)),
+        ).fetchone()
+        return _row(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def list_manager_trade_profiles(user_id: int, league_id: str) -> list[dict[str, Any]]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT user_id, league_id, roster_id, manager_name, trade_style,
+                   preferred_assets, protected_assets, editor_note, updated_at
+            FROM manager_trade_profiles
+            WHERE user_id = ? AND league_id = ?
+            ORDER BY manager_name COLLATE NOCASE, roster_id
+            """,
+            (user_id, str(league_id)),
+        ).fetchall()
+        return [_row(row) for row in rows]
     finally:
         conn.close()
 
