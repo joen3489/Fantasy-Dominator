@@ -402,7 +402,9 @@ def _source_health(tables: Mapping[str, Sequence[Mapping[str, Any]]]) -> list[di
     for table_name, label in names.items():
         for row in _rows(tables, table_name):
             status = _text(row.get("status")) or "unknown"
-            healthy = status.startswith(("cached", "refreshed", "complete", "available"))
+            # A stale cache retained after a failed refetch is useful evidence,
+            # but it must not be presented as current source material.
+            healthy = status in {"cached", "refreshed", "complete", "available"}
             output.append(
                 {
                     "label": label,

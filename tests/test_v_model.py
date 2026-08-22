@@ -1651,7 +1651,7 @@ class VModelTests(unittest.TestCase):
             cache_path = cache_root / "sleeper" / "2026" / "trending_add.json"
             cache_path.parent.mkdir(parents=True)
             cache_path.write_text("[]", encoding="utf-8")
-            cached_at = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc).timestamp()
+            cached_at = (datetime.now(timezone.utc) - pd.Timedelta(seconds=30)).timestamp()
             os.utime(cache_path, (cached_at, cached_at))
             with patch("src.news.RAW_EXTERNAL_DIR", cache_root):
                 tables = build_news_tables(
@@ -1664,7 +1664,8 @@ class VModelTests(unittest.TestCase):
                 )
 
         self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "cached")
-        self.assertEqual(tables["news_events"].iloc[0]["published_at"], "2026-08-20T12:00:00+00:00")
+        observed_at = datetime.fromisoformat(str(tables["news_events"].iloc[0]["published_at"]))
+        self.assertAlmostEqual(observed_at.timestamp(), cached_at, delta=1)
 
     def test_economic_tables_create_market_gaps_and_behavior_signals(self) -> None:
         teams = pd.DataFrame(

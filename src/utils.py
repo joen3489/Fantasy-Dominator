@@ -77,6 +77,23 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
+def cache_is_fresh(path: Path, max_age_seconds: int | float, now: datetime | None = None) -> bool:
+    """Return whether a cache file is young enough to serve without refetching.
+
+    Raw payloads remain on disk for auditability, but an existing file is not
+    proof that the underlying source is still current.  Callers use this small
+    policy helper before normal (non-forced) refreshes.
+    """
+
+    if not path.is_file():
+        return False
+    try:
+        age = (now or datetime.now(timezone.utc)).timestamp() - path.stat().st_mtime
+    except OSError:
+        return False
+    return age <= max(0.0, float(max_age_seconds))
+
+
 def json_dumps(data: Any) -> str:
     if data is None:
         return ""

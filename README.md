@@ -119,7 +119,16 @@ show the refresh receipt rather than an empty shell or raw file-not-found JSON.
 Optional environment variables:
 
 - FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN=true fails operator actions closed even when the token variable is missing.
+- FRONT_OFFICE_LIVE_CACHE_MAX_AGE_SECONDS controls normal Sleeper cache expiry for the current season (default 900 seconds).
+- FRONT_OFFICE_HISTORICAL_CACHE_MAX_AGE_SECONDS controls historical Sleeper cache expiry (default 30 days).
+- FRONT_OFFICE_PLAYER_CACHE_MAX_AGE_SECONDS controls the large `/players/nfl` cache expiry (default 24 hours).
+- FRONT_OFFICE_NEWS_CACHE_MAX_AGE_SECONDS controls RotoWire/Sleeper-trending cache expiry (default 900 seconds).
+- FRONT_OFFICE_EXTERNAL_CACHE_MAX_AGE_SECONDS controls DynastyProcess, nflverse, and configured external cache expiry (default 24 hours).
 - HOST=0.0.0.0 and PORT=8765 are the app defaults.
+
+Normal scheduled refreshes now honor those expiry windows. A stale source is
+refetched; if that refetch fails, the last cached payload can still support the
+last complete edition but its receipt is marked limited rather than current.
 
 The production smoke check can validate the public deployment and, when
 `FRONT_OFFICE_SESSION_TOKEN` is supplied locally, the authenticated home page,

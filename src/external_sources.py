@@ -9,13 +9,14 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .utils import RAW_EXTERNAL_DIR, dump_json, load_json
+from .utils import RAW_EXTERNAL_DIR, cache_is_fresh, dump_json, load_json
 
 
 DYNASTYPROCESS_VALUES_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values.csv"
 DYNASTYPROCESS_PICKS_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values-picks.csv"
 NFLVERSE_USAGE_URL = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv"
 FANTASY_NERDS_BASE_URL = "https://api.fantasynerds.com/v1/nfl"
+DEFAULT_EXTERNAL_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60
 
 
 def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dict[str, pd.DataFrame]:
@@ -64,6 +65,7 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
             DYNASTYPROCESS_VALUES_URL,
             RAW_EXTERNAL_DIR / "dynastyprocess" / season / "values.csv",
             force,
+            _external_cache_max_age_seconds(),
         )
         frames["market_value_sources"] = _normalize_dynastyprocess_market_sources(values)
         frames["market_consensus_values"] = build_market_consensus_values(frames["market_value_sources"])
@@ -76,6 +78,7 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
             DYNASTYPROCESS_PICKS_URL,
             RAW_EXTERNAL_DIR / "dynastyprocess" / season / "values-picks.csv",
             force,
+            _external_cache_max_age_seconds(),
         )
         frames["pick_market_values"] = _normalize_pick_values(picks)
         freshness_rows.append(row | {"row_count": len(frames["pick_market_values"])})
@@ -87,6 +90,7 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
             NFLVERSE_USAGE_URL,
             RAW_EXTERNAL_DIR / "nflverse" / season / "player_stats.csv",
             force,
+            _external_cache_max_age_seconds(),
         )
         frames["player_usage_weekly"] = _normalize_nflverse_usage(usage)
         freshness_rows.append(row | {"row_count": len(frames["player_usage_weekly"])})
@@ -102,9 +106,19 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
     return frames
 
 
-def _load_csv_source(source: str, dataset: str, url: str, cache_path: Path, force: bool) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _load_csv_source(
+    source: str,
+    dataset: str,
+    url: str,
+    cache_path: Path,
+    force: bool,
+    max_age_seconds: int | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    if cache_path.exists() and not force:
+    cache_fresh = cache_path.exists() and (
+        max_age_seconds is None or cache_is_fresh(cache_path, max_age_seconds)
+    )
+    if cache_fresh and not force:
         try:
             return pd.read_csv(cache_path), _freshness(source, dataset, "cached", url, cache_path)
         except Exception as exc:
@@ -118,15 +132,25 @@ def _load_csv_source(source: str, dataset: str, url: str, cache_path: Path, forc
     except Exception as exc:
         if cache_path.exists():
             try:
-                return pd.read_csv(cache_path), _freshness(source, dataset, f"cached_after_refresh_error:{type(exc).__name__}", url, cache_path)
+                return pd.read_csv(cache_path), _freshness(source, dataset, f"stale_after_refresh_error:{type(exc).__name__}", url, cache_path)
             except Exception:
                 pass
         return pd.DataFrame(), _freshness(source, dataset, f"unavailable:{type(exc).__name__}", url, cache_path)
 
 
-def _load_json_source(source: str, dataset: str, url: str, cache_path: Path, force: bool) -> tuple[Any, dict[str, Any]]:
+def _load_json_source(
+    source: str,
+    dataset: str,
+    url: str,
+    cache_path: Path,
+    force: bool,
+    max_age_seconds: int | None = None,
+) -> tuple[Any, dict[str, Any]]:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    if cache_path.exists() and not force:
+    cache_fresh = cache_path.exists() and (
+        max_age_seconds is None or cache_is_fresh(cache_path, max_age_seconds)
+    )
+    if cache_fresh and not force:
         try:
             return load_json(cache_path), _freshness(source, dataset, "cached", url, cache_path)
         except Exception as exc:
@@ -141,7 +165,7 @@ def _load_json_source(source: str, dataset: str, url: str, cache_path: Path, for
     except Exception as exc:
         if cache_path.exists():
             try:
-                return load_json(cache_path), _freshness(source, dataset, f"cached_after_refresh_error:{type(exc).__name__}", url, cache_path)
+                return load_json(cache_path), _freshness(source, dataset, f"stale_after_refresh_error:{type(exc).__name__}", url, cache_path)
             except Exception:
                 pass
         return {}, _freshness(source, dataset, f"unavailable:{type(exc).__name__}", url, cache_path)
@@ -150,7 +174,14 @@ def _load_json_source(source: str, dataset: str, url: str, cache_path: Path, for
 def _fetch_fantasy_nerds(season: str, api_key: str, force: bool) -> tuple[pd.DataFrame, dict[str, Any]]:
     cache_path = RAW_EXTERNAL_DIR / "fantasy_nerds" / season / "weekly_projections.json"
     url = f"{FANTASY_NERDS_BASE_URL}/weekly-projections?apikey={api_key}"
-    payload, row = _load_json_source("fantasy_nerds", "weekly_projections", url, cache_path, force)
+    payload, row = _load_json_source(
+        "fantasy_nerds",
+        "weekly_projections",
+        url,
+        cache_path,
+        force,
+        _external_cache_max_age_seconds(),
+    )
     # Never leak the API key into an audit artifact (freshness rows are written to CSV/SQLite).
     row["source_url"] = f"{FANTASY_NERDS_BASE_URL}/weekly-projections?apikey=REDACTED"
     frame = _normalize_fantasy_nerds_projections(payload)
@@ -360,6 +391,21 @@ def _freshness(source: str, dataset: str, status: str, url: str, cache_path: Pat
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "row_count": 0,
     }
+
+
+def _external_cache_max_age_seconds() -> int:
+    try:
+        return max(
+            0,
+            int(
+                os.environ.get(
+                    "FRONT_OFFICE_EXTERNAL_CACHE_MAX_AGE_SECONDS",
+                    str(DEFAULT_EXTERNAL_CACHE_MAX_AGE_SECONDS),
+                )
+            ),
+        )
+    except (TypeError, ValueError):
+        return DEFAULT_EXTERNAL_CACHE_MAX_AGE_SECONDS
 
 
 def _first(row: pd.Series, columns: list[str]) -> Any:

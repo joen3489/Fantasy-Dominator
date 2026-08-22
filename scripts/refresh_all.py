@@ -70,7 +70,11 @@ def main(
         analysis_dir = paths.analysis_dir
 
     config = scoped_config(load_config(), context) if context is not None else load_config()
-    api = SleeperAPI(raw_dir=raw_dir) if raw_dir is not None else SleeperAPI()
+    api = (
+        SleeperAPI(raw_dir=raw_dir, current_season=str(config.get("current_season", "")))
+        if raw_dir is not None
+        else SleeperAPI(current_season=str(config.get("current_season", "")))
+    )
     players = load_players(api, force=force)
     current_team = config.get("current_team", {}) or {}
     my_display_name = current_team.get("display_name") or config.get("my_display_name", "")
@@ -344,7 +348,7 @@ def refresh_user(
     force: bool = False,
     user_id: int | str | None = None,
 ) -> dict[str, dict[str, str]]:
-    api = SleeperAPI()
+    api = SleeperAPI(current_season=str(season))
     entries = discover_leagues(api, username, str(season))
     save_registry(entries, user_id=user_id)
     statuses: dict[str, dict[str, str]] = {}

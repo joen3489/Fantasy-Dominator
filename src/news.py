@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -13,10 +14,11 @@ import requests
 
 from .players import player_field, player_name
 from .sleeper_api import SleeperAPI
-from .utils import RAW_EXTERNAL_DIR
+from .utils import RAW_EXTERNAL_DIR, cache_is_fresh, load_json
 
 
 ROTOWIRE_NFL_RSS_URL = "https://www.rotowire.com/rss/news.php?sport=NFL"
+DEFAULT_NEWS_CACHE_MAX_AGE_SECONDS = 15 * 60
 
 
 def build_news_tables(
@@ -66,7 +68,8 @@ def _load_rotowire_rss(season: str, url: str, force: bool) -> tuple[list[dict[st
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     status = "cached"
     try:
-        if force or not cache_path.exists():
+        cache_fresh = cache_is_fresh(cache_path, _news_cache_max_age_seconds())
+        if force or not cache_fresh:
             response = requests.get(url, timeout=30, headers={"User-Agent": "Fantasy-Dominator/0.1"})
             response.raise_for_status()
             cache_path.write_bytes(response.content)
@@ -74,6 +77,18 @@ def _load_rotowire_rss(season: str, url: str, force: bool) -> tuple[list[dict[st
         xml_text = cache_path.read_text(encoding="utf-8", errors="replace")
         return _parse_rotowire_rss(xml_text, url), _freshness("rotowire_rss", "nfl_player_news", status, url, cache_path)
     except Exception as exc:
+        if cache_path.exists():
+            try:
+                xml_text = cache_path.read_text(encoding="utf-8", errors="replace")
+                return _parse_rotowire_rss(xml_text, url), _freshness(
+                    "rotowire_rss",
+                    "nfl_player_news",
+                    f"stale_after_refresh_error:{type(exc).__name__}",
+                    url,
+                    cache_path,
+                )
+            except OSError:
+                pass
         return [], _freshness("rotowire_rss", "nfl_player_news", f"unavailable:{type(exc).__name__}", url, cache_path)
 
 
@@ -117,34 +132,11 @@ def _load_sleeper_trending(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     source_url = f"{api.BASE_URL}/players/nfl/trending/{trend_type}"
     cache_path = RAW_EXTERNAL_DIR / "sleeper" / season / f"trending_{trend_type}.json"
-    was_cached = cache_path.exists() and not force
+    was_cached = cache_path.exists() and not force and cache_is_fresh(cache_path, _news_cache_max_age_seconds())
     try:
         trending = api.trending_players(season, trend_type, force=force)
         observed_at = _cache_timestamp(cache_path) if was_cached else datetime.now(timezone.utc).isoformat()
-        rows = []
-        for item in trending:
-            player_id = str(item.get("player_id") or "")
-            count = item.get("count", "")
-            name = player_name(players, player_id)
-            rows.append(
-                {
-                    "source": "sleeper_trending",
-                    "event_id": f"sleeper_trending_{trend_type}_{player_id}",
-                    "event_type": f"trending_{trend_type}",
-                    # Trending is a point-in-time source, not a published article.  A cached
-                    # response must retain its cache observation time; stamping it with now
-                    # made stale data look like fresh news after every scheduled refresh.
-                    "published_at": observed_at,
-                    "title": f"Sleeper trending {trend_type}: {name}",
-                    "summary": f"{name} is trending as a {trend_type} with count {count}.",
-                    "url": source_url,
-                    "player_id": player_id,
-                    "player_name": name,
-                    "team": player_field(players, player_id, "team"),
-                    "position": player_field(players, player_id, "position"),
-                    "source_trace": source_url,
-                }
-            )
+        rows = _trending_rows(trending, trend_type, players, source_url, observed_at)
         return rows, _freshness(
             "sleeper_trending",
             f"trending_{trend_type}",
@@ -153,7 +145,55 @@ def _load_sleeper_trending(
             cache_path,
         )
     except Exception as exc:
+        if cache_path.exists():
+            try:
+                trending = load_json(cache_path)
+                observed_at = _cache_timestamp(cache_path)
+                rows = _trending_rows(trending, trend_type, players, source_url, observed_at)
+                return rows, _freshness(
+                    "sleeper_trending",
+                    f"trending_{trend_type}",
+                    f"stale_after_refresh_error:{type(exc).__name__}",
+                    source_url,
+                    cache_path,
+                )
+            except (OSError, ValueError, TypeError):
+                pass
         return [], _freshness("sleeper_trending", f"trending_{trend_type}", f"unavailable:{type(exc).__name__}", source_url, cache_path)
+
+
+def _trending_rows(
+    trending: Any,
+    trend_type: str,
+    players: dict[str, dict[str, Any]],
+    source_url: str,
+    observed_at: str,
+) -> list[dict[str, Any]]:
+    rows = []
+    for item in trending if isinstance(trending, list) else []:
+        player_id = str(item.get("player_id") or "")
+        count = item.get("count", "")
+        name = player_name(players, player_id)
+        rows.append(
+            {
+                "source": "sleeper_trending",
+                "event_id": f"sleeper_trending_{trend_type}_{player_id}",
+                "event_type": f"trending_{trend_type}",
+                # Trending is a point-in-time source, not a published article.  A cached
+                # response must retain its cache observation time; stamping it with now
+                # made stale data look like fresh news after every scheduled refresh.
+                "published_at": observed_at,
+                "title": f"Sleeper trending {trend_type}: {name}",
+                "summary": f"{name} is trending as a {trend_type} with count {count}.",
+                "url": source_url,
+                "player_id": player_id,
+                "player_name": name,
+                "team": player_field(players, player_id, "team"),
+                "position": player_field(players, player_id, "position"),
+                "source_trace": source_url,
+            }
+        )
+    return rows
 
 
 def _match_news_events(news_events: pd.DataFrame, players: dict[str, dict[str, Any]]) -> pd.DataFrame:
@@ -322,6 +362,13 @@ def _freshness(source: str, dataset: str, status: str, url: str, cache_path: Pat
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "row_count": 0,
     }
+
+
+def _news_cache_max_age_seconds() -> int:
+    try:
+        return max(0, int(os.environ.get("FRONT_OFFICE_NEWS_CACHE_MAX_AGE_SECONDS", str(DEFAULT_NEWS_CACHE_MAX_AGE_SECONDS))))
+    except (TypeError, ValueError):
+        return DEFAULT_NEWS_CACHE_MAX_AGE_SECONDS
 
 
 def _news_event_columns() -> list[str]:
