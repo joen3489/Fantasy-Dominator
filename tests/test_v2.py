@@ -707,6 +707,38 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
 
+    def test_storage_audit_is_operator_gated_and_does_not_expose_other_identity(self) -> None:
+        token = self._token("user_storage_audit")
+        self.client.get("/", cookies={"__session": token})
+        current_user_id = self._user_id("user_storage_audit")
+        other_user = db.get_or_create_user("other_storage_identity")
+        db.upsert_user_league(
+            current_user_id,
+            {"league_id": "current-league", "season": "2026", "league_type": "dynasty", "name": "Current", "roster_id": 1},
+        )
+        db.upsert_user_league(
+            int(other_user["id"]),
+            {"league_id": "other-league", "season": "2026", "league_type": "dynasty", "name": "Other Secret", "roster_id": 2},
+        )
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            denied = self.client.get("/api/operator/storage-audit", cookies={"__session": token})
+            allowed = self.client.get(
+                "/api/operator/storage-audit",
+                cookies={"__session": token},
+                headers={"x-front-office-token": "operator-secret"},
+            )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+        payload = allowed.json()
+        self.assertTrue(payload["current_user_present"])
+        self.assertEqual(payload["current_user_leagues"], 1)
+        self.assertEqual(payload["other_users"], 1)
+        self.assertEqual(payload["other_user_leagues"], 1)
+        self.assertNotIn("Other Secret", str(payload))
+        self.assertNotIn("other_storage_identity", str(payload))
+
     def test_user_refresh_endpoint_is_not_operator_protected(self) -> None:
         token = self._token("user_refresh")
         with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):

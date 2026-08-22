@@ -102,7 +102,10 @@ mount a durable Railway volume at `/app/data` and set
 database, per-user league workspaces, refresh receipts, generated articles, and
 browser edition bundles. A healthy `/healthz` response alone does not prove
 that this state root is mounted or that the current Clerk identity can see the
-preserved rows.
+preserved rows. An authenticated operator can use
+`GET /api/operator/storage-audit` with `x-front-office-token` to see safe row
+counts and distinguish the current identity from preserved rows under another
+identity; it never returns Clerk subjects, league IDs, or league names.
 
 An edition is considered readable only when its `index.html`, fact bundle,
 editorial issue receipt, manifest, and lazy audit payloads are present. If a

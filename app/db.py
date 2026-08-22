@@ -210,6 +210,91 @@ def storage_health(path: Path | None = None) -> dict[str, Any]:
     }
 
 
+def storage_audit(current_user_id: int | None = None, path: Path | None = None) -> dict[str, Any]:
+    """Return operator-safe counts for diagnosing identity/storage continuity.
+
+    The audit intentionally omits Clerk subjects, league IDs, and league names.
+    It answers the operational question that matters after a deployment: does
+    this identity see the preserved rows, and are there rows under another
+    identity that indicate a Clerk-instance mismatch?
+    """
+
+    db_path = path or DB_PATH
+    result = storage_health(db_path)
+    if not result["database_schema_ready"]:
+        return result | {
+            "current_user_present": False,
+            "current_user_leagues": 0,
+            "other_users": 0,
+            "other_user_leagues": 0,
+            "team_profiles": 0,
+            "content_artifacts": 0,
+            "refresh_runs": 0,
+            "orphan_user_leagues": 0,
+            "orphan_team_profiles": 0,
+        }
+
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA query_only = ON")
+
+            def count(query: str, params: tuple[Any, ...] = ()) -> int:
+                row = conn.execute(query, params).fetchone()
+                return int(row[0]) if row else 0
+
+            current_present = bool(
+                current_user_id is not None
+                and count("SELECT COUNT(*) FROM users WHERE id = ?", (current_user_id,))
+            )
+            current_leagues = count(
+                "SELECT COUNT(*) FROM user_leagues WHERE user_id = ?", (current_user_id,)
+            ) if current_user_id is not None else 0
+            total_users = count("SELECT COUNT(*) FROM users")
+            total_leagues = count("SELECT COUNT(*) FROM user_leagues")
+            orphan_leagues = count(
+                """
+                SELECT COUNT(*)
+                FROM user_leagues AS leagues
+                LEFT JOIN users ON users.id = leagues.user_id
+                WHERE users.id IS NULL
+                """
+            )
+            orphan_profiles = count(
+                """
+                SELECT COUNT(*)
+                FROM team_profiles AS profiles
+                LEFT JOIN users ON users.id = profiles.user_id
+                WHERE users.id IS NULL
+                """
+            )
+            return result | {
+                "current_user_present": current_present,
+                "current_user_leagues": current_leagues,
+                "other_users": max(0, total_users - (1 if current_present else 0)),
+                "other_user_leagues": max(0, total_leagues - current_leagues),
+                "team_profiles": count("SELECT COUNT(*) FROM team_profiles"),
+                "content_artifacts": count("SELECT COUNT(*) FROM content_artifacts"),
+                "refresh_runs": count("SELECT COUNT(*) FROM refresh_runs"),
+                "orphan_user_leagues": orphan_leagues,
+                "orphan_team_profiles": orphan_profiles,
+            }
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return result | {
+            "current_user_present": False,
+            "current_user_leagues": 0,
+            "other_users": 0,
+            "other_user_leagues": 0,
+            "team_profiles": 0,
+            "content_artifacts": 0,
+            "refresh_runs": 0,
+            "orphan_user_leagues": 0,
+            "orphan_team_profiles": 0,
+        }
+
+
 def another_user_has_leagues(user_id: int) -> bool:
     """Return whether another authenticated identity has a stored league.
 

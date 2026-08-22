@@ -155,6 +155,16 @@ def create_app() -> FastAPI:
     def continuity(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         return _continuity_view(int(user["id"]))
 
+    @app.get("/api/operator/storage-audit")
+    def operator_storage_audit(
+        request: Request,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Expose non-identifying store counts for production continuity repair."""
+
+        _require_operator_access(request)
+        return db.storage_audit(int(user["id"]))
+
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         entries = discover_leagues(SleeperAPI(), body.sleeper_username, body.season)
