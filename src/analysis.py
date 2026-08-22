@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from .personas import normalize_writer_preferences, persona_metadata
 from .utils import ANALYSIS_DIR
 
 
@@ -27,6 +29,7 @@ def build_analysis_artifacts(
     active_roster_id = active_roster_id or _configured_roster_id(config)
     teams = dataframes.get("teams", pd.DataFrame())
     active_team_name = _team_name(teams, active_roster_id)
+    writer_preferences = normalize_writer_preferences(config.get("writer_preferences"))
 
     context_packets = build_context_packets(dataframes, active_roster_id, active_team_name, generated_at)
     target_theses = build_target_theses(dataframes, active_roster_id, active_team_name, generated_at)
@@ -49,14 +52,22 @@ def build_analysis_artifacts(
         _write_json(analysis_dir / filename, payload)
 
     markdown_artifacts = {
-        "daily_gm_brief.md": build_daily_gm_brief(active_roster_id, active_team_name, target_theses, sell_theses, trade_theses, generated_at),
+        "daily_gm_brief.md": build_daily_gm_brief(
+            active_roster_id,
+            active_team_name,
+            target_theses,
+            sell_theses,
+            trade_theses,
+            generated_at,
+            writer_preferences,
+        ),
         "manager_dossiers.md": build_manager_dossiers(dataframes, generated_at),
         "news_impact_brief.md": build_news_impact_brief(dataframes, generated_at),
         # Sprint 17 per-section article fallbacks -- the LLM workflow overwrites these in place.
-        "team_report.md": build_team_report(dataframes, active_roster_id, active_team_name, generated_at),
-        "market_watch.md": build_market_watch(target_theses, sell_theses, generated_at),
-        "trade_desk.md": build_trade_desk(trade_theses, active_team_name, generated_at),
-        "manager_intel.md": build_manager_intel(dataframes, generated_at),
+        "team_report.md": build_team_report(dataframes, active_roster_id, active_team_name, generated_at, writer_preferences),
+        "market_watch.md": build_market_watch(target_theses, sell_theses, generated_at, writer_preferences),
+        "trade_desk.md": build_trade_desk(trade_theses, active_team_name, generated_at, writer_preferences),
+        "manager_intel.md": build_manager_intel(dataframes, generated_at, writer_preferences),
     }
     for filename, text in markdown_artifacts.items():
         (analysis_dir / filename).write_text(text, encoding="utf-8")
@@ -258,6 +269,7 @@ def build_daily_gm_brief(
     sells: list[dict[str, Any]],
     trades: list[dict[str, Any]],
     generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
 ) -> str:
     top_targets = targets[:5]
     top_sells = sells[:5]
@@ -271,11 +283,12 @@ def build_daily_gm_brief(
                 "team_name": active_team_name,
                 "model_mode": GENERATION_MODE,
                 "source_tables": ", ".join(_source_tables()),
+                "reporter_persona": persona_metadata(writer_preferences)["persona_id"],
             }
         ),
         f"# Daily GM Brief: {active_team_name}",
         "",
-        "This is analyst interpretation generated from deterministic projection, signal, news, and manager-behavior tables.",
+        _brief_intro(active_team_name, writer_preferences),
         "",
         "## Target Theses",
         *_bullets(top_targets, "player_name", "analysis_text"),
@@ -343,70 +356,122 @@ def build_news_impact_brief(dataframes: dict[str, pd.DataFrame], generated_at: s
 # article's headers so the browser renders both the same way, and each is overwritten in place
 # by the LLM version when the article workflow succeeds. -----------------------------------
 
-def _article_front_matter(key: str, generated_at: str, **extra: Any) -> str:
-    return _front_matter({"artifact_type": key, "generated_at": generated_at, "model_mode": GENERATION_MODE, **extra})
+def _article_front_matter(
+    key: str,
+    generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
+    **extra: Any,
+) -> str:
+    return _front_matter(
+        {
+            "artifact_type": key,
+            "generated_at": generated_at,
+            "model_mode": GENERATION_MODE,
+            "reporter_persona": persona_metadata(writer_preferences)["persona_id"],
+            **extra,
+        }
+    )
 
 
-def build_team_report(dataframes: dict[str, pd.DataFrame], active_roster_id: int | None, active_team_name: str, generated_at: str) -> str:
+def build_team_report(
+    dataframes: dict[str, pd.DataFrame],
+    active_roster_id: int | None,
+    active_team_name: str,
+    generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
+) -> str:
     players = [row for row in _rows(dataframes.get("player_dossiers", pd.DataFrame())) if _int(row.get("roster_id")) == _int(active_roster_id)]
-    players.sort(key=lambda row: _num(row.get("market_value")), reverse=True)
-    cornerstones = players[:4]
-    shop = [row for row in players if "sell" in str(row.get("signal_label", "")).lower()][:4] or players[4:8]
+    cornerstone_pool = [row for row in players if not _is_shop_candidate(row)]
+    cornerstones = sorted(cornerstone_pool or players, key=_cornerstone_score, reverse=True)[:4]
+    cornerstone_names = {_normalize_name(row.get("player_name")) for row in cornerstones}
+    shop = sorted(
+        [row for row in players if _normalize_name(row.get("player_name")) not in cornerstone_names],
+        key=_shop_score,
+        reverse=True,
+    )[:4]
     lines = [
-        _article_front_matter("team_report", generated_at, roster_id=active_roster_id, team_name=active_team_name),
+        _article_front_matter(
+            "team_report",
+            generated_at,
+            writer_preferences,
+            roster_id=active_roster_id,
+            team_name=active_team_name,
+        ),
         f"# Your Team Report: {active_team_name}",
         "",
+        _team_report_intro(active_team_name, players, writer_preferences),
+        "",
         "## Cornerstones",
-        *_bullets(cornerstones, "player_name", "evidence"),
+        *_player_bullets(cornerstones, "cornerstone", writer_preferences),
         "",
         "## Shop Candidates",
-        *_bullets(shop, "player_name", "evidence"),
+        *_player_bullets(shop, "shop", writer_preferences),
     ]
     return "\n".join(lines).strip() + "\n"
 
 
-def build_market_watch(targets: list[dict[str, Any]], sells: list[dict[str, Any]], generated_at: str) -> str:
+def build_market_watch(
+    targets: list[dict[str, Any]],
+    sells: list[dict[str, Any]],
+    generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
+) -> str:
     lines = [
-        _article_front_matter("market_watch", generated_at),
+        _article_front_matter("market_watch", generated_at, writer_preferences),
         "# Market Watch",
         "",
+        _market_watch_intro(writer_preferences),
+        "",
         "## Buy-Low Targets",
-        *_bullets(targets[:5], "player_name", "analysis_text"),
+        *_thesis_bullets(targets[:5], "buy_low", writer_preferences),
         "",
         "## Sell-High Windows",
-        *_bullets(sells[:5], "player_name", "analysis_text"),
+        *_thesis_bullets(sells[:5], "sell_high", writer_preferences),
     ]
     return "\n".join(lines).strip() + "\n"
 
 
-def build_trade_desk(trades: list[dict[str, Any]], active_team_name: str, generated_at: str) -> str:
+def build_trade_desk(
+    trades: list[dict[str, Any]],
+    active_team_name: str,
+    generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
+) -> str:
     best = trades[:5]
     lines = [
-        _article_front_matter("trade_desk", generated_at, team_name=active_team_name),
+        _article_front_matter("trade_desk", generated_at, writer_preferences, team_name=active_team_name),
         "# Trade Desk Read",
         "",
+        _trade_desk_intro(active_team_name, writer_preferences),
+        "",
         "## Best Fits",
-        *_bullets(best, "target_manager_name", "analysis_text"),
+        *_trade_bullets(best, writer_preferences),
         "",
         "## Steer Clear",
-        "- No steer-clear counterparties flagged from the current evidence.",
+        "- No steer-clear counterparties flagged from the current evidence. Treat every manager read as a tendency estimate, not intent.",
     ]
     return "\n".join(lines).strip() + "\n"
 
 
-def build_manager_intel(dataframes: dict[str, pd.DataFrame], generated_at: str) -> str:
+def build_manager_intel(
+    dataframes: dict[str, pd.DataFrame],
+    generated_at: str,
+    writer_preferences: dict[str, Any] | None = None,
+) -> str:
     cycles = _rows(dataframes.get("manager_cycle_profiles", pd.DataFrame()))
     contenders = [row for row in cycles if str(row.get("dynasty_cycle", "")) == "contender"]
     rebuilders = [row for row in cycles if str(row.get("dynasty_cycle", "")) == "rebuild"]
     lines = [
-        _article_front_matter("manager_intel", generated_at, manager_count=len(cycles)),
+        _article_front_matter("manager_intel", generated_at, writer_preferences, manager_count=len(cycles)),
         "# Manager Intel",
         "",
+        _manager_intel_intro(len(cycles), writer_preferences),
+        "",
         "## Contenders",
-        *_bullets(contenders, "team_name", "likely_needs"),
+        *_manager_bullets(contenders, writer_preferences),
         "",
         "## Rebuilders",
-        *_bullets(rebuilders, "team_name", "likely_sells"),
+        *_manager_bullets(rebuilders, writer_preferences),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -581,6 +646,263 @@ def _bullets(rows: list[dict[str, Any]], title_key: str, text_key: str) -> list[
     if not rows:
         return ["- No high-signal rows available."]
     return [f"- {row.get(title_key, 'Unknown')}: {row.get(text_key, '')}" for row in rows]
+
+
+def _brief_intro(team_name: str, writer_preferences: dict[str, Any] | None) -> str:
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    intros = {
+        "front_office": (
+            f"The {team_name} edition: price, production, news, and manager behavior turned into a short list of decisions. "
+            "The evidence is deterministic; the tone is allowed to have opinions."
+        ),
+        "scout": (
+            f"The {team_name} edition is a role-and-timeline read. Each signal names what is known, what is missing, "
+            "and what would change the evaluation."
+        ),
+        "commissioner": (
+            f"The {team_name} edition, with the league room in view: useful pressure points, observed tendencies, and no invented manager intent."
+        ),
+        "quant": (
+            f"The {team_name} edition is a measured decision memo: market values, projected PPG, thresholds, and confidence before adjectives."
+        ),
+    }
+    return intros.get(persona_id, intros["front_office"])
+
+
+def _team_report_intro(
+    team_name: str,
+    players: list[dict[str, Any]],
+    writer_preferences: dict[str, Any] | None,
+) -> str:
+    projected = sum(1 for row in players if _num(row.get("projected_ppg")) > 0)
+    valued = sum(1 for row in players if _has_value(row.get("market_value")))
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    if not players:
+        return f"No roster rows are available for {team_name}; the report is waiting on a scoped refresh."
+    if persona_id == "scout":
+        lead = "The roster has been sorted by the intersection of market value, projected scoring, and role signal."
+    elif persona_id == "commissioner":
+        lead = "This is the part of the league paper where the roster gets a flattering headline and an unflattering footnote."
+    elif persona_id == "quant":
+        lead = "Ranking blends market value, projected PPG, breakout score, and starter status; it is not a league-wide trade value claim."
+    else:
+        lead = "The roster is sorted for decision value, not name recognition, with the market and projection doing most of the arguing."
+    return f"{lead} {len(players)} players are in scope; {valued} have market values and {projected} carry non-zero projections."
+
+
+def _market_watch_intro(writer_preferences: dict[str, Any] | None) -> str:
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    if persona_id == "scout":
+        return "These are price disagreements to investigate. A buy-low still needs a viable role, and a sell window still needs a credible market."
+    if persona_id == "commissioner":
+        return "The market is leaving fingerprints. Read the numbers, then decide which manager is most likely to pretend they did not see them."
+    if persona_id == "quant":
+        return "Targets are ranked by model gaps; windows are ranked by timing or age pressure. Risk and confidence remain attached to every row."
+    return "The useful market read is a disagreement, not a command: investigate the gap, then check role, price, and risk before acting."
+
+
+def _trade_desk_intro(team_name: str, writer_preferences: dict[str, Any] | None) -> str:
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    if persona_id == "scout":
+        return f"For {team_name}, counterparties are ranked by observed behavior and roster fit. Manager tendencies are estimates, not mind-reading."
+    if persona_id == "commissioner":
+        return f"{team_name} has a short list of rooms worth entering. Bring evidence; leave the league-chat theatrics at the door."
+    if persona_id == "quant":
+        return f"Counterparties for {team_name} are ranked by manager signals and named opportunity rows, with confidence exposed rather than implied."
+    return f"The {team_name} desk is looking for conversations where the manager signal and the named asset point in the same direction."
+
+
+def _manager_intel_intro(count: int, writer_preferences: dict[str, Any] | None) -> str:
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    if persona_id == "scout":
+        return f"The league cycle board covers {count} teams. Cycle labels summarize roster shape and observed behavior; they do not establish intent."
+    if persona_id == "commissioner":
+        return f"{count} teams, several familiar habits, and enough evidence to make the league chat uncomfortable—in a useful way."
+    if persona_id == "quant":
+        return f"{count} cycle profiles are shown with their inputs, needs, sells, and confidence. The label is a model output, not a fact about motivation."
+    return f"{count} manager profiles are translated into possible pressure points using roster shape and observed league activity."
+
+
+def _player_bullets(
+    rows: list[dict[str, Any]],
+    section: str,
+    writer_preferences: dict[str, Any] | None,
+) -> list[str]:
+    if not rows:
+        return ["- No high-signal roster rows available for this section."]
+    return [f"- **{_clean(row.get('player_name'), 'Unknown player')}** — {_player_story(row, section, writer_preferences)}" for row in rows]
+
+
+def _player_story(row: dict[str, Any], section: str, writer_preferences: dict[str, Any] | None) -> str:
+    position = _clean(row.get("position"), "player")
+    status = _clean(row.get("roster_status"), "roster")
+    market = _metric(row.get("market_value"))
+    ppg = _metric(row.get("projected_ppg"))
+    confidence = _clean(row.get("projection_confidence"), "unknown")
+    signal = _human_label(row.get("signal_label"), "no strong signal")
+    news = _human_label(row.get("news_impact"), "none")
+    transactions = _metric(row.get("transaction_count"), integer=True)
+    last_transaction = _human_label(row.get("last_transaction"), "not recorded")
+    evidence = (
+        f"{position}, {status}; market value {market}; projected {ppg} PPG ({confidence} confidence); "
+        f"signal {signal}; news {news}; {transactions} league transactions, most recent {last_transaction}."
+    )
+    if section == "shop":
+        read = _shop_read(row)
+    else:
+        read = _cornerstone_read(row)
+    return f"{evidence} {_persona_read(read, writer_preferences)}"
+
+
+def _cornerstone_read(row: dict[str, Any]) -> str:
+    signal = str(row.get("signal_label", "")).lower()
+    if "missing_projection" in signal:
+        return "The market still respects the asset, but the projection is incomplete; treat this as a value anchor with a data-quality asterisk."
+    if "breakout" in signal:
+        return "The model sees upside relative to the current profile; keep the role and projection inputs under review."
+    return "This is a useful roster anchor while the market and projection remain inside the same general range."
+
+
+def _shop_read(row: dict[str, Any]) -> str:
+    signal = str(row.get("signal_label", "")).lower()
+    news = str(row.get("news_impact", "")).lower()
+    sell_score = _metric(row.get("sell_score"))
+    if "sell" in signal or "sell" in news:
+        return f"The sell score is {sell_score} and the current news/signal lane adds timing pressure; test the market without forcing a weak return."
+    if "missing_projection" in signal:
+        return "The value is mostly a market marker because the projection is missing; shop only if another manager pays for the name."
+    return f"The sell score is {sell_score}; this is a price-discovery candidate, not an automatic move."
+
+
+def _persona_read(read: str, writer_preferences: dict[str, Any] | None) -> str:
+    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    labels = {
+        "front_office": "Front-office read:",
+        "scout": "Scout read:",
+        "commissioner": "League note:",
+        "quant": "Measured read:",
+    }
+    return f"{labels.get(persona_id, labels['front_office'])} {read}"
+
+
+def _thesis_bullets(
+    rows: list[dict[str, Any]],
+    side: str,
+    writer_preferences: dict[str, Any] | None,
+) -> list[str]:
+    if not rows:
+        return ["- No high-signal rows available; do not manufacture a market move."]
+    prefix = "Buy-low read" if side == "buy_low" else "Sell-window read"
+    return [
+        f"- **{_clean(row.get('player_name'), 'Unknown player')}** — {prefix}: "
+        f"{_clean(row.get('analysis_text'), 'The model sees a decision point.')} "
+        f"Confidence: {_clean(row.get('confidence'), 'unknown')}. Guardrail: {_clean(row.get('risk'), 'verify the market and role')}. "
+        f"{_persona_read('Use the evidence as a starting point, then verify the live market.', writer_preferences)}"
+        for row in rows
+    ]
+
+
+def _trade_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any] | None) -> list[str]:
+    if not rows:
+        return ["- No manager opportunity rows available; the desk is quiet until the next scoped refresh."]
+    bullets: list[str] = []
+    for row in rows:
+        manager = _clean(row.get("target_manager_name"), "Unknown manager")
+        approach = _human_label(row.get("approach_type"), "price discovery")
+        signal = _clean(row.get("manager_signal"), "unclear manager signal")
+        assets = _clean(row.get("assets_to_discuss"), "no named asset")
+        evidence = _clean(row.get("evidence"), "no evidence string")
+        risk = _clean(row.get("risk"), "verify before acting")
+        confidence = _clean(row.get("confidence"), "unknown")
+        bullets.append(
+            f"- **{manager}** — Approach: {approach}. Observed signal: {signal}. Named lane: {assets}. "
+            f"Evidence: {evidence}. Confidence: {confidence}. Guardrail: {risk}. "
+            f"{_persona_read('Keep this as a conversation hypothesis, not a claim about intent.', writer_preferences)}"
+        )
+    return bullets
+
+
+def _manager_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any] | None) -> list[str]:
+    if not rows:
+        return ["- No managers in this cycle bucket from the current evidence."]
+    bullets: list[str] = []
+    for row in rows:
+        team = _clean(row.get("team_name"), "Unknown manager")
+        cycle = _human_label(row.get("dynasty_cycle"), "unclear cycle")
+        needs = _clean(row.get("likely_needs"), "no named need")
+        sells = _clean(row.get("likely_sells"), "no named sell lane")
+        trade = _clean(row.get("trade_temperature"), "unknown trade activity")
+        picks = _clean(row.get("pick_posture"), "unknown pick posture")
+        confidence = _clean(row.get("confidence"), "unknown")
+        evidence = _clean(row.get("evidence"), "no evidence string")
+        bullets.append(
+            f"- **{team}** — Cycle: {cycle}. Likely need: {needs}. Possible sell lane: {sells}. "
+            f"Observed behavior: {trade}; {picks}. Confidence: {confidence}. Evidence: {evidence}. "
+            f"{_persona_read('Use the profile to choose a question, never to infer motive.', writer_preferences)}"
+        )
+    return bullets
+
+
+def _cornerstone_score(row: dict[str, Any]) -> float:
+    # Market value gives the asset its floor; projected output and a breakout signal keep
+    # expensive zero-projection players from becoming automatic "cornerstones."
+    starter_bonus = 5.0 if str(row.get("roster_status", "")).lower() == "starter" else 0.0
+    return (_num(row.get("market_value")) * 0.7) + (_num(row.get("projected_ppg")) * 3.0) + (_num(row.get("breakout_score")) * 0.15) + starter_bonus
+
+
+def _shop_score(row: dict[str, Any]) -> float:
+    signal = str(row.get("signal_label", "")).lower()
+    news = str(row.get("news_impact", "")).lower()
+    missing_projection_penalty = 30.0 if "missing_projection" in signal else 0.0
+    news_bonus = 20.0 if "sell" in news else 0.0
+    signal_bonus = 12.0 if "sell" in signal else 0.0
+    return (_num(row.get("sell_score")) * 2.0) + news_bonus + signal_bonus - missing_projection_penalty
+
+
+def _is_shop_candidate(row: dict[str, Any]) -> bool:
+    signal = str(row.get("signal_label", "")).lower()
+    news = str(row.get("news_impact", "")).lower()
+    return _shop_score(row) >= 90.0 or "sell" in signal or "sell" in news
+
+
+def _clean(value: Any, fallback: str = "") -> str:
+    if value is None:
+        return fallback
+    try:
+        if pd.isna(value):
+            return fallback
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return fallback if not text or text.lower() in {"nan", "none"} else text
+
+
+def _has_value(value: Any) -> bool:
+    return _clean(value) not in {"", "0", "0.0", "0.00"}
+
+
+def _metric(value: Any, integer: bool = False) -> str:
+    text = _clean(value)
+    if not text:
+        return "n/a"
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return text
+    if integer:
+        return str(int(number))
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _human_label(value: Any, fallback: str = "") -> str:
+    text = _clean(value, fallback)
+    return text.replace("_", " ")
+
+
+def _normalize_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", _clean(value).lower())
 
 
 def _source_tables() -> list[str]:
