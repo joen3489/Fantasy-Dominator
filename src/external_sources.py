@@ -13,7 +13,7 @@ from .utils import RAW_EXTERNAL_DIR, dump_json, load_json
 
 
 DYNASTYPROCESS_VALUES_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values.csv"
-DYNASTYPROCESS_PICKS_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/picks.csv"
+DYNASTYPROCESS_PICKS_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values-picks.csv"
 NFLVERSE_USAGE_URL = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv"
 FANTASY_NERDS_BASE_URL = "https://api.fantasynerds.com/v1/nfl"
 
@@ -74,7 +74,7 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
             "dynastyprocess",
             "pick_values",
             DYNASTYPROCESS_PICKS_URL,
-            RAW_EXTERNAL_DIR / "dynastyprocess" / season / "picks.csv",
+            RAW_EXTERNAL_DIR / "dynastyprocess" / season / "values-picks.csv",
             force,
         )
         frames["pick_market_values"] = _normalize_pick_values(picks)

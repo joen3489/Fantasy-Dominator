@@ -79,10 +79,17 @@ def main(
     configured_roster_id = int(configured_roster_id) if configured_roster_id not in (None, "") else None
     week_start = int(config.get("transaction_weeks", {}).get("start", 1))
     week_end = int(config.get("transaction_weeks", {}).get("end", 18))
+    requested_league_id = str(league_id or "")
     if league_id:
-        league_ids_by_season = _discover_league_history_from_seed(config, api, str(league_id), force=force)
+        league_ids_by_season = _discover_league_history_from_seed(config, api, requested_league_id, force=force)
     else:
         league_ids_by_season = _discover_league_history(config, api, force=force)
+    current_season = str(config.get("current_season", "") or "")
+    current_scope_league_id = str(
+        context.league_id
+        if context
+        else league_ids_by_season.get(current_season) or requested_league_id or ""
+    )
 
     external_frames = refresh_external_sources(config, force=force)
 
@@ -260,7 +267,7 @@ def main(
                 "raw_cache_root": str((raw_dir or Path("data") / "raw").as_posix()),
                 "raw_external_cache_root": str((Path("data") / "raw_external").as_posix()),
                 "user_id": context.user_id if context else "",
-                "league_id": context.league_id if context else league_id or "",
+                "league_id": current_scope_league_id,
                 "team_scope_key": context.scope_key if context else "legacy",
                 "browser_is_primary_surface": True,
                 "recommendation_packets_status": "planned_contract_only",
@@ -310,6 +317,7 @@ def main(
         analysis_dir,
         league_type=league_type,
         league_id=context.league_id if context else league_id or "",
+        config=config,
     )
     print(f"Wrote {site_path}")
 

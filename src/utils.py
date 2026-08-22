@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,26 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = PROJECT_ROOT / "config"
-DATA_DIR = PROJECT_ROOT / "data"
+
+
+def _data_root() -> Path:
+    """Resolve the durable application data root.
+
+    Local development keeps the historical ``./data`` default. Deployments can
+    point this at a mounted Railway volume (for example ``/app/data``) without
+    changing the repository or making the rest of the pipeline path-aware.
+    Relative overrides remain project-relative so local test and CLI behavior
+    stays predictable.
+    """
+
+    configured = os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()
+    if not configured:
+        return PROJECT_ROOT / "data"
+    path = Path(configured).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+DATA_DIR = _data_root()
 RAW_DIR = DATA_DIR / "raw"
 RAW_EXTERNAL_DIR = DATA_DIR / "raw_external"
 PROCESSED_DIR = DATA_DIR / "processed"

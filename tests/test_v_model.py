@@ -982,6 +982,7 @@ class VModelTests(unittest.TestCase):
             html = output.read_text(encoding="utf-8")
             manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
             players_audit_exists = (site / "data" / "audit" / "players.json").exists()
 
         self.assertIn("The Front Office", html)
@@ -1087,6 +1088,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("function renderCell", html)
         self.assertIn("cat-${bucket}", html)
         self.assertEqual(manifest["appName"], "The Front Office")
+        self.assertEqual(manifest["editorialPath"], "data/editorial_issue.json")
+        self.assertEqual(editorial["schema_version"], "issue_v1")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
         self.assertIn("players", manifest["auditTables"])
         self.assertIn("player_usage_weekly", manifest["auditTables"])
@@ -1103,6 +1106,29 @@ class VModelTests(unittest.TestCase):
         # undefined client-side (this crashed render() until caught by manual browser
         # verification, since HTML-string assertions alone don't execute the JS).
         self.assertIn("today_priority_board", bundle["tables"])
+
+    def test_browser_surface_accepts_explicit_league_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            site = Path(tmp) / "site"
+            processed.mkdir()
+            self._write_minimal_processed_tables(processed)
+
+            build_browser_site(
+                site,
+                processed,
+                config={
+                    "current_season": "2099",
+                    "current_team": {"roster_id": 2, "team_name": "League Custom Team", "display_name": "custom"},
+                    "strategy_profile": {"name": "League-specific rebuild", "team_direction": "rebuild"},
+                    "tracked_picks": [{"pick_season": "2099", "round": 1}],
+                },
+            )
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["currentSeason"], "2099")
+        self.assertEqual(bundle["strategyProfile"]["name"], "League-specific rebuild")
+        self.assertEqual(bundle["trackedPicks"][0]["round"], 1)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"

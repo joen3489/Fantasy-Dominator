@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 from src import operator as front_operator
 from src.attention import load_attention
-from src.browser_site import build_browser_site
-from src.context import context_from_league_row
+from src.browser_site import browser_bundle_is_complete, browser_bundle_missing, build_browser_site
+from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
 from src.sleeper_api import SleeperAPI
@@ -341,15 +341,17 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
         return LeaguePaths.default()
     private = _private_paths(int(user["id"]), str(league["league_id"]))
     legacy = LeaguePaths.for_league(str(league["league_id"]))
-    # A failed or interrupted private refresh can leave the workspace root in
-    # place before it writes the browser bundle. Prefer a complete private
-    # edition, then a complete legacy edition, before falling back to whichever
-    # workspace is present so an incomplete private root cannot hide a usable
-    # migration fallback.
-    if (private.site_dir / "index.html").is_file():
-        return private
-    if (legacy.site_dir / "index.html").is_file():
-        return legacy
+    # A failed or interrupted refresh can leave an index shell in place before
+    # it writes the data bundle. Prefer a complete private edition, then a
+    # complete legacy edition, before falling back to an incomplete root for a
+    # truthful recovery response. An incomplete private root must not hide a
+    # usable migration fallback.
+    for candidate in (private, legacy):
+        if browser_bundle_is_complete(candidate.site_dir):
+            return candidate
+    for candidate in (private, legacy):
+        if (candidate.site_dir / "index.html").is_file():
+            return candidate
     # Read-only migration fallback for v2 data generated before user roots
     # existed. New refreshes always use the private root below.
     return legacy if legacy.root.exists() else private
@@ -362,13 +364,15 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
         _private_paths(int(user["id"]), str(league["league_id"])),
         LeaguePaths.for_league(str(league["league_id"])),
     ]
+    context = _context_for_league(int(user["id"]), league)
+    config = scoped_config(load_config(), context)
     seen: set[str] = set()
     for paths in candidates:
         key = str(paths.root)
         if key in seen:
             continue
         seen.add(key)
-        if (paths.site_dir / "index.html").is_file():
+        if browser_bundle_is_complete(paths.site_dir):
             return
         if not (paths.processed_dir / "refresh_metadata.csv").is_file():
             continue
@@ -379,6 +383,7 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
                 paths.analysis_dir,
                 league_type=str(league.get("league_type") or "dynasty"),
                 league_id=str(league.get("league_id") or ""),
+                config=config,
             )
             return
         except Exception:  # noqa: BLE001 - the recovery page must remain available.
@@ -403,8 +408,8 @@ def _serve_league_file(
         # SECURITY: repeat containment after default-document resolution to keep nested directory requests boxed in.
         if not target.is_relative_to(site_dir):
             raise HTTPException(status_code=404, detail="league file not found")
-    if not target.exists() or not target.is_file():
-        if requested_path in {"", "index.html"}:
+    if not target.exists() or not target.is_file() or not browser_bundle_is_complete(site_dir):
+        if requested_path in {"", "index.html"} or browser_bundle_missing(site_dir):
             _rebuild_missing_bundle(user, league)
             paths = _paths_for_user_league(user, league)
             site_dir = paths.site_dir.resolve()
@@ -484,12 +489,14 @@ def _rebuild_browser_job(league: dict[str, Any] | None, user_id: int) -> dict[st
             rebuilt.append(_rebuild_browser_job(row, user_id))
         return {"state": "complete", "message": "Browser bundles rebuilt.", "leagues": rebuilt}
     paths = _private_paths(user_id, str(league["league_id"]))
+    context = _context_for_league(user_id, league)
     path = build_browser_site(
         paths.site_dir,
         paths.processed_dir,
         paths.analysis_dir,
         league_type=str(league.get("league_type") or "dynasty"),
         league_id=str(league.get("league_id") or ""),
+        config=scoped_config(load_config(), context),
     )
     return {"state": "complete", "message": "Browser bundle rebuilt.", "site_path": str(path.as_posix())}
 
@@ -500,7 +507,8 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
     user = {"id": user_id}
     paths = _paths_for_user_league(user, league)
     bundle_path = paths.site_dir / "index.html"
-    bundle_exists = bundle_path.is_file()
+    bundle_missing = browser_bundle_missing(paths.site_dir)
+    bundle_exists = not bundle_missing
     refresh_status = _refresh_status(str(league.get("league_id") or ""), user_id)
     latest_run = db.latest_refresh_run(user_id, str(league.get("league_id") or ""))
     run_state = str((latest_run or {}).get("status") or "").lower()
@@ -565,6 +573,7 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
         "message": message,
         "dot_class": dot_class,
         "bundle_exists": bundle_exists,
+        "bundle_missing": bundle_missing,
         "bundle_source": "private" if paths.user_id else "legacy",
         "updated_at": timestamp,
         "refresh_state": lifecycle_state or "unknown",
@@ -580,7 +589,22 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     readiness = _edition_readiness(user_id, row) if user_id is not None else None
     view["edition_readiness"] = readiness
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
+    view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
     return view
+
+
+def _load_editorial_issue(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Load the small reader-facing issue receipt without opening the fact bundle."""
+
+    paths = _paths_for_user_league({"id": user_id}, league)
+    path = paths.site_dir / "data" / "editorial_issue.json"
+    if not path.is_file():
+        return {}
+    try:
+        payload = load_json(path)
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _refresh_status(league_id: str, user_id: int | None = None) -> dict[str, Any] | None:

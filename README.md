@@ -86,6 +86,19 @@ python -m app.main
 
 railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and ANTHROPIC_API_KEY only for explicit writer actions.
 
+Generated state is intentionally not stored in Git. For production continuity,
+mount a durable Railway volume at `/app/data` and set
+`FRONT_OFFICE_DATA_DIR=/app/data`. This single root contains the app identity
+database, per-user league workspaces, refresh receipts, generated articles, and
+browser edition bundles. A healthy `/healthz` response alone does not prove
+that this state root is mounted or that the current Clerk identity can see the
+preserved rows.
+
+An edition is considered readable only when its `index.html`, fact bundle,
+editorial issue receipt, manifest, and lazy audit payloads are present. If a
+refresh fails, the app should continue serving the last complete edition and
+show the refresh receipt rather than an empty shell or raw file-not-found JSON.
+
 Optional environment variables:
 
 - FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN=true fails operator actions closed even when the token variable is missing.

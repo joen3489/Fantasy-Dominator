@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from app import auth, db
+from app import main as app_main
 from app.main import create_app
 from scripts import refresh_all
 from src.attention import (
@@ -31,6 +32,17 @@ from src.attention import (
 )
 from src.league_paths import LeaguePaths
 from src.league_registry import classify_league, discover_leagues
+
+
+def _write_complete_bundle(site_dir: Path, html: str, editorial: dict | None = None) -> None:
+    """Create the smallest valid reader bundle for route/readiness tests."""
+
+    data_dir = site_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (site_dir / "index.html").write_text(html, encoding="utf-8")
+    (data_dir / "app_bundle.json").write_text("{}", encoding="utf-8")
+    (data_dir / "editorial_issue.json").write_text(json.dumps(editorial or {}), encoding="utf-8")
+    (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}}), encoding="utf-8")
 
 
 class MultiLeagueLayerTests(unittest.TestCase):
@@ -413,7 +425,19 @@ class FastAPIClerkAppTests(unittest.TestCase):
         status_path = self.leagues_root / "alpha" / "site" / "refresh_status.json"
         status_path.parent.mkdir(parents=True)
         status_path.write_text(json.dumps({"state": "complete", "updated_at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
-        (status_path.parent / "index.html").write_text("<h1>Alpha edition</h1>", encoding="utf-8")
+        _write_complete_bundle(
+            status_path.parent,
+            "<h1>Alpha edition</h1>",
+            {
+                "kicker": "Personal league edition",
+                "edition_label": "Today",
+                "headline": "Your rookie receiver is the morning's real market leak",
+                "dek": "The model found a role signal worth opening.",
+                "stories": [
+                    {"eyebrow": "Manager lens", "headline": "A rival is buying the wrong window", "dek": "Observed behavior gives us an angle."}
+                ],
+            },
+        )
         items = [
             AttentionItem("alpha", "Alpha League", "dynasty", "deadline", 88, "Waivers process today", "Claims need a look.", "/league/alpha/#view-today", "e=1", "2026-07-05T12:00:00+00:00"),
             AttentionItem("alpha", "Alpha League", "dynasty", "roster_health", 72, "Player is Out", "Lineup math got worse.", "/league/alpha/#player-1", "e=2", "2026-07-05T12:00:00+00:00"),
@@ -443,6 +467,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-profile-league', html)
         self.assertIn('Save league profile', html)
         self.assertIn('data-testid="edition-hero"', html)
+        self.assertIn('data-testid="front-page"', html)
+        self.assertIn("Your rookie receiver is the morning", html)
+        self.assertIn("A rival is buying the wrong window", html)
         self.assertIn("Your leagues, edited into a daily read.", html)
         self.assertIn("Evidence-backed briefs", html)
         self.assertIn('data-testid="league-readiness"', html)
@@ -488,7 +515,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         db.upsert_user_league(owner_id, {"league_id": "league-a", "season": "2026", "league_type": "dynasty", "name": "Alpha", "roster_id": 7})
         site_dir = self.leagues_root / "league-a" / "site"
         site_dir.mkdir(parents=True)
-        (site_dir / "index.html").write_text("<h1>Alpha</h1>", encoding="utf-8")
+        _write_complete_bundle(site_dir, "<h1>Alpha</h1>")
         (self.tmp_path / "outside.txt").write_text("nope", encoding="utf-8")
 
         other_response = self.client.get("/league/league-a/", cookies={"__session": other_token})
@@ -507,7 +534,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         db.upsert_user_league(user_id, {"league_id": "league-fallback", "season": "2026", "league_type": "dynasty", "name": "Fallback", "roster_id": 7})
         legacy_site = self.leagues_root / "league-fallback" / "site"
         legacy_site.mkdir(parents=True)
-        (legacy_site / "index.html").write_text("<h1>Legacy edition</h1>", encoding="utf-8")
+        _write_complete_bundle(legacy_site, "<h1>Legacy edition</h1>")
 
         with patch("src.league_paths.USERS_ROOT", self.tmp_path / "users"):
             private_root = self.tmp_path / "users" / str(user_id) / "leagues" / "league-fallback"
@@ -607,7 +634,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
         paths = LeaguePaths.for_user_league(str(user_id), "readiness")
         paths.site_dir.mkdir(parents=True)
-        (paths.site_dir / "index.html").write_text("<h1>Last good edition</h1>", encoding="utf-8")
+        _write_complete_bundle(paths.site_dir, "<h1>Last good edition</h1>")
         stale = self.client.get("/api/leagues/readiness/readiness", cookies={"__session": token})
         self.assertEqual(stale.json()["state"], "stale")
 
@@ -627,6 +654,24 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Your edition is Needs refresh.", response.text)
         self.assertIn("Back to headquarters", response.text)
         self.assertEqual(response.headers["retry-after"], "15")
+
+    def test_incomplete_bundle_never_returns_raw_missing_file_json(self) -> None:
+        token = self._token("user_incomplete_bundle")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_incomplete_bundle")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "incomplete", "season": "2026", "league_type": "dynasty", "name": "Incomplete", "roster_id": 1},
+        )
+        paths = LeaguePaths.for_user_league(str(user_id), "incomplete")
+        paths.site_dir.mkdir(parents=True)
+        (paths.site_dir / "index.html").write_text("<h1>Shell only</h1>", encoding="utf-8")
+
+        response = self.client.get("/league/incomplete/data/app_bundle.json", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('data-testid="edition-recovery"', response.text)
+        self.assertNotIn('"detail":"league file not found"', response.text)
 
     def test_missing_bundle_rebuilds_from_processed_facts(self) -> None:
         token = self._token("user_bundle_repair")
@@ -652,6 +697,40 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Recovered edition", response.text)
         builder.assert_called_once()
+
+    def test_rebuild_browser_job_embeds_user_league_profile(self) -> None:
+        token = self._token("user_scoped_bundle")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_scoped_bundle")
+        league = db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "scoped-league",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Scoped League",
+                "roster_id": 4,
+            },
+        )
+        db.upsert_team_profile(
+            user_id,
+            "scoped-league",
+            {
+                "team_name": "The Actual Team",
+                "display_name": "joe3489",
+                "strategy_name": "Win the window",
+                "team_direction": "contend",
+            },
+        )
+
+        with patch("app.main.build_browser_site", return_value=Path("scoped/index.html")) as builder:
+            app_main._rebuild_browser_job(league, user_id)
+
+        config = builder.call_args.kwargs["config"]
+        self.assertEqual(config["current_season"], "2026")
+        self.assertEqual(config["current_team"]["team_name"], "The Actual Team")
+        self.assertEqual(config["strategy_profile"]["name"], "Win the window")
+        self.assertEqual(config["context"]["league_id"], "scoped-league")
 
     def test_healthz_is_open(self) -> None:
         self.assertEqual(self.client.get("/healthz").json(), {"ok": True})

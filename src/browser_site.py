@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
 from .editorial import build_editorial_issue
@@ -18,6 +18,7 @@ def build_browser_site(
     analysis_dir: Path = ANALYSIS_DIR,
     league_type: str = "dynasty",
     league_id: str = "",
+    config: Mapping[str, Any] | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
@@ -71,12 +72,47 @@ def build_browser_site(
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
-    config = load_config()
+    config = dict(config) if config is not None else load_config()
     analysis = _analysis_artifacts(analysis_dir)
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
     target = output_dir / "index.html"
     target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target
+
+
+def browser_bundle_missing(site_dir: Path) -> list[str]:
+    """Return the generated files required for a readable league edition.
+
+    ``index.html`` alone is not a usable edition: the shell loads its facts and
+    lazy audit tables from the sibling data bundle. Keeping this check next to
+    the builder prevents the server from calling an incomplete shell "ready".
+    """
+
+    site_dir = site_dir.resolve()
+    missing: list[str] = []
+    for relative in ("index.html", "data/manifest.json", "data/app_bundle.json", "data/editorial_issue.json"):
+        if not (site_dir / relative).is_file():
+            missing.append(relative)
+
+    manifest_path = site_dir / "data" / "manifest.json"
+    if not manifest_path.is_file():
+        return missing
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        if "data/manifest.json" not in missing:
+            missing.append("data/manifest.json")
+        return missing
+
+    for relative in (manifest.get("auditTables") or {}).values():
+        candidate = (site_dir / str(relative)).resolve()
+        if not candidate.is_relative_to(site_dir) or not candidate.is_file():
+            missing.append(str(relative))
+    return list(dict.fromkeys(missing))
+
+
+def browser_bundle_is_complete(site_dir: Path) -> bool:
+    return not browser_bundle_missing(site_dir)
 
 
 def _records(path: Path) -> list[dict[str, Any]]:
@@ -196,6 +232,10 @@ def _write_data_chunks(
         json.dumps(app_payload, ensure_ascii=False).replace("</", "<\\/"),
         encoding="utf-8",
     )
+    (data_dir / "editorial_issue.json").write_text(
+        json.dumps(editorial, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
 
     audit_dir = data_dir / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
@@ -208,6 +248,7 @@ def _write_data_chunks(
     manifest = {
         "appName": "The Front Office",
         "bundlePath": "data/app_bundle.json",
+        "editorialPath": "data/editorial_issue.json",
         "auditTables": {name: f"data/audit/{name}.json" for name in sorted(audit_only_tables)},
         "tableCounts": table_counts,
         "initialTables": sorted(app_tables),
