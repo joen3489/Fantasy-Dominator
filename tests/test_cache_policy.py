@@ -12,9 +12,18 @@ import pandas as pd
 
 from src.news import build_news_tables
 from src.sleeper_api import SleeperAPI
+from src.browser_site import _safe_cache_path
 
 
 class CachePolicyTests(unittest.TestCase):
+    def test_browser_audit_path_does_not_expose_host_filesystem(self) -> None:
+        self.assertEqual(
+            _safe_cache_path(r"C:\Users\joeno\OneDrive\Documents\Fantasy Football\data\raw_external\news\2026\feed.xml"),
+            "data/raw_external/news/2026/feed.xml",
+        )
+        self.assertEqual(_safe_cache_path("/app/data/raw_external/feed.json"), "data/raw_external/feed.json")
+        self.assertEqual(_safe_cache_path(""), "")
+
     def test_expired_current_sleeper_cache_refetches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)

@@ -48,14 +48,14 @@ def build_browser_site(
         "asset_market_gaps": _records(processed_dir / "asset_market_gaps.csv"),
         "opportunity_board": _records(processed_dir / "opportunity_board.csv"),
         "counterparty_trade_edges": _records(processed_dir / "counterparty_trade_edges.csv"),
-        "source_freshness": _records(processed_dir / "source_freshness.csv"),
+        "source_freshness": _records(processed_dir / "source_freshness.csv", safe_cache_paths=True),
         "news_events": _records(processed_dir / "news_events.csv"),
         "player_news_matches": _records(processed_dir / "player_news_matches.csv"),
         "league_news_impact": _records(processed_dir / "league_news_impact.csv"),
-        "news_source_freshness": _records(processed_dir / "news_source_freshness.csv"),
+        "news_source_freshness": _records(processed_dir / "news_source_freshness.csv", safe_cache_paths=True),
         "player_projection_season": _records(processed_dir / "player_projection_season.csv"),
         "player_projection_weekly": _records(processed_dir / "player_projection_weekly.csv"),
-        "projection_source_freshness": _records(processed_dir / "projection_source_freshness.csv"),
+        "projection_source_freshness": _records(processed_dir / "projection_source_freshness.csv", safe_cache_paths=True),
         "player_signal_scores": _records(processed_dir / "player_signal_scores.csv"),
         "breakout_candidates": _records(processed_dir / "breakout_candidates.csv"),
         "sell_candidates": _records(processed_dir / "sell_candidates.csv"),
@@ -122,11 +122,31 @@ def browser_bundle_is_complete(site_dir: Path) -> bool:
     return not browser_bundle_missing(site_dir)
 
 
-def _records(path: Path) -> list[dict[str, Any]]:
+def _records(path: Path, safe_cache_paths: bool = False) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     frame = pd.read_csv(path).fillna("")
-    return frame.to_dict(orient="records")
+    records = frame.to_dict(orient="records")
+    if safe_cache_paths:
+        for row in records:
+            row["cache_path"] = _safe_cache_path(row.get("cache_path"))
+    return records
+
+
+def _safe_cache_path(value: Any) -> str:
+    """Keep audit paths useful without leaking the host filesystem layout."""
+
+    normalized = str(value or "").strip().replace("\\", "/")
+    if not normalized:
+        return ""
+    lowered = normalized.lower()
+    marker = "/data/"
+    marker_index = lowered.find(marker)
+    if marker_index >= 0:
+        return normalized[marker_index + 1 :]
+    if lowered.startswith("data/"):
+        return normalized
+    return "cached payload"
 
 
 def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
