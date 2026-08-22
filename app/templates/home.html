@@ -993,7 +993,51 @@
         if (writerButton) {
           const writerStatus = document.querySelector('[data-writer-status]');
           const writerToken = document.querySelector('[data-writer-token]');
+          const writerSleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+          const resetWriterButton = () => {
+            writerButton.disabled = false;
+            writerButton.dataset.reload = '';
+            writerButton.textContent = 'Generate this edition';
+          };
+          const watchWriter = async (leagueId) => {
+            for (let attempt = 0; attempt < 80; attempt += 1) {
+              await writerSleep(1500);
+              try {
+                const response = await fetch('/api/operator/status?league_id=' + encodeURIComponent(leagueId), {cache: 'no-store'});
+                const status = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(status.detail || 'writer status failed (' + response.status + ')');
+                if (status.state === 'running') {
+                  writerStatus.textContent = status.message || 'The reporters are writing this edition';
+                  continue;
+                }
+                if (status.state === 'complete' || status.state === 'partial') {
+                  writerStatus.textContent = (status.message || 'Edition ready.') + ' Reload to read the new issue.';
+                  writerButton.disabled = false;
+                  writerButton.dataset.reload = 'true';
+                  writerButton.textContent = 'Read the new edition';
+                  return;
+                }
+                if (status.state === 'failed') {
+                  writerStatus.className = 'writer-status error';
+                  writerStatus.textContent = status.message || 'Writer run failed; the evidence-led edition remains available.';
+                  resetWriterButton();
+                  return;
+                }
+              } catch (error) {
+                writerStatus.className = 'writer-status error';
+                writerStatus.textContent = error.message;
+                resetWriterButton();
+                return;
+              }
+            }
+            writerStatus.textContent = 'The writer is still running. Check the edition again in a moment.';
+            resetWriterButton();
+          };
           writerButton.addEventListener('click', async () => {
+            if (writerButton.dataset.reload === 'true') {
+              window.location.reload();
+              return;
+            }
             const leagueId = profileForm?.querySelector('[data-profile-league]')?.value || '';
             writerButton.disabled = true;
             writerButton.textContent = 'Starting writer';
@@ -1009,11 +1053,16 @@
               });
               const payload = await response.json().catch(() => ({}));
               if (!response.ok) throw new Error(payload.detail || 'writer request failed (' + response.status + ')');
-              writerStatus.textContent = payload.accepted ? 'Writer run started. Keep this page open, then refresh the issue.' : (payload.message || 'Writer is already running.');
+              if (!payload.accepted) {
+                writerStatus.textContent = payload.message || 'Writer is already running.';
+                resetWriterButton();
+                return;
+              }
+              writerStatus.textContent = 'Writer run started. Watching the selected league for completion.';
               writerButton.textContent = 'Writer running';
+              void watchWriter(leagueId);
             } catch (error) {
-              writerButton.disabled = false;
-              writerButton.textContent = 'Generate this edition';
+              resetWriterButton();
               writerStatus.className = 'writer-status error';
               writerStatus.textContent = error.message;
             }

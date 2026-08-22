@@ -727,6 +727,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("The Commissioner", html)
         self.assertIn('data-writer-button', html)
         self.assertIn("Generate this edition", html)
+        self.assertIn("fetch('/api/operator/status?league_id='", html)
+        self.assertIn("Watching the selected league for completion.", html)
+        self.assertIn("Read the new edition", html)
         self.assertIn('data-testid="writer-fallback-note"', html)
         self.assertIn('data-storage-audit-button', html)
         self.assertIn("fetch('/api/operator/storage-audit'", html)
@@ -882,6 +885,46 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(authenticated.status_code, 200)
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
+
+    def test_operator_status_is_league_scoped_and_redacts_private_paths(self) -> None:
+        token = self._token("user_status_scope")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_status_scope")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "status-league", "season": "2026", "league_type": "dynasty", "name": "Status League", "roster_id": 1},
+        )
+        status_payload = {
+            "state": "complete",
+            "job": "generate-insights",
+            "message": "League refreshed and written.",
+            "updated_at": "2026-08-22T18:00:00+00:00",
+            "packet_path": "C:/private/packet.json",
+            "output_path": "C:/private/output.json",
+            "validated_path": "C:/private/validated.json",
+            "site_path": "C:/private/index.html",
+            "traceback": "C:/private/traceback.py:1",
+            "reporter_persona": {"persona_id": "scout"},
+        }
+
+        with patch("app.main.front_operator.status", return_value=status_payload) as status:
+            response = self.client.get(
+                "/api/operator/status?league_id=status-league",
+                cookies={"__session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["state"], "complete")
+        self.assertEqual(payload["league_id"], "status-league")
+        self.assertEqual(payload["league_name"], "Status League")
+        self.assertEqual(payload["reporter_persona"]["persona_id"], "scout")
+        self.assertNotIn("packet_path", payload)
+        self.assertNotIn("output_path", payload)
+        self.assertNotIn("validated_path", payload)
+        self.assertNotIn("site_path", payload)
+        self.assertNotIn("traceback", payload)
+        status.assert_called_once_with(LeaguePaths.for_user_league(str(user_id), "status-league"))
 
     def test_operator_endpoint_requires_configured_operator_token(self) -> None:
         token = self._token("user_operator_token")

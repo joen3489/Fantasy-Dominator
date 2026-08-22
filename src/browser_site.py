@@ -1199,7 +1199,10 @@ def _page(
 
     async function refreshOperatorStatus() {{
       try {{
-        state.operatorStatus = await fetchJson('/api/operator/status');
+        const statusPath = manifest.leagueId
+          ? `/api/operator/status?league_id=${{encodeURIComponent(manifest.leagueId)}}`
+          : '/api/operator/status';
+        state.operatorStatus = await fetchJson(statusPath);
       }} catch (error) {{
         state.operatorStatus = {{ state: 'unavailable', message: `Operator API unavailable: ${{error.message}}`, operator_enabled: false }};
       }}
@@ -1808,9 +1811,7 @@ def _page(
         {{ item: 'Message', value: status.message || '' }},
         {{ item: 'Updated at', value: status.updated_at || status.generated_at || '' }},
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
-        {{ item: 'Packet path', value: status.packet_path || '' }},
-        {{ item: 'Output path', value: status.output_path || '' }},
-        {{ item: 'Validated path', value: status.validated_path || '' }},
+        {{ item: 'League', value: status.league_name || manifest.leagueId || 'Current league' }},
         {{ item: 'Evidence count', value: status.evidence_count || '' }}
       ];
       const validation = status.validation || {{}};

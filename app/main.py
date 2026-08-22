@@ -267,8 +267,15 @@ def create_app() -> FastAPI:
         return _serve_league_file(request, user, league_id, path)
 
     @app.get("/api/operator/status")
-    def operator_status(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-        return _operator_status_for_user(int(user["id"]))
+    def operator_status(
+        league_id: str | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        user_id = int(user["id"])
+        if league_id:
+            league = _owned_enabled_league(user, league_id)
+            return _operator_status_for_user(user_id, league)
+        return _operator_status_for_user(user_id)
 
     @app.post("/api/operator/build-packet")
     def operator_build_packet(
@@ -871,13 +878,29 @@ def _legacy_config() -> dict[str, Any]:
         return {}
 
 
-def _operator_status_for_user(user_id: int) -> dict[str, Any]:
+def _safe_operator_status(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep authenticated status useful without returning host filesystem details."""
+
+    private_fields = {"packet_path", "output_path", "validated_path", "site_path", "traceback"}
+    return {key: value for key, value in payload.items() if key not in private_fields}
+
+
+def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None) -> dict[str, Any]:
+    if league is not None:
+        status = _safe_operator_status(
+            front_operator.status(_private_paths(user_id, str(league["league_id"])))
+        )
+        return status | {
+            "league_id": str(league["league_id"]),
+            "league_name": league.get("name", ""),
+        }
+
     statuses = []
     for league in db.list_user_leagues(user_id):
         if not int(league.get("enabled")):
             continue
         statuses.append(
-            front_operator.status(_private_paths(user_id, str(league["league_id"])))
+            _safe_operator_status(front_operator.status(_private_paths(user_id, str(league["league_id"]))))
             | {"league_id": str(league["league_id"]), "league_name": league.get("name", "")}
         )
     if not statuses:
@@ -886,8 +909,10 @@ def _operator_status_for_user(user_id: int) -> dict[str, Any]:
         state = "running"
     elif any(item.get("state") == "failed" for item in statuses):
         state = "failed"
-    else:
+    elif any(item.get("state") == "complete" for item in statuses):
         state = "complete"
+    else:
+        state = "idle"
     return {"state": state, "leagues": statuses, "updated_at": max(item.get("updated_at", "") for item in statuses)}
 
 
