@@ -598,6 +598,37 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(generate.call_args.args[0]["league_id"], "beta")
         self.assertEqual(generate.call_args.args[1], user_id)
 
+    def test_writer_request_without_league_id_keeps_all_editions_scope(self) -> None:
+        clerk_token = self._token("user_all_editions")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_all_editions")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha", "roster_id": 1},
+        )
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "beta", "season": "2026", "league_type": "redraft", "name": "Beta", "roster_id": 2},
+        )
+
+        def run_job(action: str, callback: object, **kwargs: object) -> dict[str, object]:
+            del action, kwargs
+            return {"accepted": True, "result": callback()}
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            with patch("app.main._generate_insights_job", return_value={"state": "complete"}) as generate:
+                with patch("app.main.front_operator.start_job", side_effect=run_job):
+                    queued = self.client.post(
+                        "/api/operator/generate-insights",
+                        cookies={"__session": clerk_token},
+                        headers={"x-front-office-token": "operator-secret"},
+                        json={},
+                    )
+
+        self.assertEqual(queued.status_code, 200)
+        self.assertTrue(queued.json()["accepted"])
+        generate.assert_called_once_with(None, user_id)
+
     def test_blank_profile_has_same_scalar_contract_as_saved_profile(self) -> None:
         token = self._token("user_blank_profile")
         self.client.get("/", cookies={"__session": token})
@@ -730,7 +761,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("The Commissioner", html)
         self.assertIn('data-writer-button', html)
         self.assertIn("Generate this edition", html)
-        self.assertIn("fetch('/api/operator/status?league_id='", html)
+        self.assertIn('data-writer-all-button', html)
+        self.assertIn("Generate all editions", html)
+        self.assertIn("'/api/operator/status?league_id=' + encodeURIComponent(leagueId)", html)
+        self.assertIn("statusUrl = allEditions", html)
         self.assertIn("Watching the selected league for completion.", html)
         self.assertIn("Read the new edition", html)
         self.assertIn('data-testid="writer-fallback-note"', html)
