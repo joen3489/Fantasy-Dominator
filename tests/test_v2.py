@@ -576,6 +576,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-writer-button', html)
         self.assertIn("Generate this edition", html)
         self.assertIn('data-testid="writer-fallback-note"', html)
+        self.assertIn('data-storage-audit-button', html)
+        self.assertIn("fetch('/api/operator/storage-audit'", html)
         self.assertIn('data-testid="edition-hero"', html)
         self.assertIn('data-testid="front-page"', html)
         self.assertIn("Your rookie receiver is the morning", html)

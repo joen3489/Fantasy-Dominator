@@ -563,6 +563,10 @@
       .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
       .writer-note { margin: 0; color: #70551b; font-size: 12px; line-height: 1.4; }
       .writer-status.error { color: var(--sell); }
+      .storage-panel { border-color: #c8d5ce; background: #f2f7f3; }
+      .storage-panel summary { cursor: pointer; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
+      .storage-panel p { margin: 8px 0 0; }
+      .storage-audit-output { margin: 0; min-height: 18px; white-space: pre-wrap; color: var(--muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
       @media (max-width: 520px) { .writer-actions { grid-template-columns: 1fr; } }
       .empty-feed {
         margin: 4px 2px;
@@ -730,6 +734,16 @@
           <span class="writer-status" data-writer-status role="status"></span>
         </section>
       {% endif %}
+
+      <details class="writer-panel storage-panel" data-storage-audit-panel>
+        <summary>Storage continuity check</summary>
+        <p>Use the operator key to verify that the mounted production store is visible to this login. The result shows counts only; it never exposes league names or identity IDs.</p>
+        <div class="writer-actions">
+          <input type="password" data-storage-audit-token autocomplete="off" placeholder="Operator key (optional locally)" aria-label="Storage audit operator key">
+          <button class="primary-button" type="button" data-storage-audit-button>Audit stored workspace</button>
+        </div>
+        <pre class="storage-audit-output" data-storage-audit-output role="status"></pre>
+      </details>
 
       <section aria-labelledby="feed-title">
         <div class="feed-header">
@@ -956,6 +970,44 @@
               writerButton.textContent = 'Generate this edition';
               writerStatus.className = 'writer-status error';
               writerStatus.textContent = error.message;
+            }
+          });
+        }
+
+        const storageAuditButton = document.querySelector('[data-storage-audit-button]');
+        if (storageAuditButton) {
+          const storageAuditToken = document.querySelector('[data-storage-audit-token]');
+          const storageAuditOutput = document.querySelector('[data-storage-audit-output]');
+          storageAuditButton.addEventListener('click', async () => {
+            storageAuditButton.disabled = true;
+            storageAuditButton.textContent = 'Checking store';
+            storageAuditOutput.className = 'storage-audit-output';
+            storageAuditOutput.textContent = 'Reading the application store';
+            const headers = {};
+            if (storageAuditToken?.value) headers['x-front-office-token'] = storageAuditToken.value;
+            try {
+              const response = await fetch('/api/operator/storage-audit', {headers, cache: 'no-store'});
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(payload.detail || 'storage audit failed (' + response.status + ')');
+              const ready = (value) => value ? 'ready' : 'not ready';
+              storageAuditOutput.textContent = [
+                'SQLite schema: ' + ready(payload.database_schema_ready),
+                'Current identity: ' + (payload.current_user_present ? 'present' : 'not present'),
+                'Current identity leagues: ' + (payload.current_user_leagues || 0),
+                'Other identity users: ' + (payload.other_users || 0),
+                'Other identity leagues: ' + (payload.other_user_leagues || 0),
+                'Team profiles: ' + (payload.team_profiles || 0),
+                'Generated articles: ' + (payload.content_artifacts || 0),
+                'Refresh runs: ' + (payload.refresh_runs || 0),
+                'Orphan league rows: ' + (payload.orphan_user_leagues || 0),
+              ].join('\n');
+              storageAuditButton.textContent = 'Audit again';
+            } catch (error) {
+              storageAuditOutput.textContent = error.message;
+              storageAuditOutput.className = 'storage-audit-output error';
+              storageAuditButton.textContent = 'Try again';
+            } finally {
+              storageAuditButton.disabled = false;
             }
           });
         }
