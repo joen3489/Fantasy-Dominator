@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pandas as pd
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
+from .draft_room import build_draft_room
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
@@ -90,7 +91,13 @@ def browser_bundle_missing(site_dir: Path) -> list[str]:
 
     site_dir = site_dir.resolve()
     missing: list[str] = []
-    for relative in ("index.html", "data/manifest.json", "data/app_bundle.json", "data/editorial_issue.json"):
+    for relative in (
+        "index.html",
+        "data/manifest.json",
+        "data/app_bundle.json",
+        "data/editorial_issue.json",
+        "data/draft_room.json",
+    ):
         if not (site_dir / relative).is_file():
             missing.append(relative)
 
@@ -215,9 +222,17 @@ def _write_data_chunks(
         my_team_name=my_team_name,
         config=config,
     )
+    draft_room = build_draft_room(
+        tables,
+        config,
+        league_id=league_id,
+        my_roster_id=my_roster_id,
+        my_team_name=my_team_name,
+    )
     app_payload = {
         "tables": app_tables,
         "editorial": editorial,
+        "draftRoom": draft_room,
         "myRosterId": my_roster_id,
         "myTeamName": my_team_name,
         "strategyProfile": config.get("strategy_profile") or {},
@@ -238,6 +253,10 @@ def _write_data_chunks(
         json.dumps(editorial, ensure_ascii=False).replace("</", "<\\/"),
         encoding="utf-8",
     )
+    (data_dir / "draft_room.json").write_text(
+        json.dumps(draft_room, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
 
     audit_dir = data_dir / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
@@ -251,6 +270,7 @@ def _write_data_chunks(
         "appName": "The Front Office",
         "bundlePath": "data/app_bundle.json",
         "editorialPath": "data/editorial_issue.json",
+        "draftRoomPath": "data/draft_room.json",
         "auditTables": {name: f"data/audit/{name}.json" for name in sorted(audit_only_tables)},
         "tableCounts": table_counts,
         "initialTables": sorted(app_tables),
@@ -418,6 +438,8 @@ def _page(
     input[type="search"] {{ min-width: min(420px, 100%); }}
     button {{ min-height: 34px; padding: 6px 10px; cursor: pointer; }}
     button.active {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
+    .button-link {{ display: inline-block; padding: 8px 11px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font-size: 13px; font-weight: 800; text-decoration: none; white-space: nowrap; }}
+    .button-link:hover {{ background: var(--accent); color: #fff; }}
     .metrics {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -678,6 +700,7 @@ def _page(
         <div class="nav-group-title">Where To</div>
         <nav>
           <a href="#view-today">Today</a>
+          <a href="#view-draft-room">Draft Room</a>
           <a href="#view-my-team">My Team</a>
           <a href="#view-players">Players</a>
           <a href="#view-league">League</a>
@@ -735,6 +758,31 @@ def _page(
           <div id="likely-traders"></div>
         </div>
       </div>
+    </div>
+    </section>
+
+    <section id="view-draft-room">
+    <div id="draft-room" class="view-block">
+      <h2>Draft Room</h2>
+      <p class="note">A league-scoped draft-season read: what to circle, what to move, and where your draft capital gives you leverage. Every card shows the evidence behind the read.</p>
+      <div id="draft-room-status" class="panel article-panel"></div>
+      <div class="metrics">
+        <div class="metric"><strong id="draft-room-available">0</strong><span>available market names</span></div>
+        <div class="metric"><strong id="draft-room-targets">0</strong><span>trade targets</span></div>
+        <div class="metric"><strong id="draft-room-fades">0</strong><span>roster fades</span></div>
+        <div class="metric"><strong id="draft-room-picks">0</strong><span>future picks in scope</span></div>
+      </div>
+      <div class="grid">
+        <div class="panel"><h3>Circle These Names</h3><div id="draft-room-board"></div></div>
+        <div class="panel"><h3>Acquire Before the Draft</h3><div id="draft-room-target-list"></div></div>
+        <div class="panel"><h3>Fades / Price Traps</h3><div id="draft-room-fade-list"></div></div>
+      </div>
+      <h3>Pick Leverage</h3>
+      <div id="draft-room-pick-list"></div>
+      <details class="data-drawer">
+        <summary>Draft Room data notes</summary>
+        <div id="draft-room-data-quality" class="brief-card-evidence"></div>
+      </details>
     </div>
     </section>
 
@@ -1023,6 +1071,7 @@ def _page(
     let app = null;
     let tables = {{}};
     let analysis = {{}};
+    let draftRoom = {{}};
     const state = {{
       activeSection: 'view-today',
       teamId: 0,
@@ -1095,6 +1144,7 @@ def _page(
       }}
       tables = app.tables || {{}};
       analysis = app.analysis || {{}};
+      draftRoom = app.draftRoom || {{}};
       state.teamId = Number(app.myRosterId);
       ensureTables();
       populateTeamFilter();
@@ -1591,6 +1641,7 @@ def _page(
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
+      renderDraftRoom();
     }}
 
     function filteredMarketGaps() {{
@@ -2026,6 +2077,75 @@ def _page(
       }})).join('')}}</div>`;
     }}
 
+    function renderDraftRoom() {{
+      const room = draftRoom || {{}};
+      const summary = room.summary || {{}};
+      const team = room.team || {{}};
+      setText('draft-room-available', summary.available_player_count || 0);
+      setText('draft-room-targets', summary.trade_target_count || 0);
+      setText('draft-room-fades', summary.fade_count || 0);
+      setText('draft-room-picks', summary.future_pick_count || 0);
+      document.getElementById('draft-room-status').innerHTML = draftRoomStatus(room);
+      document.getElementById('draft-room-board').innerHTML = draftRoomCards(room.draft_board || [], 'board');
+      document.getElementById('draft-room-target-list').innerHTML = draftRoomCards(room.trade_targets || [], 'target');
+      document.getElementById('draft-room-fade-list').innerHTML = draftRoomCards(room.fades || [], 'fade');
+      document.getElementById('draft-room-pick-list').innerHTML = draftRoomPickCards(room.pick_leverage || []);
+      document.getElementById('draft-room-data-quality').innerHTML = draftRoomQuality(room);
+    }}
+
+    function draftRoomStatus(room) {{
+      const team = room.team || {{}};
+      const summary = room.summary || {{}};
+      const needs = Object.entries(team.needs || {{}})
+        .filter(([, value]) => value && value !== 'unknown')
+        .map(([position, value]) => `${{position}}: ${{value}}`)
+        .join(' · ');
+      const posture = team.team_direction || team.team_shape || 'team posture unavailable';
+      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster.</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
+    }}
+
+    function draftRoomCards(rows, mode) {{
+      if (!rows.length) return `<p class="note">No ${{mode === 'fade' ? 'fade' : mode === 'target' ? 'trade target' : 'available market'}} rows found in the current evidence bundle.</p>`;
+      const bucket = mode === 'fade' ? 'sell' : 'buy';
+      return `<div class="brief-list">${{rows.slice(0, 12).map((row, index) => briefCard({{
+        title: row.player_name || 'Unknown player',
+        category: bucket,
+        rank: index + 1,
+        playerId: row.player_id,
+        entityHash: row.player_id ? `player-${{row.player_id}}` : '',
+        chips: [
+          row.position,
+          row.fit,
+          row.need && row.need !== 'unknown' ? `need ${{row.need}}` : '',
+          row.market_value ? `market ${{row.market_value}}` : '',
+          row.action_label || row.consumer_label || '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        summary: row.why || '',
+        watchouts: row.risk || '',
+        evidence: `${{row.evidence || 'No evidence provided.'}} Source: ${{row.source_trace || 'not recorded'}}`
+      }})).join('')}}</div>`;
+    }}
+
+    function draftRoomPickCards(rows) {{
+      if (!rows.length) return '<p class="note">No current or future pick rows found.</p>';
+      return `<div class="brief-list">${{rows.slice(0, 24).map((row, index) => briefCard({{
+        title: `${{row.pick_season}} Round ${{row.round}}`,
+        category: row.ownership_status === 'your_original_pick_away' ? 'alert' : row.ownership_status === 'owned_by_you' ? 'hold' : 'info',
+        rank: index + 1,
+        chips: [row.ownership_status, row.priority, row.market_value ? `curve ${{row.market_value}}` : '', row.value_source],
+        summary: row.why || '',
+        watchouts: row.risk || '',
+        evidence: `${{row.evidence || ''}} Owner: ${{row.current_owner || 'unknown'}}. Original: ${{row.original_team || 'unknown'}}.`
+      }})).join('')}}</div>`;
+    }}
+
+    function draftRoomQuality(room) {{
+      const quality = room.data_quality || {{}};
+      const health = (quality.source_health || []).map(row => `${{row.source}}/${{row.dataset}}: ${{row.status}}`).join(' · ');
+      return `<p><strong>Market board:</strong> ${{escapeHtml(quality.market_player_source || 'unavailable')}} (${{escapeHtml(String(quality.market_player_rows || 0))}} rows).</p><p><strong>Pick valuation:</strong> ${{escapeHtml(quality.pick_value_source || 'unavailable')}} (${{escapeHtml(String(quality.pick_value_rows || 0))}} external value rows).</p><p><strong>Freshness:</strong> ${{escapeHtml(health || 'source freshness not recorded')}}</p>`;
+    }}
+
     function thesisCards(rows, mode) {{
       if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
       const bucket = categoryFor('mode', mode);
@@ -2315,7 +2435,7 @@ def _page(
     }}
 
     const VIEW_IDS = [
-      'view-today', 'view-my-team', 'view-players', 'view-league',
+      'view-today', 'view-draft-room', 'view-my-team', 'view-players', 'view-league',
       'view-trade-desk', 'view-news', 'view-data-room'
     ];
 

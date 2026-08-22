@@ -164,7 +164,13 @@ def main(
         dataframes["waivers"],
         dataframes["roster_players"],
     )
-    pick_ownership = build_pick_ownership(dataframes["traded_picks"], dataframes["teams"], current_my_roster_id)
+    pick_ownership = build_pick_ownership(
+        dataframes["traded_picks"],
+        dataframes["teams"],
+        current_my_roster_id,
+        league_id=current_scope_league_id,
+        season=current_season,
+    )
     dataframes["manager_profiles"] = manager_profiles
     dataframes["pick_ownership"] = pick_ownership
     dataframes.update(external_frames)
@@ -316,7 +322,10 @@ def main(
         processed_dir,
         analysis_dir,
         league_type=league_type,
-        league_id=context.league_id if context else league_id or "",
+        # ``league_id`` is the loop variable above and ends on the oldest
+        # historical season.  The browser is the current reader surface, so
+        # its scoped receipts must use the current-season league id.
+        league_id=current_scope_league_id,
         config=config,
     )
     print(f"Wrote {site_path}")

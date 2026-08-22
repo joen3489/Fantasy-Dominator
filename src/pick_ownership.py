@@ -7,8 +7,22 @@ def build_pick_ownership(
     traded_picks_df: pd.DataFrame,
     teams_df: pd.DataFrame,
     my_roster_id: int | None,
+    league_id: str | None = None,
+    season: str | None = None,
 ) -> pd.DataFrame:
     if traded_picks_df.empty:
+        return pd.DataFrame()
+
+    scoped_picks = traded_picks_df
+    # Historical ingestion contains several leagues whose Sleeper roster IDs
+    # repeat.  The reader-facing ownership ledger must be current-league
+    # scoped; callers can omit these filters when they explicitly need the
+    # historical reconstruction.
+    if league_id and "league_id" in scoped_picks.columns:
+        scoped_picks = scoped_picks[scoped_picks["league_id"].astype(str) == str(league_id)]
+    if season and "season" in scoped_picks.columns:
+        scoped_picks = scoped_picks[scoped_picks["season"].astype(str) == str(season)]
+    if scoped_picks.empty:
         return pd.DataFrame()
 
     team_names = {
@@ -18,7 +32,7 @@ def build_pick_ownership(
     }
 
     rows = []
-    for _, pick in traded_picks_df.iterrows():
+    for _, pick in scoped_picks.iterrows():
         original = int(pick["original_roster_id"])
         current = int(pick["current_owner_roster_id"])
         previous = int(pick["previous_owner_roster_id"]) if pick.get("previous_owner_roster_id", "") != "" else None

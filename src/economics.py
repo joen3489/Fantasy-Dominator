@@ -129,7 +129,9 @@ def build_team_asset_inventory(
     for _, pick in current_pick_ownership.iterrows():
         round_no = _int(pick.get("round"))
         label = f"{pick.get('pick_season', '')} R{round_no} {pick.get('original_team', '')}"
-        market_value = pick_values.get((str(pick.get("pick_season", "")), str(round_no))) or _proxy_pick_value(round_no)
+        external_pick_value = pick_values.get((str(pick.get("pick_season", "")), str(round_no)), 0.0)
+        market_value = external_pick_value or _proxy_pick_value(round_no)
+        pick_source = "dynastyprocess_pick_value" if external_pick_value else "internal_round_curve"
         rows.append(
             {
                 "roster_id": pick.get("current_owner_roster_id", ""),
@@ -142,7 +144,7 @@ def build_team_asset_inventory(
                 "market_value": round(_num(market_value), 2),
                 "liquidity_tier": _liquidity_tier("PICK", 0, _num(market_value), "pick"),
                 "timeline_fit": "strong_rebuild_fit",
-                "source_trace": "dynastyprocess_pick_value_or_internal_curve",
+                "source_trace": pick_source,
             }
         )
 

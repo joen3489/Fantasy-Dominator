@@ -12,8 +12,9 @@ import pandas as pd
 from src import operator
 from src.analysis import build_analysis_artifacts
 from src.browser_site import build_browser_site
+from src.draft_room import build_draft_room
 from src.economics import build_economic_tables, build_manager_behavior_signals
-from src.external_sources import build_market_consensus_values, refresh_external_sources
+from src.external_sources import _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_traded_picks
 from src.pick_ownership import build_pick_ownership
@@ -815,6 +816,20 @@ class VModelTests(unittest.TestCase):
         self.assertTrue(bool(ownership.iloc[0]["is_my_original_pick"]))
         self.assertFalse(bool(ownership.iloc[0]["is_currently_owned_by_me"]))
 
+    def test_pick_ownership_can_scope_repeated_roster_ids_to_current_league(self) -> None:
+        traded = pd.DataFrame(
+            [
+                {"league_id": "current", "season": "2026", "original_roster_id": 2, "original_team_name": "Current", "pick_season": "2027", "round": 1, "current_owner_roster_id": 2, "current_owner_team_name": "Current"},
+                {"league_id": "historical", "season": "2025", "original_roster_id": 2, "original_team_name": "Historical", "pick_season": "2027", "round": 1, "current_owner_roster_id": 8, "current_owner_team_name": "Other"},
+            ]
+        )
+        teams = pd.DataFrame([{"roster_id": 2, "team_name": "Current"}, {"roster_id": 8, "team_name": "Other"}])
+
+        ownership = build_pick_ownership(traded, teams, 2, league_id="current", season="2026")
+
+        self.assertEqual(len(ownership), 1)
+        self.assertEqual(ownership.iloc[0]["original_team"], "Current")
+
     def test_league_history_discovery_walks_previous_league_chain(self) -> None:
         class FakeAPI:
             def __init__(self) -> None:
@@ -1002,6 +1017,7 @@ class VModelTests(unittest.TestCase):
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
             editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
             players_audit_exists = (site / "data" / "audit" / "players.json").exists()
+            draft_room_exists = (site / "data" / "draft_room.json").exists()
 
         self.assertIn("The Front Office", html)
         self.assertIn("front-office-manifest", html)
@@ -1078,6 +1094,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Manager profile tag rows", html)
         self.assertIn("Player dossier rows", html)
         self.assertIn("Player profile tag rows", html)
+        self.assertIn("Draft Room", html)
+        self.assertIn('id="view-draft-room"', html)
+        self.assertIn("function renderDraftRoom", html)
         self.assertIn("Usage rows", html)
         self.assertIn("Economic asset rows", html)
         self.assertIn("News event rows", html)
@@ -1107,6 +1126,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("cat-${bucket}", html)
         self.assertEqual(manifest["appName"], "The Front Office")
         self.assertEqual(manifest["editorialPath"], "data/editorial_issue.json")
+        self.assertEqual(manifest["draftRoomPath"], "data/draft_room.json")
         self.assertEqual(editorial["schema_version"], "issue_v1")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
         self.assertIn("players", manifest["auditTables"])
@@ -1124,6 +1144,56 @@ class VModelTests(unittest.TestCase):
         # undefined client-side (this crashed render() until caught by manual browser
         # verification, since HTML-string assertions alone don't execute the JS).
         self.assertIn("today_priority_board", bundle["tables"])
+        self.assertEqual(bundle["draftRoom"]["schema_version"], "draft_room_v1")
+        self.assertTrue(draft_room_exists)
+
+    def test_draft_room_is_league_scoped_and_evidence_backed(self) -> None:
+        room = build_draft_room(
+            {
+                "teams": [{"season": "2026", "roster_id": 2, "team_name": "Rebuild Crew"}],
+                "roster_players": [{"season": "2026", "roster_id": 2, "player_id": "1", "player_name": "Core QB"}],
+                "team_needs_matrix": [{"roster_id": 2, "team_shape": "rebuild_asset_bank", "need_qb": "low", "need_rb": "high", "need_pass_catcher": "low", "need_picks": "low"}],
+                "player_market_values": [
+                    {"player_id": "1", "player_name": "Core QB", "position": "QB", "market_value": 80, "market_rank": 1, "source_trace": "market"},
+                    {"player_id": "", "player_name": "Available RB", "position": "RB", "market_value": 70, "market_rank": 5, "source_trace": "market"},
+                ],
+                "action_recommendations": [
+                    {"roster_id": 8, "team_name": "Contender", "player_id": "2", "player_name": "Trade Target", "position": "WR", "action_label": "true_buy_low", "action_score": 90, "why": "Buy low", "evidence": "gap", "confidence": "high", "source_trace": "market"},
+                    {"roster_id": 2, "team_name": "Rebuild Crew", "player_id": "3", "player_name": "Roster Fade", "position": "RB", "action_label": "sell_window", "action_score": 60, "why": "Sell", "evidence": "age", "confidence": "high", "source_trace": "market"},
+                ],
+                "pick_ownership": [
+                    {"pick_season": "2027", "round": 1, "original_roster_id": 2, "original_team": "Rebuild Crew", "current_owner_roster_id": 2, "current_owner": "Rebuild Crew"},
+                    {"pick_season": "2027", "round": 2, "original_roster_id": 2, "original_team": "Rebuild Crew", "current_owner_roster_id": 8, "current_owner": "Contender"},
+                ],
+                "pick_market_values": [{"pick_season": "2027", "round": 1, "market_value": "", "ranking_value": 33, "value_status": "rank_only"}],
+                "source_freshness": [{"source": "dynastyprocess", "dataset": "pick_values", "status": "refreshed"}],
+            },
+            {"current_season": "2026", "strategy_profile": {"name": "Rebuild"}, "tracked_picks": [{"pick_season": "2027", "round": 1, "priority": "major_reacquisition_target"}]},
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="Rebuild Crew",
+        )
+
+        self.assertEqual(room["schema_version"], "draft_room_v1")
+        self.assertEqual(room["league_id"], "league-1")
+        self.assertEqual(room["draft_board"][0]["player_name"], "Available RB")
+        self.assertEqual(room["trade_targets"][0]["player_name"], "Trade Target")
+        self.assertEqual(room["fades"][0]["player_name"], "Roster Fade")
+        self.assertEqual(room["pick_leverage"][0]["value_source"], "internal_round_curve")
+        self.assertEqual(room["pick_leverage"][0]["priority"], "major_reacquisition_target")
+        self.assertTrue(room["pick_leverage"][1]["ownership_status"] == "your_original_pick_away")
+
+    def test_dynastyprocess_pick_rank_file_is_not_presented_as_trade_value(self) -> None:
+        frame = _normalize_pick_values(
+            pd.DataFrame([{"player": "2027 Early 1st", "pos": "PICK", "ecr_2qb": 33.7, "pick": pd.NA}])
+        )
+        row = frame.iloc[0]
+        self.assertEqual(row["pick_label"], "2027 Early 1st")
+        self.assertEqual(row["pick_season"], "2027")
+        self.assertEqual(row["round"], "1")
+        self.assertEqual(row["market_value"], "")
+        self.assertEqual(row["ranking_value"], 33.7)
+        self.assertEqual(row["value_status"], "rank_only")
 
     def test_browser_surface_accepts_explicit_league_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

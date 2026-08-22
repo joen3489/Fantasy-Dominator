@@ -302,14 +302,21 @@ def _normalize_pick_values(frame: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(rows, columns=_pick_market_columns())
 
     for _, row in frame.iterrows():
-        pick = str(_first(row, ["pick", "selection", "label", "name"]))
+        # DynastyProcess values-picks.csv is an ECR/rank file.  It does not
+        # expose the same value_2qb field as values.csv, so do not silently
+        # turn its rank into a trade value or emit a misleading 0.0 value.
+        pick = str(_first(row, ["player", "pick", "selection", "label", "name"]))
+        raw_value = _first(row, ["value_2qb", "sf_value", "value"])
+        ranking_value = _first(row, ["ecr_2qb", "ecr_1qb"])
         rows.append(
             {
                 "source": "dynastyprocess",
                 "pick_label": pick,
-                "pick_season": _first(row, ["season", "year"]),
+                "pick_season": _first(row, ["season", "year"]) or _pick_season_from_label(pick),
                 "round": _round_from_pick(pick, _first(row, ["round"])),
-                "market_value": _number(_first(row, ["value_2qb", "sf_value", "value"])),
+                "market_value": _number(raw_value) if raw_value not in ("", None) else "",
+                "ranking_value": _number(ranking_value) if ranking_value not in ("", None) else "",
+                "value_status": "external_value" if raw_value not in ("", None) else "rank_only",
                 "source_trace": DYNASTYPROCESS_PICKS_URL,
             }
         )
@@ -396,11 +403,21 @@ def _consensus_confidence(source_count: int, disagreement: float, access_types: 
 def _round_from_pick(pick: str, fallback: Any) -> Any:
     if fallback not in ("", None) and not pd.isna(fallback):
         return fallback
-    if "." in pick:
-        return pick.split(".", 1)[0]
-    if pick and pick[0].isdigit():
-        return pick[0]
+    dotted = re.search(r"\bPick\s+([0-9]+)\.", pick, flags=re.IGNORECASE)
+    if dotted:
+        return dotted.group(1)
+    ordinal = re.search(r"\b(?:Early|Mid|Late)\s+([0-9]+)(?:st|nd|rd|th)\b", pick, flags=re.IGNORECASE)
+    if ordinal:
+        return ordinal.group(1)
+    plain_ordinal = re.search(r"\b([0-9]+)(?:st|nd|rd|th)\b", pick, flags=re.IGNORECASE)
+    if plain_ordinal:
+        return plain_ordinal.group(1)
     return ""
+
+
+def _pick_season_from_label(pick: str) -> str:
+    match = re.search(r"\b(20[0-9]{2})\b", pick)
+    return match.group(1) if match else ""
 
 
 def _player_market_columns() -> list[str]:
@@ -440,7 +457,16 @@ def _market_consensus_columns() -> list[str]:
 
 
 def _pick_market_columns() -> list[str]:
-    return ["source", "pick_label", "pick_season", "round", "market_value", "source_trace"]
+    return [
+        "source",
+        "pick_label",
+        "pick_season",
+        "round",
+        "market_value",
+        "ranking_value",
+        "value_status",
+        "source_trace",
+    ]
 
 
 def _usage_columns() -> list[str]:

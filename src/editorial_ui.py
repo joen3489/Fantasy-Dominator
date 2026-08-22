@@ -70,6 +70,9 @@ EDITORIAL_STYLE = r"""
     .issue-byline { margin-top: 22px; }
     .issue-byline span { display: inline-flex; align-items: center; gap: 6px; }
     .issue-byline span + span::before { content: "•"; color: #789181; }
+    .issue-quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .issue-quick-links a { display: inline-block; padding: 7px 10px; border: 1px solid rgba(215, 226, 216, .35); border-radius: 999px; color: #f2dfaa; font-size: 12px; font-weight: 800; text-decoration: none; }
+    .issue-quick-links a:hover { background: rgba(215, 226, 216, .12); }
     .editorial-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(220px, 285px);
@@ -221,6 +224,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
           </div>
+          <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
         </div>
         <div class="editorial-layout">
           <div id="issue-lead"></div>

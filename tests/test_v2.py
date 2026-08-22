@@ -42,6 +42,7 @@ def _write_complete_bundle(site_dir: Path, html: str, editorial: dict | None = N
     (site_dir / "index.html").write_text(html, encoding="utf-8")
     (data_dir / "app_bundle.json").write_text("{}", encoding="utf-8")
     (data_dir / "editorial_issue.json").write_text(json.dumps(editorial or {}), encoding="utf-8")
+    (data_dir / "draft_room.json").write_text("{}", encoding="utf-8")
     (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}}), encoding="utf-8")
 
 
