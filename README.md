@@ -119,9 +119,11 @@ Optional environment variables:
 
 The production smoke check can validate the public deployment and, when
 `FRONT_OFFICE_SESSION_TOKEN` is supplied locally, the authenticated home page,
-continuity receipt, and first owned league edition. It fails when live Clerk
-or durable SQLite configuration is incomplete and warns when the optional
-Anthropic writer key is absent:
+continuity receipt, and every owned league edition. If
+`FRONT_OFFICE_OPERATOR_TOKEN` is also supplied locally, it checks the
+operator-safe storage audit and verifies that the current identity has at least
+one preserved league. It fails when live Clerk or durable SQLite configuration
+is incomplete and warns when the optional Anthropic writer key is absent:
 
 ```powershell
 python scripts\smoke_live.py

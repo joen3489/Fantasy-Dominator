@@ -96,6 +96,25 @@ def validate_edition_bundle(payload: dict) -> list[str]:
     return errors
 
 
+def validate_storage_audit_payload(payload: dict) -> list[str]:
+    """Check the operator-safe continuity receipt without exposing its contents."""
+
+    errors: list[str] = []
+    if not isinstance(payload, dict):
+        return ["storage audit response is not an object"]
+    if payload.get("database_schema_ready") is not True:
+        errors.append("storage audit reports an unready SQLite schema")
+    if payload.get("current_user_present") is not True:
+        errors.append("storage audit cannot find the authenticated identity")
+    try:
+        current_leagues = int(payload.get("current_user_leagues", 0))
+    except (TypeError, ValueError):
+        current_leagues = 0
+    if current_leagues < 1:
+        errors.append("storage audit finds no leagues for the authenticated identity")
+    return errors
+
+
 def _assert_authenticated_surface(response: requests.Response, url: str) -> None:
     if response.status_code != 200:
         raise SystemExit(
@@ -168,45 +187,75 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
             f"continuity={continuity_payload}"
         )
 
-    league_links = re.findall(r'href="(/league/[A-Za-z0-9_-]+/)"', response.text)
+    league_links = list(dict.fromkeys(re.findall(r'href="(/league/[A-Za-z0-9_-]+/)"', response.text)))
     if not league_links:
         raise SystemExit("Authenticated smoke failed: home page exposes no owned league edition link")
-    edition = _get(
-        f"{base_url}{league_links[0]}",
-        cookies={"__session": token},
-        timeout=30,
-        allow_redirects=False,
-    )
-    if edition.status_code != 200:
-        raise SystemExit(
-            f"Authenticated smoke failed for {base_url}{league_links[0]}: expected 200, got {edition.status_code}"
+    for league_link in league_links:
+        edition = _get(
+            f"{base_url}{league_link}",
+            cookies={"__session": token},
+            timeout=30,
+            allow_redirects=False,
         )
-    missing = [marker for marker in REQUIRED_EDITION_MARKERS if marker not in edition.text]
-    if missing:
-        raise SystemExit(
-            f"Authenticated smoke failed for {base_url}{league_links[0]}: missing edition markers {missing}"
+        if edition.status_code != 200:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}: expected 200, got {edition.status_code}"
+            )
+        missing = [marker for marker in REQUIRED_EDITION_MARKERS if marker not in edition.text]
+        if missing:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}: missing edition markers {missing}"
+            )
+        bundle = _get(
+            f"{base_url}{league_link}data/app_bundle.json",
+            cookies={"__session": token},
+            timeout=30,
+            allow_redirects=False,
         )
-    bundle = _get(
-        f"{base_url}{league_links[0]}data/app_bundle.json",
-        cookies={"__session": token},
-        timeout=30,
-        allow_redirects=False,
-    )
-    if bundle.status_code != 200:
-        raise SystemExit(
-            f"Authenticated smoke failed for {base_url}{league_links[0]}data/app_bundle.json: "
-            f"expected 200, got {bundle.status_code}"
+        if bundle.status_code != 200:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}data/app_bundle.json: "
+                f"expected 200, got {bundle.status_code}"
+            )
+        try:
+            bundle_payload = bundle.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"Authenticated smoke failed for {base_url}{league_link}: edition fact bundle was not JSON") from exc
+        bundle_errors = validate_edition_bundle(bundle_payload)
+        if bundle_errors:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}data/app_bundle.json: {'; '.join(bundle_errors)}"
+            )
+        print(f"Authenticated smoke passed for {base_url}{league_link} ({edition.status_code}, {len(edition.text)} bytes)")
+
+    operator_token = os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()
+    if operator_token:
+        audit = _get(
+            f"{base_url}/api/operator/storage-audit",
+            cookies={"__session": token},
+            headers={"x-front-office-token": operator_token},
+            timeout=30,
+            allow_redirects=False,
         )
-    try:
-        bundle_payload = bundle.json()
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise SystemExit("Authenticated smoke failed: edition fact bundle was not JSON") from exc
-    bundle_errors = validate_edition_bundle(bundle_payload)
-    if bundle_errors:
-        raise SystemExit(
-            f"Authenticated smoke failed for {base_url}{league_links[0]}data/app_bundle.json: {'; '.join(bundle_errors)}"
+        if audit.status_code != 200:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}/api/operator/storage-audit: "
+                f"expected 200, got {audit.status_code}"
+            )
+        try:
+            audit_payload = audit.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit("Authenticated smoke failed: storage audit was not JSON") from exc
+        audit_errors = validate_storage_audit_payload(audit_payload)
+        if audit_errors:
+            raise SystemExit(f"Authenticated smoke failed: {'; '.join(audit_errors)}")
+        print(
+            "Authenticated storage audit passed "
+            f"({audit_payload.get('current_user_leagues', 0)} current leagues, "
+            f"{audit_payload.get('content_artifacts', 0)} content artifacts)"
         )
-    print(f"Authenticated smoke passed for {base_url}{league_links[0]} ({edition.status_code}, {len(edition.text)} bytes)")
+    else:
+        print("Authenticated storage audit skipped; set FRONT_OFFICE_OPERATOR_TOKEN to verify mounted-store continuity.")
 
 
 if __name__ == "__main__":

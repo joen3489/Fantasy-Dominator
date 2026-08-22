@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.smoke_live import validate_edition_bundle, validate_health_payload
+from scripts.smoke_live import (
+    validate_edition_bundle,
+    validate_health_payload,
+    validate_storage_audit_payload,
+)
 
 
 class LiveSmokeContractTests(unittest.TestCase):
@@ -66,6 +70,27 @@ class LiveSmokeContractTests(unittest.TestCase):
         errors = validate_edition_bundle({"tables": {}})
         self.assertIn("edition bundle has no source freshness receipt", errors)
         self.assertIn("edition bundle has no Draft Room payload", errors)
+
+    def test_storage_audit_requires_current_identity_and_league(self) -> None:
+        self.assertEqual(
+            validate_storage_audit_payload(
+                {
+                    "database_schema_ready": True,
+                    "current_user_present": True,
+                    "current_user_leagues": 2,
+                    "content_artifacts": 5,
+                }
+            ),
+            [],
+        )
+        errors = validate_storage_audit_payload(
+            {
+                "database_schema_ready": True,
+                "current_user_present": True,
+                "current_user_leagues": 0,
+            }
+        )
+        self.assertIn("storage audit finds no leagues for the authenticated identity", errors)
 
 
 if __name__ == "__main__":
