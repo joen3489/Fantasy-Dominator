@@ -642,6 +642,7 @@
             <p>Start with the signal. Put one league in focus, then open its players, managers, markets, and evidence underneath.</p>
             <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span><span>{{ (continuity or {}).label or "Workspace status unknown" }}</span></div>
             {% set featured_receipt = (featured_league.source_receipt or {}) %}
+            {% set featured_content = (featured_league.content_status or {}) %}
             <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
               <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
               <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
@@ -650,6 +651,7 @@
               <span>Reporter: {{ featured_receipt.reporter_name or "The Front Office" }}</span>
               <span>Edition: <strong>{{ featured_receipt.writer_mode or "Evidence-led template" }}</strong></span>
               <span>Latest news: <strong>{{ featured_receipt.latest_news_label or "Not recorded" }}</strong></span>
+              <span>Writer output: <strong>{{ featured_content.label or "Not recorded" }}</strong></span>
             </div>
           </section>
           <nav class="league-strip" aria-label="Enabled leagues">
@@ -817,6 +819,7 @@
         <section class="writer-panel" data-writer-panel>
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
+          <p class="writer-note" data-testid="writer-content-status">Selected league: {{ (featured_league.content_status or {}).label or "No writer receipt yet" }}.</p>
           {% if not writer_api_configured %}
             <p class="writer-note" data-testid="writer-fallback-note">The API writer is not configured here yet. The evidence-led edition remains available; add the production writer key to unlock persona-written articles.</p>
           {% endif %}

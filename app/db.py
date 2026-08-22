@@ -586,6 +586,7 @@ def record_content_artifact(
                 path = excluded.path,
                 status = excluded.status,
                 source_json = excluded.source_json,
+                generated_at = excluded.generated_at,
                 updated_at = excluded.updated_at
             """,
             (
@@ -604,6 +605,64 @@ def record_content_artifact(
         conn.commit()
     finally:
         conn.close()
+
+
+def content_artifact_status(
+    user_id: int,
+    league_id: str,
+    season: str,
+    artifact_type: str = "article",
+) -> dict[str, Any]:
+    """Return a safe, user-scoped receipt for generated writer output.
+
+    The deterministic edition is always available, so the absence of an API
+    artifact is not an error. It is still important to distinguish that
+    fallback from a completed reporter run in the headquarters UI.
+    """
+
+    expected_keys = ("team_report", "market_watch", "trade_desk", "manager_intel", "daily_brief")
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT artifact_key, status, generated_at, updated_at
+            FROM content_artifacts
+            WHERE user_id = ? AND league_id = ? AND season = ? AND artifact_type = ?
+            """,
+            (user_id, str(league_id), str(season), str(artifact_type)),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    generated_keys = {
+        str(row[0])
+        for row in rows
+        if str(row[0]) in expected_keys and str(row[1] or "").lower() == "generated"
+    }
+    timestamps = [
+        str(row[2] or row[3] or "")
+        for row in rows
+        if str(row[2] or row[3] or "")
+    ]
+    generated_count = len(generated_keys)
+    expected_count = len(expected_keys)
+    if generated_count == expected_count:
+        state = "complete"
+        label = f"{generated_count}/{expected_count} reporter articles"
+    elif generated_count:
+        state = "partial"
+        label = f"{generated_count}/{expected_count} reporter articles"
+    else:
+        state = "fallback"
+        label = f"0/{expected_count} reporter articles · evidence-led fallback"
+    return {
+        "state": state,
+        "label": label,
+        "generated_count": generated_count,
+        "expected_count": expected_count,
+        "generated_keys": sorted(generated_keys),
+        "last_generated_at": max(timestamps, default=""),
+    }
 
 
 def start_refresh_run(user_id: int, league_id: str, season: str) -> int:

@@ -801,6 +801,15 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
     view["source_receipt"] = _source_receipt_view(view["editorial"])
+    view["content_status"] = (
+        db.content_artifact_status(
+            user_id,
+            str(row.get("league_id") or ""),
+            str(row.get("season") or load_config().get("current_season") or ""),
+        )
+        if user_id is not None
+        else {}
+    )
     return view
 
 

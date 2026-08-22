@@ -741,6 +741,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("news rows", html)
         self.assertIn("news sources current", html)
         self.assertIn("Latest news:", html)
+        self.assertIn("Writer output:", html)
+        self.assertIn("writer-content-status", html)
         self.assertIn("Edition:", html)
         self.assertIn("#view-draft-room", html)
         self.assertIn('data-testid="front-page"', html)
@@ -1104,6 +1106,28 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(payload["other_user_leagues"], 1)
         self.assertNotIn("Other Secret", str(payload))
         self.assertNotIn("other_storage_identity", str(payload))
+
+    def test_content_artifact_status_distinguishes_reporter_output_from_fallback(self) -> None:
+        user = db.get_or_create_user("user_content_status")
+        user_id = int(user["id"])
+        fallback = db.content_artifact_status(user_id, "content-league", "2026")
+        self.assertEqual(fallback["state"], "fallback")
+        self.assertEqual(fallback["label"], "0/5 reporter articles · evidence-led fallback")
+
+        db.record_content_artifact(
+            user_id,
+            "content-league",
+            "2026",
+            "article",
+            "team_report",
+            "team_report.md",
+            source={"mode": "automatic_llm"},
+        )
+        partial = db.content_artifact_status(user_id, "content-league", "2026")
+        self.assertEqual(partial["state"], "partial")
+        self.assertEqual(partial["label"], "1/5 reporter articles")
+        self.assertEqual(partial["generated_keys"], ["team_report"])
+        self.assertTrue(partial["last_generated_at"])
 
     def test_user_refresh_endpoint_is_not_operator_protected(self) -> None:
         token = self._token("user_refresh")
