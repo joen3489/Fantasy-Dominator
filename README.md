@@ -234,4 +234,10 @@ Analysis artifacts are generated separately under `data/analysis/`:
 ~~~powershell
 python -m unittest discover -s tests
 python -m py_compile app\main.py app\scheduler.py src\context.py scripts\refresh_all.py
+python scripts\validate_local_data.py
 ~~~
+
+`validate_local_data.py` is read-only: it checks refresh age, imported news,
+source freshness, evidence traces, and deterministic analysis artifacts. It
+returns success when optional sources are explicitly disabled but reports those
+sources as warnings.
