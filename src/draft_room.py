@@ -78,6 +78,9 @@ def build_draft_room(
         },
         "summary": {
             "available_player_count": len(draft_board),
+            "unconfirmed_player_count": sum(
+                row.get("identity_status") == "unconfirmed_name_match" for row in draft_board
+            ),
             "trade_target_count": len(trade_targets),
             "fade_count": len(fades),
             "future_pick_count": len(pick_leverage),
@@ -91,6 +94,15 @@ def build_draft_room(
         "data_quality": {
             "market_player_rows": len(market_rows),
             "market_player_source": "DynastyProcess values.csv; availability matched by current league roster names when Sleeper IDs are unavailable",
+            "market_player_identity": {
+                "sleeper_id": sum(row.get("identity_status") == "sleeper_id" for row in draft_board),
+                "sleeper_unique_name_match": sum(
+                    row.get("identity_status") == "sleeper_unique_name_match" for row in draft_board
+                ),
+                "unconfirmed_name_match": sum(
+                    row.get("identity_status") == "unconfirmed_name_match" for row in draft_board
+                ),
+            },
             "pick_value_rows": len(pick_value_rows),
             "pick_value_source": (
                 "DynastyProcess pick values"
@@ -119,6 +131,16 @@ def _build_draft_board(
         name_key = _name_key(name)
         if player_id and player_id in roster_ids or name_key in roster_names:
             continue
+        identity_status = "sleeper_id" if player_id else "unconfirmed_name_match"
+        if not player_id:
+            matches = _canonical_player_matches(
+                tables.get("players", []),
+                name,
+                position=str(row.get("position", "")).strip(),
+            )
+            if len(matches) == 1:
+                player_id = str(matches[0].get("player_id", "")).strip()
+                identity_status = "sleeper_unique_name_match" if player_id else "unconfirmed_name_match"
         identity = player_id or name_key
         existing = unique.get(identity)
         if existing and _number(existing.get("market_value")) >= value:
@@ -128,7 +150,16 @@ def _build_draft_board(
         need = needs.get(position, "unknown")
         need_priority = NEED_PRIORITY.get(need.lower(), 0)
         source_trace = str(row.get("source_trace", "")).strip()
-        identity_note = "Sleeper-linked" if player_id else "name-match availability"
+        identity_note = {
+            "sleeper_id": "Sleeper ID",
+            "sleeper_unique_name_match": "Sleeper unique-name match",
+            "unconfirmed_name_match": "unconfirmed name match",
+        }[identity_status]
+        identity_risk = (
+            "Market name could not be uniquely matched to a Sleeper player; confirm identity and draft eligibility before acting."
+            if identity_status == "unconfirmed_name_match"
+            else "Market board only; confirm draft eligibility and current news before acting."
+        )
         unique[identity] = {
             "player_id": player_id,
             "player_name": name,
@@ -147,8 +178,9 @@ def _build_draft_board(
                 f"market_value={value}; market_rank={row.get('market_rank', 'unknown')}; "
                 f"{need_field or 'position_fit'}={need}; identity={identity_note}"
             ),
-            "risk": "Market board only; confirm draft eligibility and current news before acting.",
-            "confidence": "medium",
+            "identity_status": identity_status,
+            "risk": identity_risk,
+            "confidence": "low" if identity_status == "unconfirmed_name_match" else "medium",
             "source_trace": source_trace or "DynastyProcess values.csv",
         }
     return sorted(
@@ -335,6 +367,35 @@ def _first_matching(rows: list[dict[str, Any]], key: str, value: int) -> dict[st
 
 def _name_key(value: Any) -> str:
     return "".join(character for character in str(value or "").lower() if character.isalnum())
+
+
+def _canonical_player_matches(
+    rows: list[dict[str, Any]],
+    name: str,
+    position: str = "",
+) -> list[dict[str, Any]]:
+    """Find unique canonical Sleeper rows without guessing through ambiguity."""
+
+    name_key = _canonical_name_key(name)
+    matches = []
+    for row in rows:
+        row_name = row.get("full_name") or row.get("player_name")
+        if _canonical_name_key(row_name) != name_key or not str(row.get("player_id", "")).strip():
+            continue
+        row_position = str(row.get("position", "")).strip()
+        if position and row_position and row_position != position:
+            continue
+        matches.append(row)
+    return matches
+
+
+def _canonical_name_key(value: Any) -> str:
+    """Normalize common generational suffixes for cross-source identity joins."""
+
+    parts = str(value or "").lower().replace(".", "").split()
+    while len(parts) > 1 and parts[-1] in {"jr", "sr", "ii", "iii", "iv", "v", "vi"}:
+        parts.pop()
+    return _name_key(" ".join(parts))
 
 
 def _int(value: Any) -> int:

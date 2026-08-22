@@ -2128,7 +2128,11 @@ def _page(
         .map(([position, value]) => `${{position}}: ${{value}}`)
         .join(' · ');
       const posture = team.team_direction || team.team_shape || 'team posture unavailable';
-      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster.</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
+      const unconfirmed = Number(summary.unconfirmed_player_count || 0);
+      const identityNote = unconfirmed
+        ? `${{unconfirmed}} market name${{unconfirmed === 1 ? '' : 's'}} still need Sleeper confirmation before draft use.`
+        : 'Market-board identities are linked or uniquely matched to Sleeper.';
+      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
     }}
 
     function draftRoomCards(rows, mode) {{
@@ -2146,6 +2150,7 @@ def _page(
           row.need && row.need !== 'unknown' ? `need ${{row.need}}` : '',
           row.market_value ? `market ${{row.market_value}}` : '',
           row.action_label || row.consumer_label || '',
+          row.identity_status ? `identity ${{row.identity_status.replaceAll('_', ' ')}}` : '',
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         summary: row.why || '',
@@ -2170,7 +2175,8 @@ def _page(
     function draftRoomQuality(room) {{
       const quality = room.data_quality || {{}};
       const health = (quality.source_health || []).map(row => `${{row.source}}/${{row.dataset}}: ${{row.status}}`).join(' · ');
-      return `<p><strong>Market board:</strong> ${{escapeHtml(quality.market_player_source || 'unavailable')}} (${{escapeHtml(String(quality.market_player_rows || 0))}} rows).</p><p><strong>Pick valuation:</strong> ${{escapeHtml(quality.pick_value_source || 'unavailable')}} (${{escapeHtml(String(quality.pick_value_rows || 0))}} external value rows).</p><p><strong>Freshness:</strong> ${{escapeHtml(health || 'source freshness not recorded')}}</p>`;
+      const identity = quality.market_player_identity || {{}};
+      return `<p><strong>Market board:</strong> ${{escapeHtml(quality.market_player_source || 'unavailable')}} (${{escapeHtml(String(quality.market_player_rows || 0))}} rows).</p><p><strong>Identity:</strong> ${{escapeHtml(String(identity.sleeper_id || 0))}} Sleeper IDs · ${{escapeHtml(String(identity.sleeper_unique_name_match || 0))}} unique matches · ${{escapeHtml(String(identity.unconfirmed_name_match || 0))}} unconfirmed.</p><p><strong>Pick valuation:</strong> ${{escapeHtml(quality.pick_value_source || 'unavailable')}} (${{escapeHtml(String(quality.pick_value_rows || 0))}} external value rows).</p><p><strong>Freshness:</strong> ${{escapeHtml(health || 'source freshness not recorded')}}</p>`;
     }}
 
     function thesisCards(rows, mode) {{

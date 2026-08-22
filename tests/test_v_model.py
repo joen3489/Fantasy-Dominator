@@ -1325,10 +1325,16 @@ class VModelTests(unittest.TestCase):
             {
                 "teams": [{"season": "2026", "roster_id": 2, "team_name": "Rebuild Crew"}],
                 "roster_players": [{"season": "2026", "roster_id": 2, "player_id": "1", "player_name": "Core QB"}],
+                "players": [
+                    {"player_id": "sleeper-rb", "full_name": "Available RB", "position": "RB"},
+                    {"player_id": "sleeper-james", "full_name": "James Cook", "position": "RB"},
+                ],
                 "team_needs_matrix": [{"roster_id": 2, "team_shape": "rebuild_asset_bank", "need_qb": "low", "need_rb": "high", "need_pass_catcher": "low", "need_picks": "low"}],
                 "player_market_values": [
                     {"player_id": "1", "player_name": "Core QB", "position": "QB", "market_value": 80, "market_rank": 1, "source_trace": "market"},
                     {"player_id": "", "player_name": "Available RB", "position": "RB", "market_value": 70, "market_rank": 5, "source_trace": "market"},
+                    {"player_id": "", "player_name": "Unknown RB", "position": "RB", "market_value": 65, "market_rank": 6, "source_trace": "market"},
+                    {"player_id": "", "player_name": "James Cook III", "position": "RB", "market_value": 60, "market_rank": 7, "source_trace": "market"},
                 ],
                 "action_recommendations": [
                     {"roster_id": 8, "team_name": "Contender", "player_id": "2", "player_name": "Trade Target", "position": "WR", "action_label": "true_buy_low", "action_score": 90, "why": "Buy low", "evidence": "gap", "confidence": "high", "source_trace": "market"},
@@ -1350,6 +1356,15 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(room["schema_version"], "draft_room_v1")
         self.assertEqual(room["league_id"], "league-1")
         self.assertEqual(room["draft_board"][0]["player_name"], "Available RB")
+        self.assertEqual(room["draft_board"][0]["player_id"], "sleeper-rb")
+        self.assertEqual(room["draft_board"][0]["identity_status"], "sleeper_unique_name_match")
+        unresolved = next(row for row in room["draft_board"] if row["player_name"] == "Unknown RB")
+        self.assertEqual(unresolved["player_id"], "")
+        self.assertEqual(unresolved["identity_status"], "unconfirmed_name_match")
+        suffix_match = next(row for row in room["draft_board"] if row["player_name"] == "James Cook III")
+        self.assertEqual(suffix_match["player_id"], "sleeper-james")
+        self.assertEqual(suffix_match["identity_status"], "sleeper_unique_name_match")
+        self.assertEqual(room["summary"]["unconfirmed_player_count"], 1)
         self.assertEqual(room["trade_targets"][0]["player_name"], "Trade Target")
         self.assertEqual(room["fades"][0]["player_name"], "Roster Fade")
         self.assertEqual(room["pick_leverage"][0]["value_source"], "internal_round_curve")
