@@ -116,8 +116,11 @@ def _load_sleeper_trending(
     force: bool,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     source_url = f"{api.BASE_URL}/players/nfl/trending/{trend_type}"
+    cache_path = RAW_EXTERNAL_DIR / "sleeper" / season / f"trending_{trend_type}.json"
+    was_cached = cache_path.exists() and not force
     try:
         trending = api.trending_players(season, trend_type, force=force)
+        observed_at = _cache_timestamp(cache_path) if was_cached else datetime.now(timezone.utc).isoformat()
         rows = []
         for item in trending:
             player_id = str(item.get("player_id") or "")
@@ -128,7 +131,10 @@ def _load_sleeper_trending(
                     "source": "sleeper_trending",
                     "event_id": f"sleeper_trending_{trend_type}_{player_id}",
                     "event_type": f"trending_{trend_type}",
-                    "published_at": datetime.now(timezone.utc).isoformat(),
+                    # Trending is a point-in-time source, not a published article.  A cached
+                    # response must retain its cache observation time; stamping it with now
+                    # made stale data look like fresh news after every scheduled refresh.
+                    "published_at": observed_at,
                     "title": f"Sleeper trending {trend_type}: {name}",
                     "summary": f"{name} is trending as a {trend_type} with count {count}.",
                     "url": source_url,
@@ -139,9 +145,15 @@ def _load_sleeper_trending(
                     "source_trace": source_url,
                 }
             )
-        return rows, _freshness("sleeper_trending", f"trending_{trend_type}", "refreshed_or_cached", source_url, RAW_EXTERNAL_DIR / "sleeper" / season / f"trending_{trend_type}.json")
+        return rows, _freshness(
+            "sleeper_trending",
+            f"trending_{trend_type}",
+            "cached" if was_cached else "refreshed",
+            source_url,
+            cache_path,
+        )
     except Exception as exc:
-        return [], _freshness("sleeper_trending", f"trending_{trend_type}", f"unavailable:{type(exc).__name__}", source_url, RAW_EXTERNAL_DIR / "sleeper" / season / f"trending_{trend_type}.json")
+        return [], _freshness("sleeper_trending", f"trending_{trend_type}", f"unavailable:{type(exc).__name__}", source_url, cache_path)
 
 
 def _match_news_events(news_events: pd.DataFrame, players: dict[str, dict[str, Any]]) -> pd.DataFrame:
@@ -291,6 +303,13 @@ def _normalize_name(value: Any) -> str:
 def _event_id(source: str, value: str) -> str:
     digest = hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()[:16]
     return f"{source}_{digest}"
+
+
+def _cache_timestamp(path: Path) -> str:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+    except OSError:
+        return datetime.now(timezone.utc).isoformat()
 
 
 def _freshness(source: str, dataset: str, status: str, url: str, cache_path: Path | None) -> dict[str, Any]:

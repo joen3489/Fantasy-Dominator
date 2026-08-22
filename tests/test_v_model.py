@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1614,18 +1615,53 @@ class VModelTests(unittest.TestCase):
             [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"}]
         )
 
-        tables = build_news_tables(
-            {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
-            FakeAPI(),
-            players,
-            teams,
-            roster_players,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("src.news.RAW_EXTERNAL_DIR", Path(tmp)):
+                tables = build_news_tables(
+                    {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
+                    FakeAPI(),
+                    players,
+                    teams,
+                    roster_players,
+                )
 
         self.assertEqual(tables["player_news_matches"].iloc[0]["player_id"], "1")
         self.assertEqual(tables["player_news_matches"].iloc[0]["match_confidence"], "high")
         self.assertEqual(tables["league_news_impact"].iloc[0]["team_name"], "Melkor Lord of Light")
         self.assertEqual(tables["league_news_impact"].iloc[0]["impact_type"], "market_heat")
+        self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "refreshed")
+
+    def test_cached_sleeper_trending_keeps_cache_time_instead_of_now(self) -> None:
+        class FakeAPI:
+            BASE_URL = "https://api.sleeper.app/v1"
+
+            def trending_players(self, season: str, trend_type: str, force: bool = False):
+                return [{"player_id": "1", "count": 25}] if trend_type == "add" else []
+
+        players = {"1": {"full_name": "Jayden Daniels", "position": "QB", "team": "WAS"}}
+        teams = pd.DataFrame([{"roster_id": 2, "team_name": "Melkor Lord of Light"}])
+        roster_players = pd.DataFrame(
+            [{"roster_id": 2, "team_name": "Melkor Lord of Light", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"}]
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "raw_external"
+            cache_path = cache_root / "sleeper" / "2026" / "trending_add.json"
+            cache_path.parent.mkdir(parents=True)
+            cache_path.write_text("[]", encoding="utf-8")
+            cached_at = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc).timestamp()
+            os.utime(cache_path, (cached_at, cached_at))
+            with patch("src.news.RAW_EXTERNAL_DIR", cache_root):
+                tables = build_news_tables(
+                    {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
+                    FakeAPI(),
+                    players,
+                    teams,
+                    roster_players,
+                    force=False,
+                )
+
+        self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "cached")
+        self.assertEqual(tables["news_events"].iloc[0]["published_at"], "2026-08-20T12:00:00+00:00")
 
     def test_economic_tables_create_market_gaps_and_behavior_signals(self) -> None:
         teams = pd.DataFrame(

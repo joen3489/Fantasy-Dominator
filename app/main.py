@@ -75,8 +75,25 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
     @app.get("/healthz")
-    def healthz() -> dict[str, bool]:
-        return {"ok": True}
+    def healthz() -> dict[str, Any]:
+        """Return boot health plus safe deployment continuity signals.
+
+        Railway only needs ``ok`` for the health check.  The additional fields
+        make the common production failure modes visible without exposing
+        secrets or filesystem paths: a development Clerk key, an unset public
+        URL, or an app database that is not present at boot.
+        """
+
+        publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
+        auth_mode = _clerk_key_mode(publishable_key)
+        return {
+            "ok": True,
+            "auth_mode": auth_mode,
+            "public_url_configured": bool(os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip()),
+            "data_root_configured": bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()),
+            "database_present": (DATA_DIR / "app.db").is_file(),
+            "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+        }
 
     @app.get("/login", response_class=HTMLResponse)
     def login(request: Request) -> HTMLResponse:
@@ -88,7 +105,7 @@ def create_app() -> FastAPI:
                 "request": request,
                 "publishable_key": publishable_key,
                 "clerk_js_url": _clerk_js_url(publishable_key),
-                "redirect_url": str(request.url_for("home")),
+                "redirect_url": _public_home_url(request),
             },
         )
 
@@ -306,6 +323,43 @@ def _clerk_js_url(publishable_key: str) -> str:
     except Exception:
         pass
     return "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+
+
+def _clerk_key_mode(publishable_key: str) -> str:
+    """Classify the Clerk publishable key without returning the key itself."""
+
+    if publishable_key.startswith("pk_live_"):
+        return "live"
+    if publishable_key.startswith("pk_test_"):
+        return "development"
+    return "unknown" if publishable_key else "not_configured"
+
+
+def _public_home_url(request: Request) -> str:
+    """Build the URL Clerk should use after sign-in.
+
+    Railway terminates TLS before forwarding requests to the container.  A
+    plain ``request.url_for`` can therefore produce ``http://...`` even when
+    the user is browsing the public HTTPS URL.  Prefer an explicit canonical
+    URL, then honor the trusted forwarded scheme while retaining Starlette's
+    host handling for local development.
+    """
+
+    configured = os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip().rstrip("/")
+    if configured:
+        return f"{configured}/"
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip().strip("/")
+    if railway_domain:
+        return f"https://{railway_domain}/"
+    url = request.url_for("home")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    if forwarded_proto in {"http", "https"}:
+        url = url.replace(scheme=forwarded_proto)
+    elif str(url.hostname or "").lower().endswith(".up.railway.app"):
+        # Railway's public domain is HTTPS even when the internal request
+        # reaches the container as plain HTTP.
+        url = url.replace(scheme="https")
+    return str(url)
 
 
 def _require_operator_access(request: Request) -> None:

@@ -408,6 +408,60 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(html_response.headers["location"], "/login")
         self.assertEqual(api_response.status_code, 401)
 
+    def test_login_uses_canonical_public_url_for_clerk_redirects(self) -> None:
+        with patch.dict(os.environ, {"FRONT_OFFICE_PUBLIC_URL": "https://fantasy.test"}, clear=False):
+            response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('forceRedirectUrl: "https://fantasy.test/"', response.text)
+        self.assertIn('signUpFallbackRedirectUrl: "https://fantasy.test/"', response.text)
+
+    def test_login_honors_forwarded_https_scheme_when_public_url_is_unset(self) -> None:
+        with patch.dict(os.environ, {"FRONT_OFFICE_PUBLIC_URL": ""}, clear=False):
+            response = self.client.get(
+                "/login",
+                headers={"host": "fantasy.test", "x-forwarded-proto": "https"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('forceRedirectUrl: "https://fantasy.test/"', response.text)
+
+    def test_login_uses_railway_public_domain_when_explicit_url_is_unset(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_PUBLIC_URL": "", "RAILWAY_PUBLIC_DOMAIN": "fantasy.test"},
+            clear=False,
+        ):
+            response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('forceRedirectUrl: "https://fantasy.test/"', response.text)
+
+    def test_healthz_reports_safe_deployment_signals(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_PUBLIC_URL": "https://fantasy.test",
+                "FRONT_OFFICE_DATA_DIR": "/app/data",
+            },
+            clear=False,
+        ):
+            response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "ok": True,
+                "auth_mode": "development",
+                "public_url_configured": True,
+                "data_root_configured": True,
+                "database_present": True,
+                "writer_api_configured": False,
+            },
+        )
+
     def test_valid_token_serves_home_and_auto_provisions_user(self) -> None:
         response = self.client.get("/", cookies={"__session": self._token("user_valid")})
 
@@ -766,7 +820,13 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(config["context"]["league_id"], "scoped-league")
 
     def test_healthz_is_open(self) -> None:
-        self.assertEqual(self.client.get("/healthz").json(), {"ok": True})
+        payload = self.client.get("/healthz").json()
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["auth_mode"], "development")
+        self.assertIn("public_url_configured", payload)
+        self.assertIn("data_root_configured", payload)
+        self.assertIn("database_present", payload)
+        self.assertIn("writer_api_configured", payload)
 
     def _token(
         self,
