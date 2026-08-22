@@ -1411,6 +1411,35 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(room["draft_context"]["teams"], 12)
         self.assertIn("preparation board", room["draft_context"]["message"])
 
+    def test_draft_room_prefers_confirmed_active_event_over_completed_history(self) -> None:
+        room = build_draft_room(
+            {
+                "drafts": [
+                    {"season": "2026", "draft_id": "completed", "status": "complete", "type": "linear", "settings": {"rounds": 4, "teams": 12}},
+                    {"season": "2026", "draft_id": "upcoming", "status": "pre_draft", "type": "linear", "settings": {"rounds": 4, "teams": 12, "pick_timer": 1800}},
+                ]
+            },
+            {"current_season": "2026"},
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="Prep Team",
+        )
+
+        self.assertEqual(room["draft_context"]["draft_id"], "upcoming")
+        self.assertEqual(room["draft_context"]["label"], "Upcoming draft")
+        self.assertTrue(room["draft_context"]["is_upcoming"])
+        self.assertFalse(room["draft_context"]["is_live"])
+
+        future = build_draft_room(
+            {"drafts": [{"season": "2027", "draft_id": "future", "status": "pre_draft", "type": "snake", "settings": {}}]},
+            {"current_season": "2026"},
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="Prep Team",
+        )
+        self.assertEqual(future["draft_context"]["label"], "Upcoming 2027 draft")
+        self.assertIn("no 2026 draft event", future["draft_context"]["message"])
+
     def test_dynastyprocess_pick_rank_file_is_not_presented_as_trade_value(self) -> None:
         frame = _normalize_pick_values(
             pd.DataFrame([{"player": "2027 Early 1st", "pos": "PICK", "ecr_2qb": 33.7, "pick": pd.NA}])

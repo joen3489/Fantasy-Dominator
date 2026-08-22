@@ -347,7 +347,20 @@ def _draft_context(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
 
     normalized = [row for row in rows if isinstance(row, dict)]
     current = [row for row in normalized if str(row.get("season", "")) == str(season)]
-    selected = current[0] if current else None
+    active_statuses = {"pre_draft", "drafting", "paused"}
+    active_current = [
+        row for row in current if str(row.get("status") or "").strip().lower() in active_statuses
+    ]
+    selected = active_current[0] if active_current else (current[0] if current else None)
+    if selected is None and str(season).isdigit():
+        future_active = [
+            row
+            for row in normalized
+            if str(row.get("season", "")).isdigit()
+            and int(str(row.get("season"))) > int(str(season))
+            and str(row.get("status") or "").strip().lower() in active_statuses
+        ]
+        selected = min(future_active, key=lambda row: _int(row.get("season")), default=None)
     latest = max(
         normalized,
         key=lambda row: _int(row.get("season")),
@@ -381,6 +394,8 @@ def _draft_context(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
         settings = {}
 
     is_current = source_season == str(season)
+    is_upcoming = status == "pre_draft"
+    is_live = status == "drafting"
     if is_current:
         label = {
             "pre_draft": "Upcoming draft",
@@ -391,6 +406,13 @@ def _draft_context(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
         message = (
             f"The confirmed {source_season} Sleeper draft is {status.replace('_', ' ')}. "
             "This room is the preparation board for the next decision window."
+        )
+    elif source_season.isdigit() and str(season).isdigit() and int(source_season) > int(str(season)) and status in active_statuses:
+        label = f"Upcoming {source_season} draft"
+        message = (
+            f"The confirmed {source_season} Sleeper draft is {status.replace('_', ' ')}; "
+            f"no {season or 'current-season'} draft event is present yet. "
+            "This room is the preparation board for that next decision window."
         )
     else:
         label = f"No {season or 'current-season'} draft event"
@@ -410,6 +432,8 @@ def _draft_context(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
         "rounds": _int(settings.get("rounds")),
         "teams": _int(settings.get("teams")),
         "pick_timer_seconds": _int(settings.get("pick_timer")),
+        "is_upcoming": is_upcoming,
+        "is_live": is_live,
     }
 
 
