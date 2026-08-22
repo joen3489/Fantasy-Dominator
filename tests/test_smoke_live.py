@@ -12,9 +12,12 @@ class LiveSmokeContractTests(unittest.TestCase):
                 "ok": True,
                 "auth_mode": "development",
                 "auth_configuration_ready": False,
+                "public_url_ready": False,
                 "data_root_configured": False,
                 "database_present": True,
                 "database_schema_ready": False,
+                "operator_token_configured": False,
+                "scheduler_enabled": False,
                 "writer_api_configured": False,
             }
         )
@@ -30,9 +33,12 @@ class LiveSmokeContractTests(unittest.TestCase):
                 "ok": True,
                 "auth_mode": "live",
                 "auth_configuration_ready": True,
+                "public_url_ready": True,
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
+                "operator_token_configured": True,
+                "scheduler_enabled": True,
                 "writer_api_configured": False,
             }
         )

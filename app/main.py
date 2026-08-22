@@ -89,6 +89,16 @@ def create_app() -> FastAPI:
         auth_issuer_configured = bool(os.environ.get("CLERK_ISSUER", "").strip())
         auth_jwks_configured = bool(os.environ.get("CLERK_JWKS_URL", "").strip())
         storage = db.storage_health()
+        public_url_ready = bool(
+            os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip()
+            or os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        )
+        scheduler_enabled = os.environ.get("FRONT_OFFICE_SCHEDULER", "on").lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
         return {
             "ok": True,
             "auth_mode": auth_mode,
@@ -96,10 +106,13 @@ def create_app() -> FastAPI:
             "auth_jwks_configured": auth_jwks_configured,
             "auth_configuration_ready": bool(publishable_key and auth_issuer_configured and auth_jwks_configured),
             "public_url_configured": bool(os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip()),
+            "public_url_ready": public_url_ready,
             "data_root_configured": bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()),
             "database_present": (DATA_DIR / "app.db").is_file(),
             **storage,
             "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+            "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
+            "scheduler_enabled": scheduler_enabled,
         }
 
     @app.get("/login", response_class=HTMLResponse)

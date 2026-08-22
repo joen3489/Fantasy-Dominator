@@ -459,11 +459,14 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "auth_jwks_configured": True,
                 "auth_configuration_ready": True,
                 "public_url_configured": True,
+                "public_url_ready": True,
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
                 "database_table_count": 5,
                 "writer_api_configured": False,
+                "operator_token_configured": False,
+                "scheduler_enabled": False,
             },
         )
 
@@ -885,10 +888,13 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(payload["auth_mode"], "development")
         self.assertIn("auth_configuration_ready", payload)
         self.assertIn("public_url_configured", payload)
+        self.assertIn("public_url_ready", payload)
         self.assertIn("data_root_configured", payload)
         self.assertIn("database_present", payload)
         self.assertIn("database_schema_ready", payload)
         self.assertIn("writer_api_configured", payload)
+        self.assertIn("operator_token_configured", payload)
+        self.assertIn("scheduler_enabled", payload)
 
     def _token(
         self,

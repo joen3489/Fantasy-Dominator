@@ -56,12 +56,18 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
         errors.append(f"auth_mode={payload.get('auth_mode')!r}; expected live Clerk keys")
     if payload.get("auth_configuration_ready") is not True:
         errors.append("Clerk publishable key, issuer, and JWKS configuration is incomplete")
+    if payload.get("public_url_ready") is not True:
+        errors.append("a canonical public URL is not configured")
     if payload.get("data_root_configured") is not True:
         errors.append("FRONT_OFFICE_DATA_DIR is not configured for a durable deployment")
     if payload.get("database_present") is not True:
         errors.append("application database is not present")
     if payload.get("database_schema_ready") is not True:
         errors.append("application database schema is not ready")
+    if payload.get("operator_token_configured") is not True:
+        errors.append("FRONT_OFFICE_OPERATOR_TOKEN is not configured for protected writes")
+    if payload.get("scheduler_enabled") is not True:
+        errors.append("FRONT_OFFICE_SCHEDULER is disabled")
     if payload.get("writer_api_configured") is not True:
         warnings.append("ANTHROPIC_API_KEY is not configured; only deterministic editions are available")
     return errors, warnings
