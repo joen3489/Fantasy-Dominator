@@ -1242,6 +1242,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("News Desk", text)
         self.assertIn("Data Room", text)
         self.assertIn("Data Diagnostics", text)
+        self.assertIn("FRONT_OFFICE_SESSION_TOKEN", text)
+        self.assertIn("/healthz", text)
+        self.assertIn("Authenticated smoke skipped", text)
 
     def test_projection_scoring_uses_league_settings_and_te_bonus(self) -> None:
         points = calculate_fantasy_points(
