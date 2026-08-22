@@ -514,6 +514,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             response.json(),
             {
                 "ok": True,
+                "revision": "",
                 "auth_mode": "development",
                 "auth_issuer_configured": True,
                 "auth_jwks_configured": True,
@@ -1399,6 +1400,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         payload = self.client.get("/healthz").json()
         self.assertEqual(payload["ok"], True)
         self.assertEqual(payload["auth_mode"], "development")
+        self.assertIn("revision", payload)
         self.assertIn("auth_configuration_ready", payload)
         self.assertIn("public_url_configured", payload)
         self.assertIn("public_url_ready", payload)

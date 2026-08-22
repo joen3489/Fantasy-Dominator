@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
         deployment_gate = _production_gate()
         return {
             "ok": True,
+            "revision": _deployment_revision(),
             "auth_mode": auth_mode,
             "auth_issuer_configured": auth_issuer_configured,
             "auth_jwks_configured": auth_jwks_configured,
@@ -433,6 +434,16 @@ def _clerk_key_mode(publishable_key: str) -> str:
     if publishable_key.startswith("pk_test_"):
         return "development"
     return "unknown" if publishable_key else "not_configured"
+
+
+def _deployment_revision() -> str:
+    """Return a safe release identifier when the platform provides one."""
+
+    for key in ("RAILWAY_GIT_COMMIT_SHA", "SOURCE_VERSION", "COMMIT_SHA", "GIT_COMMIT"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value[:80]
+    return ""
 
 
 def _production_gate() -> dict[str, Any]:
