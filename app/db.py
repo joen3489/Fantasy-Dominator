@@ -12,6 +12,14 @@ from src.utils import DATA_DIR
 
 DB_PATH = DATA_DIR / "app.db"
 
+REQUIRED_TABLES = {
+    "users",
+    "user_leagues",
+    "team_profiles",
+    "content_artifacts",
+    "refresh_runs",
+}
+
 
 def init_db(path: Path | None = None) -> None:
     conn = _connect(path)
@@ -171,6 +179,35 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
         return [_row(row) for row in rows]
     finally:
         conn.close()
+
+
+def storage_health(path: Path | None = None) -> dict[str, Any]:
+    """Return non-sensitive evidence that the application store is usable.
+
+    This deliberately reports schema shape rather than user rows.  It lets a
+    deployment health check distinguish a mounted, initialized SQLite store
+    from a fresh empty file without leaking identities or league names.
+    """
+
+    db_path = path or DB_PATH
+    if not db_path.is_file():
+        return {"database_schema_ready": False, "database_table_count": 0}
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return {"database_schema_ready": False, "database_table_count": 0}
+    tables = {str(row[0]) for row in rows}
+    return {
+        "database_schema_ready": REQUIRED_TABLES.issubset(tables),
+        "database_table_count": len(tables),
+    }
 
 
 def another_user_has_leagues(user_id: int) -> bool:

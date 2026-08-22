@@ -91,9 +91,10 @@ set `FRONT_OFFICE_PUBLIC_URL=https://your-public-domain/` (the app also falls
 back to Railway's `RAILWAY_PUBLIC_DOMAIN` when present). The login page uses
 that canonical URL for every Clerk redirect, which avoids Railway's internal
 HTTP hop being mistaken for the public HTTPS origin. `/healthz` exposes only
-safe configuration signals (`auth_mode`, `public_url_configured`,
-`data_root_configured`, `database_present`, and `writer_api_configured`) so a deploy can be checked
-without exposing credentials or user data.
+safe configuration signals (`auth_mode`, Clerk issuer/JWKS readiness,
+`public_url_configured`, `data_root_configured`, SQLite schema readiness, and
+`writer_api_configured`) so a deploy can be checked without exposing
+credentials or user data.
 
 Generated state is intentionally not stored in Git. For production continuity,
 mount a durable Railway volume at `/app/data` and set

@@ -86,12 +86,19 @@ def create_app() -> FastAPI:
 
         publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
         auth_mode = _clerk_key_mode(publishable_key)
+        auth_issuer_configured = bool(os.environ.get("CLERK_ISSUER", "").strip())
+        auth_jwks_configured = bool(os.environ.get("CLERK_JWKS_URL", "").strip())
+        storage = db.storage_health()
         return {
             "ok": True,
             "auth_mode": auth_mode,
+            "auth_issuer_configured": auth_issuer_configured,
+            "auth_jwks_configured": auth_jwks_configured,
+            "auth_configuration_ready": bool(publishable_key and auth_issuer_configured and auth_jwks_configured),
             "public_url_configured": bool(os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip()),
             "data_root_configured": bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()),
             "database_present": (DATA_DIR / "app.db").is_file(),
+            **storage,
             "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
         }
 

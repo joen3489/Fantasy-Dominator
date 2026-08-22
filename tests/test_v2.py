@@ -455,9 +455,14 @@ class FastAPIClerkAppTests(unittest.TestCase):
             {
                 "ok": True,
                 "auth_mode": "development",
+                "auth_issuer_configured": True,
+                "auth_jwks_configured": True,
+                "auth_configuration_ready": True,
                 "public_url_configured": True,
                 "data_root_configured": True,
                 "database_present": True,
+                "database_schema_ready": True,
+                "database_table_count": 5,
                 "writer_api_configured": False,
             },
         )
@@ -844,9 +849,11 @@ class FastAPIClerkAppTests(unittest.TestCase):
         payload = self.client.get("/healthz").json()
         self.assertEqual(payload["ok"], True)
         self.assertEqual(payload["auth_mode"], "development")
+        self.assertIn("auth_configuration_ready", payload)
         self.assertIn("public_url_configured", payload)
         self.assertIn("data_root_configured", payload)
         self.assertIn("database_present", payload)
+        self.assertIn("database_schema_ready", payload)
         self.assertIn("writer_api_configured", payload)
 
     def _token(
