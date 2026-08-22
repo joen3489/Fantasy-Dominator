@@ -114,6 +114,16 @@ Optional environment variables:
 - FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN=true fails operator actions closed even when the token variable is missing.
 - HOST=0.0.0.0 and PORT=8765 are the app defaults.
 
+The production smoke check can validate the public deployment and, when
+`FRONT_OFFICE_SESSION_TOKEN` is supplied locally, the authenticated home page,
+continuity receipt, and first owned league edition. It fails when live Clerk
+or durable SQLite configuration is incomplete and warns when the optional
+Anthropic writer key is absent:
+
+```powershell
+python scripts\smoke_live.py
+```
+
 ## Config and migration
 
 Edit `config/leagues.yml` to add prior league IDs by season:
