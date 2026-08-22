@@ -592,6 +592,16 @@
       .storage-panel summary { cursor: pointer; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
       .storage-panel p { margin: 8px 0 0; }
       .storage-audit-output { margin: 0; min-height: 18px; white-space: pre-wrap; color: var(--muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+      .article-shelf { margin-top: 18px; }
+      .article-shelf-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+      .article-shelf-heading h2 { margin: 0; font-size: 16px; text-transform: uppercase; letter-spacing: .08em; }
+      .article-shelf-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+      .article-shelf-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+      .article-card { display: flex; min-height: 118px; flex-direction: column; justify-content: space-between; gap: 10px; padding: 12px; color: var(--ink); text-decoration: none; background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 2px 8px rgba(35, 45, 39, .04); }
+      .article-card:hover, .article-card:focus-visible { border-color: var(--accent); box-shadow: 0 4px 14px rgba(35, 45, 39, .10); }
+      .article-card-kicker { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+      .article-card-title { font-family: Georgia, 'Times New Roman', serif; font-size: 17px; line-height: 1.05; }
+      .article-card-status { color: #70551b; font-size: 11px; line-height: 1.25; }
       @media (max-width: 520px) { .writer-actions { grid-template-columns: 1fr; } }
       .empty-feed {
         margin: 4px 2px;
@@ -605,7 +615,11 @@
       }
       @media (max-width: 700px) {
         .issue-story-grid { grid-template-columns: 1fr; }
+        .article-shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .article-shelf-heading { display: block; }
+        .article-shelf-heading p { margin-top: 4px; }
       }
+      @media (max-width: 420px) { .article-shelf-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -701,6 +715,39 @@
               <p class="issue-empty">No published issue is available yet. {{ featured_league.edition_readiness.message or "Refresh this league to build its first read." }}</p>
               <div class="front-page-action"><a href="/league/{{ featured_league.league_id }}/#view-today">Open edition status →</a></div>
             {% endif %}
+          </section>
+          <section class="article-shelf" aria-labelledby="article-shelf-title" data-testid="article-shelf">
+            <div class="article-shelf-heading">
+              <h2 id="article-shelf-title">The desk</h2>
+              <p>Five ways into the same evidence-backed league edition.</p>
+            </div>
+            <div class="article-shelf-grid">
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-today">
+                <span class="article-card-kicker">Daily GM Brief</span>
+                <span class="article-card-title">What matters today</span>
+                <span class="article-card-status">{% if "daily_brief" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-my-team">
+                <span class="article-card-kicker">Team Report</span>
+                <span class="article-card-title">Your roster, interpreted</span>
+                <span class="article-card-status">{% if "team_report" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-league">
+                <span class="article-card-kicker">Manager Intel</span>
+                <span class="article-card-title">Read the room</span>
+                <span class="article-card-status">{% if "manager_intel" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
+                <span class="article-card-kicker">Market Watch</span>
+                <span class="article-card-title">Where value is moving</span>
+                <span class="article-card-status">{% if "market_watch" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
+                <span class="article-card-kicker">Trade Desk Read</span>
+                <span class="article-card-title">Who fits your plan</span>
+                <span class="article-card-status">{% if "trade_desk" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+            </div>
           </section>
         {% endif %}
       {% else %}
