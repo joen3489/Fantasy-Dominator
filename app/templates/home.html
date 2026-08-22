@@ -394,6 +394,8 @@
       }
       .issue-lead p { margin: 0; color: #d7e2d8; font-size: 14px; line-height: 1.42; }
       .issue-lead a { color: #f2dfaa; font-weight: 900; text-decoration: none; }
+      .issue-links { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+      .issue-links a:last-child { color: #d7e2d8; font-size: 13px; }
       .issue-story-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -646,6 +648,7 @@
               <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
               <span>{{ featured_receipt.as_of_label or "Latest refresh" }}</span>
               <span>Reporter: {{ featured_receipt.reporter_name or "The Front Office" }}</span>
+              <span>Edition: <strong>{{ featured_receipt.writer_mode or "Evidence-led template" }}</strong></span>
             </div>
           </section>
           <nav class="league-strip" aria-label="Enabled leagues">
@@ -675,7 +678,10 @@
                 <span class="issue-byline">Reporter: {{ (edition.reporter_persona or {}).name or "The Front Office" }}</span>
                 <h3>{{ edition.headline }}</h3>
                 <p>{{ edition.dek or "The analyst is assembling the current read from your league data." }}</p>
-                <a href="/league/{{ featured_league.league_id }}/#view-today">Open the full edition →</a>
+                <div class="issue-links">
+                  <a href="/league/{{ featured_league.league_id }}/#view-today">Open the full edition →</a>
+                  <a href="/league/{{ featured_league.league_id }}/#view-draft-room">Open Draft Room →</a>
+                </div>
               </article>
               {% if edition.stories %}
                 <div class="issue-story-grid">

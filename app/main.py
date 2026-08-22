@@ -911,6 +911,11 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
     )
     reporter = editorial.get("reporter_persona") if isinstance(editorial, dict) else {}
     reporter_name = reporter.get("name") if isinstance(reporter, dict) else ""
+    writer_mode = (
+        str(editorial.get("writer_mode") or "Evidence-led template")
+        if isinstance(editorial, dict)
+        else "Evidence-led template"
+    )
     return {
         "label": label,
         "current": current,
@@ -923,6 +928,7 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         "checked_at": checked_at,
         "as_of_label": str(editorial.get("as_of_label") or "Latest refresh"),
         "reporter_name": str(reporter_name or "The Front Office"),
+        "writer_mode": writer_mode,
     }
 
 

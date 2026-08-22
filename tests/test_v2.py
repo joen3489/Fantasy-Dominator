@@ -740,6 +740,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="edition-proof"', html)
         self.assertIn("news rows", html)
         self.assertIn("news sources current", html)
+        self.assertIn("Edition:", html)
+        self.assertIn("#view-draft-room", html)
         self.assertIn('data-testid="front-page"', html)
         self.assertIn("Your rookie receiver is the morning", html)
         self.assertIn("A rival is buying the wrong window", html)
@@ -884,6 +886,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(receipt["news_row_count"], 3)
         self.assertEqual(receipt["news_current"], 1)
         self.assertEqual(receipt["reporter_name"], "The Scout")
+        self.assertEqual(receipt["writer_mode"], "Evidence-led template")
 
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")
