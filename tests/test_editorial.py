@@ -94,6 +94,10 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertIn("Projected PPG", {claim["label"] for claim in issue["lead"]["claims"]})
         self.assertEqual(issue["lead"]["sources"][0]["label"], "nflverse")
         self.assertEqual(issue["source_health_summary"]["label"], "3/4 sources current · read the limits")
+        self.assertEqual(
+            [row["label"] for row in issue["source_health"]],
+            ["Market · Values", "Picks · Pick values", "News · Rss", "Projection · Stats"],
+        )
         self.assertEqual({story["story_type"] for story in issue["stories"]}, {"market", "news", "manager"})
 
     def test_empty_issue_is_an_honest_quiet_edition(self) -> None:
@@ -191,6 +195,8 @@ class EditorialUiTests(unittest.TestCase):
         self.assertIn("let editorial = {};", rendered)
         self.assertIn("editorial = app.editorial || {};", rendered)
         self.assertIn("function renderEditorial()", rendered)
+        self.assertIn("return rows.map(row =>", rendered)
+        self.assertNotIn("rows.slice(0, 5)", rendered)
         self.assertIn("Today's Board", rendered)
         self.assertIn("function priorityCards(rows)", rendered)
 

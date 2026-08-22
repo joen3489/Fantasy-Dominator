@@ -507,6 +507,114 @@ class FastAPIClerkAppTests(unittest.TestCase):
             row = conn.execute("SELECT clerk_user_id FROM users").fetchone()
         self.assertEqual(row[0], "user_valid")
 
+    def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
+        clerk_token = self._token("user_two_league_profiles")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_two_league_profiles")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha", "roster_id": 1},
+        )
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "beta", "season": "2026", "league_type": "redraft", "name": "Beta", "roster_id": 2},
+        )
+
+        alpha_profile = {
+            "team_name": "Alpha Rebuilders",
+            "display_name": "alpha-joe",
+            "strategy_name": "Build through 2027",
+            "team_direction": "rebuild",
+            "contention_window": "2027-2029",
+            "strategy_profile": {"name": "Build through 2027", "team_direction": "rebuild"},
+            "writer_preferences": {"persona_id": "scout", "custom_instructions": "Lead with role evidence."},
+        }
+        beta_profile = {
+            "team_name": "Beta Blitz",
+            "display_name": "beta-joe",
+            "strategy_name": "Win this season",
+            "team_direction": "contend",
+            "contention_window": "2026",
+            "strategy_profile": {"name": "Win this season", "team_direction": "contend"},
+            "writer_preferences": {"persona_id": "commissioner", "custom_instructions": "Make the league angle fun."},
+        }
+
+        alpha_saved = self.client.put(
+            "/api/leagues/alpha/profile",
+            cookies={"__session": clerk_token},
+            json=alpha_profile,
+        )
+        beta_saved = self.client.put(
+            "/api/leagues/beta/profile",
+            cookies={"__session": clerk_token},
+            json=beta_profile,
+        )
+
+        self.assertEqual(alpha_saved.status_code, 200)
+        self.assertEqual(beta_saved.status_code, 200)
+        self.assertEqual(alpha_saved.json()["team_name"], "Alpha Rebuilders")
+        self.assertEqual(beta_saved.json()["team_name"], "Beta Blitz")
+        self.assertEqual(
+            self.client.get("/api/leagues/alpha/profile", cookies={"__session": clerk_token}).json()["writer_preferences"]["persona_id"],
+            "scout",
+        )
+        self.assertEqual(
+            self.client.get("/api/leagues/beta/profile", cookies={"__session": clerk_token}).json()["writer_preferences"]["persona_id"],
+            "commissioner",
+        )
+        self.assertEqual(
+            self.client.get("/api/leagues/alpha/profile", cookies={"__session": clerk_token}).json()["strategy_profile"]["team_direction"],
+            "rebuild",
+        )
+        self.assertEqual(
+            self.client.get("/api/leagues/beta/profile", cookies={"__session": clerk_token}).json()["strategy_profile"]["team_direction"],
+            "contend",
+        )
+
+        other_token = self._token("different_user")
+        self.client.get("/", cookies={"__session": other_token})
+        self.assertEqual(
+            self.client.get("/api/leagues/alpha/profile", cookies={"__session": other_token}).status_code,
+            404,
+        )
+
+        def run_job(action: str, callback: object, **kwargs: object) -> dict[str, object]:
+            del action, kwargs
+            return {"accepted": True, "result": callback()}
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            with patch("app.main._generate_insights_job", return_value={"state": "complete"}) as generate:
+                with patch("app.main.front_operator.start_job", side_effect=run_job):
+                    queued = self.client.post(
+                        "/api/operator/generate-insights",
+                        cookies={"__session": clerk_token},
+                        headers={"x-front-office-token": "operator-secret"},
+                        json={"league_id": "beta"},
+                    )
+
+        self.assertEqual(queued.status_code, 200)
+        self.assertTrue(queued.json()["accepted"])
+        generate.assert_called_once()
+        self.assertEqual(generate.call_args.args[0]["league_id"], "beta")
+        self.assertEqual(generate.call_args.args[1], user_id)
+
+    def test_blank_profile_has_same_scalar_contract_as_saved_profile(self) -> None:
+        token = self._token("user_blank_profile")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_blank_profile")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "blank", "season": "2026", "league_type": "dynasty", "name": "Blank", "roster_id": 1},
+        )
+
+        response = self.client.get("/api/leagues/blank/profile", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        for field in ("team_name", "display_name", "strategy_name", "team_direction", "contention_window"):
+            self.assertIn(field, payload)
+            self.assertEqual(payload[field], "")
+
     def test_continuity_receipt_reports_linked_leagues_and_profiles(self) -> None:
         token = self._token("user_continuity")
         self.client.get("/", cookies={"__session": token})

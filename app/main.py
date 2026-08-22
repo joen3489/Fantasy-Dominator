@@ -226,6 +226,11 @@ def create_app() -> FastAPI:
             "league_id": league_id,
             "roster_id": league.get("roster_id"),
             "season": league.get("season") or "",
+            "team_name": "",
+            "display_name": "",
+            "strategy_name": "",
+            "team_direction": "",
+            "contention_window": "",
             "strategy_profile": {},
             "writer_preferences": {"persona_id": "front_office", "custom_instructions": ""},
         }

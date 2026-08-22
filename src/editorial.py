@@ -403,14 +403,16 @@ def _source_health(tables: Mapping[str, Sequence[Mapping[str, Any]]]) -> list[di
     for table_name, label in names.items():
         for row in _rows(tables, table_name):
             status = _text(row.get("status")) or "unknown"
+            source = _text(row.get("source"))
+            dataset = _text(row.get("dataset"))
             # A stale cache retained after a failed refetch is useful evidence,
             # but it must not be presented as current source material.
             healthy = status in {"cached", "refreshed", "complete", "available"}
             output.append(
                 {
-                    "label": label,
-                    "source": _text(row.get("source")) or "internal",
-                    "dataset": _text(row.get("dataset")) or label,
+                    "label": _source_health_label(source, dataset, label),
+                    "source": source or "internal",
+                    "dataset": dataset or label,
                     "status": status,
                     "status_label": "Current" if healthy else "Limited",
                     "healthy": healthy,
@@ -420,6 +422,31 @@ def _source_health(tables: Mapping[str, Sequence[Mapping[str, Any]]]) -> list[di
                 }
             )
     return output
+
+
+def _source_health_label(source: str, dataset: str, fallback: str) -> str:
+    """Give the reader a compact, human-readable source receipt label."""
+
+    source_names = {
+        "rotowire_rss": "RotoWire",
+        "sleeper_trending": "Sleeper trending",
+        "dynastyprocess": "DynastyProcess",
+        "nflverse": "nflverse",
+        "fantasy_nerds": "Fantasy Nerds",
+    }
+    dataset_names = {
+        "nfl_player_news": "NFL player news",
+        "trending_add": "Trending adds",
+        "trending_drop": "Trending drops",
+        "player_stats": "Player stats",
+        "market_values": "Market values",
+        "pick_values": "Pick values",
+    }
+    source_label = source_names.get(source, _human_label(source)) if source else ""
+    dataset_label = dataset_names.get(dataset, _human_label(dataset)) if dataset else ""
+    if source_label and dataset_label:
+        return f"{source_label} · {dataset_label}"
+    return source_label or dataset_label or fallback
 
 
 def _source_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:

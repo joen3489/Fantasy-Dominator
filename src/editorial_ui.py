@@ -304,7 +304,7 @@ EDITORIAL_JS = r"""
 
     function editorialHealth(rows) {
       if (!rows.length) return '<li class="note">No source-health receipt is available.</li>';
-      return rows.slice(0, 5).map(row => `<li class="health-row"><span>${escapeHtml(row.label || row.dataset || 'Source')}</span><span class="${row.healthy ? 'health-current' : 'health-limited'}">${escapeHtml(row.status_label || 'Unknown')}</span></li>`).join('');
+      return rows.map(row => `<li class="health-row"><span>${escapeHtml(row.label || row.dataset || 'Source')}</span><span class="${row.healthy ? 'health-current' : 'health-limited'}">${escapeHtml(row.status_label || 'Unknown')}</span></li>`).join('');
     }
 
     function editorialTone(storyType) {
