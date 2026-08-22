@@ -109,6 +109,46 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertEqual(issue["stories"], [])
         self.assertEqual(issue["freshness_label"], "Freshness unavailable")
 
+    def test_reporter_persona_changes_deterministic_reader_voice(self) -> None:
+        tables = {
+            "refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}],
+            "today_priority_board": [
+                {
+                    "item_type": "true_buy_low",
+                    "item_type_label": "True Buy Low",
+                    "entity_type": "player",
+                    "entity_id": "11",
+                    "entity_name": "Signal Player",
+                    "roster_id": "8",
+                    "priority_score": "90",
+                    "why": "The market gap is measurable.",
+                    "evidence": "market=20; projection=high",
+                    "risk": "medium",
+                    "confidence": "high",
+                }
+            ],
+        }
+
+        quant = build_editorial_issue(
+            tables,
+            league_id="quant-league",
+            my_roster_id=2,
+            my_team_name="Quant Team",
+            config={"writer_preferences": {"persona_id": "quant"}},
+        )
+        scout = build_editorial_issue(
+            tables,
+            league_id="scout-league",
+            my_roster_id=2,
+            my_team_name="Scout Team",
+            config={"writer_preferences": {"persona_id": "scout"}},
+        )
+
+        self.assertEqual(quant["reporter_persona"]["persona_id"], "quant")
+        self.assertIn("gap is measurable", quant["lead"]["headline"])
+        self.assertIn("role signal", scout["lead"]["headline"])
+        self.assertNotEqual(quant["lead"]["headline"], scout["lead"]["headline"])
+
 
 class EditorialUiTests(unittest.TestCase):
     def test_injector_adds_reader_facade_and_preserves_workbench_hooks(self) -> None:

@@ -38,12 +38,15 @@ def build_editorial_issue(
     priority_rows = _sorted_rows(tables, "today_priority_board", "priority_score")
     scoped_priority = _prioritize_team(priority_rows, my_roster_id)
     lead_row = scoped_priority[0] if scoped_priority else None
-    lead = _priority_story(lead_row, is_lead=True) if lead_row else _quiet_story(my_team_name)
+    writer_preferences = config.get("writer_preferences") or (config.get("context") or {}).get("writer_preferences") or {}
+    reporter = persona_metadata(writer_preferences)
+    persona_id = reporter["persona_id"]
+    lead = _priority_story(lead_row, is_lead=True, persona_id=persona_id) if lead_row else _quiet_story(my_team_name)
 
     stories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = {_story_key(lead)}
     for row in scoped_priority[1:]:
-        story = _priority_story(row)
+        story = _priority_story(row, persona_id=persona_id)
         if _append_unique(stories, seen, story, limit=2):
             continue
 
@@ -66,8 +69,6 @@ def build_editorial_issue(
         "source_count": len(source_health),
     }
     writer_mode = _text(analysis.get("dailyGmBriefMode")) or "deterministic_template"
-    writer_preferences = config.get("writer_preferences") or (config.get("context") or {}).get("writer_preferences") or {}
-    reporter = persona_metadata(writer_preferences)
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
 
@@ -83,7 +84,7 @@ def build_editorial_issue(
         "as_of_label": f"As of {edition_label}" if edition_label else "As of the latest refresh",
         "team_name": team_label,
         "headline": lead["headline"],
-        "dek": _issue_dek(team_label, lead, signal_summary),
+        "dek": _issue_dek(team_label, lead, signal_summary, persona_id),
         "writer_mode": _writer_mode_label(writer_mode),
         "reporter_persona": reporter,
         "freshness_label": source_summary["label"],
@@ -95,7 +96,12 @@ def build_editorial_issue(
     }
 
 
-def _priority_story(row: Mapping[str, Any] | None, *, is_lead: bool = False) -> dict[str, Any]:
+def _priority_story(
+    row: Mapping[str, Any] | None,
+    *,
+    is_lead: bool = False,
+    persona_id: str = "front_office",
+) -> dict[str, Any]:
     row = row or {}
     action = _text(row.get("item_type") or row.get("action_label")).lower()
     label = _text(row.get("item_type_label") or row.get("consumer_label")) or "Model read"
@@ -104,7 +110,7 @@ def _priority_story(row: Mapping[str, Any] | None, *, is_lead: bool = False) -> 
     entity_name = _text(row.get("entity_name") or row.get("player_name")) or "Unknown asset"
     team_name = _text(row.get("team_name"))
     kind = _kind_for_action(action)
-    headline = _priority_headline(entity_name, kind)
+    headline = _priority_headline(entity_name, kind, persona_id)
     why = _text(row.get("why")) or "The model has a read, but the written rationale is thin."
     evidence = _text(row.get("evidence"))
     risk = _text(row.get("risk")) or "Review the evidence before acting."
@@ -117,7 +123,7 @@ def _priority_story(row: Mapping[str, Any] | None, *, is_lead: bool = False) -> 
         "eyebrow": label,
         "headline": headline,
         "dek": why,
-        "action": _action_line(kind),
+        "action": _action_line(kind, persona_id),
         "watchout": risk,
         "confidence": confidence,
         "priority_score": _number_or_text(row.get("priority_score")),
@@ -296,7 +302,28 @@ def _kind_for_action(action: str) -> str:
     return "signal"
 
 
-def _priority_headline(entity_name: str, kind: str) -> str:
+def _priority_headline(entity_name: str, kind: str, persona_id: str = "front_office") -> str:
+    if persona_id == "scout":
+        return {
+            "market": f"{entity_name}: the role signal is ahead of the price",
+            "sell": f"{entity_name}: the timeline requires a role check",
+            "hold": f"{entity_name}: the role supports a patient hold",
+            "price": f"{entity_name}: verify the role before you price the asset",
+        }.get(kind, f"{entity_name}: the next condition matters")
+    if persona_id == "commissioner":
+        return {
+            "market": f"{entity_name} is becoming everybody's problem",
+            "sell": f"{entity_name} is the league's next awkward conversation",
+            "hold": f"{entity_name} is not leaving the office without a serious offer",
+            "price": f"{entity_name} has entered the league-wide price debate",
+        }.get(kind, f"The league has a new angle on {entity_name}")
+    if persona_id == "quant":
+        return {
+            "market": f"{entity_name}: the gap is measurable",
+            "sell": f"{entity_name}: the risk-adjusted sell window is open",
+            "hold": f"{entity_name}: the numbers support a hold",
+            "price": f"{entity_name}: price discovery required",
+        }.get(kind, f"{entity_name}: model signal detected")
     if kind == "market":
         return f"{entity_name} is where the market is lagging"
     if kind == "sell":
@@ -308,7 +335,28 @@ def _priority_headline(entity_name: str, kind: str) -> str:
     return f"The board has a read on {entity_name}"
 
 
-def _action_line(kind: str) -> str:
+def _action_line(kind: str, persona_id: str = "front_office") -> str:
+    if persona_id == "scout":
+        if kind == "market":
+            return "Move: confirm the role signal, then price the asset against the timeline."
+        if kind == "sell":
+            return "Move: test the market while the current role still supports the thesis."
+        if kind == "hold":
+            return "Move: hold unless the return changes the roster timeline."
+    if persona_id == "commissioner":
+        if kind == "market":
+            return "Move: start the league conversation before someone else notices the angle."
+        if kind == "sell":
+            return "Move: let the league argue itself into paying for the current story."
+        if kind == "hold":
+            return "Move: keep the asset unless the return gives the group something to talk about."
+    if persona_id == "quant":
+        if kind == "market":
+            return "Move: compare the market gap with projection confidence before acting."
+        if kind == "sell":
+            return "Move: price the downside, then test whether the market still clears the threshold."
+        if kind == "hold":
+            return "Move: hold while the measured edge remains positive."
     if kind == "market":
         return "Move: start price discovery before turning the signal into an offer."
     if kind == "sell":
@@ -383,9 +431,24 @@ def _source_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {"healthy": healthy, "total": total, "label": label}
 
 
-def _issue_dek(team_name: str, lead: Mapping[str, Any], summary: Mapping[str, Any]) -> str:
+def _issue_dek(team_name: str, lead: Mapping[str, Any], summary: Mapping[str, Any], persona_id: str = "front_office") -> str:
     if lead.get("story_type") == "quiet":
         return f"{team_name} has no forced move in this edition. The board is quiet because no high-confidence edge cleared the threshold."
+    if persona_id == "scout":
+        return (
+            f"{team_name} edition: the role and timeline put {lead.get('entity_name', 'the lead asset')} at the center. "
+            f"The board holds {summary.get('priority_reads', 0)} ranked signals to test against what must be true next."
+        )
+    if persona_id == "commissioner":
+        return (
+            f"{team_name} edition: {lead.get('entity_name', 'the lead asset')} is the day's most interesting league problem. "
+            f"There are {summary.get('priority_reads', 0)} ranked signals beneath the group-chat drama."
+        )
+    if persona_id == "quant":
+        return (
+            f"{team_name} edition: {lead.get('entity_name', 'the lead asset')} is the top measured read. "
+            f"The board contains {summary.get('priority_reads', 0)} ranked signals across market, news, and manager behavior."
+        )
     return (
         f"{team_name} edition: {lead.get('entity_name', 'the lead asset')} leads the read. "
         f"The board holds {summary.get('priority_reads', 0)} ranked signals across market, news, and manager behavior."
