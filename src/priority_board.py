@@ -95,7 +95,7 @@ def build_today_priority_board(
                     "raw_priority": 55.0,
                     "why": f"Your original {row.get('pick_season', '')} round {row.get('round', '')} pick is now owned by {row.get('current_owner', '')}.",
                     "evidence": f"original_owner={row.get('original_team', '')}; current_owner={row.get('current_owner', '')}",
-                    "risk": "",
+                    "risk": "Your original pick is no longer under your control; verify the current pick ledger before planning draft capital.",
                     "confidence": "high",
                     "source_trace": "pick_ownership",
                 }
@@ -123,7 +123,7 @@ def build_today_priority_board(
                     "raw_priority": _num(row.get("trade_activity_score")) * 0.4,
                     "why": f"{row.get('team_name', '')} profiles as {row.get('plain_language_label', '')}.",
                     "evidence": row.get("evidence", ""),
-                    "risk": "",
+                    "risk": "Observed behavior is an estimate from past transactions, not proof of future intent.",
                     "confidence": "medium",
                     "source_trace": "manager_behavior_signals",
                 }

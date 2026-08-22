@@ -2203,6 +2203,40 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(board.iloc[0]["entity_name"], "High Priority")
         self.assertGreater(board.iloc[0]["priority_score"], board.iloc[-1]["priority_score"])
 
+    def test_priority_board_alerts_preserve_risk_context(self) -> None:
+        actions = pd.DataFrame(
+            columns=[
+                "roster_id", "team_name", "player_id", "player_name", "position", "action_label",
+                "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value",
+                "why", "evidence", "risk", "confidence", "source_trace",
+            ]
+        )
+        news = pd.DataFrame()
+        picks = pd.DataFrame(
+            [
+                {
+                    "is_my_original_pick": True,
+                    "i_currently_own_it": False,
+                    "pick_season": 2027,
+                    "round": 1,
+                    "original_roster_id": 2,
+                    "current_owner_roster_id": 8,
+                    "current_owner": "The Clapper",
+                    "original_team": "Melkor Lord of Light",
+                }
+            ]
+        )
+        managers = pd.DataFrame(
+            [{"roster_id": 8, "team_name": "The Clapper", "trade_activity_score": 90, "plain_language_label": "active trader", "evidence": "trades=12"}]
+        )
+
+        board = build_today_priority_board(actions, news, picks, managers, {"current_team": {"roster_id": 2}})
+
+        self.assertEqual(set(board["item_type"]), {"pick_alert", "manager_angle"})
+        self.assertTrue(board["risk"].astype(str).str.strip().ne("").all())
+        self.assertIn("under your control", board.iloc[0]["risk"] + board.iloc[1]["risk"])
+        self.assertIn("estimate", " ".join(board["risk"].tolist()).lower())
+
     def test_opportunity_scores_rank_usage_within_position(self) -> None:
         # Two WRs across three weeks: one commands the targets, one barely plays. Opportunity is
         # percentile-ranked within position, so the high-usage WR must score materially higher.
