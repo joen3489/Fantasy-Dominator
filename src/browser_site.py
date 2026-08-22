@@ -74,6 +74,13 @@ def build_browser_site(
     my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
     config = dict(config) if config is not None else load_config()
+    # The raw Sleeper name is a useful fallback, but the reader belongs to the
+    # saved league profile.  Keep the presentation identity aligned with the
+    # same scoped customization used by the editorial and draft-room payloads.
+    configured_team = config.get("current_team") or {}
+    configured_name = configured_team.get("team_name") if isinstance(configured_team, Mapping) else ""
+    if str(configured_name or "").strip():
+        my_team_name = str(configured_name).strip()
     analysis = _analysis_artifacts(analysis_dir)
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
     target = output_dir / "index.html"

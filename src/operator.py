@@ -636,12 +636,34 @@ _CITATION_RULES = (
 )
 
 
-def _article_system_prompt(article: articles.Article, writer_preferences: dict[str, Any] | None = None) -> str:
+def _article_context_prompt_block(context: FantasyContext | None) -> str:
+    if context is None:
+        return ""
+    strategy = json.dumps(context.strategy_profile or {}, ensure_ascii=False, sort_keys=True)
     return (
-        f"{articles.load_prompt(article.prompt_filename)}\n\n"
-        f"{persona_prompt_block(writer_preferences)}\n\n"
-        f"{_SHARED_SAFETY_RULES}\n\n{_CITATION_RULES}"
+        "Edition context (use this only to prioritize the read; it is not evidence):\n"
+        f"League: {context.league_name or context.league_id}\n"
+        f"Team: {context.team_name or context.display_name or 'Unconfigured team'}\n"
+        f"Strategy profile: {strategy}\n"
+        "Translate this profile into relevant emphasis and actionable framing, but never invent a fact "
+        "or treat profile preferences as proof of a player, manager, or market claim."
     )
+
+
+def _article_system_prompt(
+    article: articles.Article,
+    writer_preferences: dict[str, Any] | None = None,
+    context: FantasyContext | None = None,
+) -> str:
+    context_block = _article_context_prompt_block(context)
+    sections = [
+        articles.load_prompt(article.prompt_filename),
+        persona_prompt_block(writer_preferences),
+    ]
+    if context_block:
+        sections.append(context_block)
+    sections.extend((_SHARED_SAFETY_RULES, _CITATION_RULES))
+    return "\n\n".join(sections)
 
 
 def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]], api_key: str, model: str) -> dict[str, Any]:
@@ -768,7 +790,12 @@ def generate_articles_workflow(
             if not evidence:
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
                 continue
-            output = generate_article_via_llm(_article_system_prompt(article, ctx.writer_preferences), evidence, api_key, model)
+            output = generate_article_via_llm(
+                _article_system_prompt(article, ctx.writer_preferences, context),
+                evidence,
+                api_key,
+                model,
+            )
             evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
             validation = validate_article_output(output, evidence_ids, article.headers)
             if validation["valid"]:

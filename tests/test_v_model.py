@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -590,6 +591,7 @@ class VModelTests(unittest.TestCase):
 
     def test_reporter_persona_contract_is_bounded_and_reaches_article_prompt(self) -> None:
         from src import articles
+        from src.context import FantasyContext
         from src.personas import DEFAULT_PERSONA_ID, normalize_writer_preferences, persona_prompt_block, public_reporter_personas
 
         self.assertEqual(len(public_reporter_personas()), 4)
@@ -605,6 +607,176 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Compare picks to market value.", prompt)
         self.assertIn("Never claim a trade", prompt)
         self.assertIn("The persona controls tone and emphasis only", persona_prompt_block(normalized))
+
+    def test_two_league_vertical_keeps_profiles_writers_and_reader_bundles_isolated(self) -> None:
+        """The core personalized-reader path must work for two leagues in one account.
+
+        This intentionally crosses the persistence, writer, and browser boundaries in one
+        test.  A passing unit test for each layer alone would not catch a legacy singleton
+        being read again between those handoffs.
+        """
+        from app import db
+        from src.browser_site import build_browser_site
+        from src.context import context_from_league_row, scoped_config
+        from src.league_paths import LeaguePaths
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database_path = root / "app.db"
+            users_root = root / "users"
+            with patch.object(db, "DB_PATH", database_path), patch("src.league_paths.USERS_ROOT", users_root):
+                db.init_db()
+                user_id = int(db.get_or_create_user("vertical-user")["id"])
+                leagues = {
+                    "league-alpha": {
+                        "team_name": "Alpha Custom",
+                        "persona_id": "scout",
+                        "strategy": "Role-first rebuild",
+                        "roster_id": 2,
+                    },
+                    "league-beta": {
+                        "team_name": "Beta Custom",
+                        "persona_id": "quant",
+                        "strategy": "Numbers-first contender",
+                        "roster_id": 7,
+                    },
+                }
+                paths_by_league: dict[str, LeaguePaths] = {}
+                contexts: dict[str, FantasyContext] = {}
+
+                for league_id, details in leagues.items():
+                    profile = db.upsert_team_profile(
+                        user_id,
+                        league_id,
+                        {
+                            "roster_id": details["roster_id"],
+                            "season": "2026",
+                            "team_name": details["team_name"],
+                            "strategy_profile": {"name": details["strategy"], "team_direction": "rebuild"},
+                            "writer_preferences": {
+                                "persona_id": details["persona_id"],
+                                "custom_instructions": f"Keep the {league_id} read distinctive.",
+                            },
+                        },
+                    )
+                    league = {
+                        "league_id": league_id,
+                        "season": "2026",
+                        "league_type": "dynasty",
+                        "name": league_id.title(),
+                        "roster_id": details["roster_id"],
+                    }
+                    db.upsert_user_league(user_id, league)
+                    paths = LeaguePaths.for_user_league(user_id, league_id)
+                    paths.ensure()
+                    paths_by_league[league_id] = paths
+                    contexts[league_id] = context_from_league_row(str(user_id), league, profile)
+
+                    prefix = "Alpha" if league_id.endswith("alpha") else "Beta"
+                    pd.DataFrame(
+                        [{
+                            "roster_id": details["roster_id"],
+                            "player_id": f"{prefix.lower()}-player",
+                            "player_name": f"{prefix} Player",
+                            "position": "WR",
+                            "market_value": 70,
+                            "projected_ppg": 16,
+                            "signal_label": "productive_hold",
+                            "news_impact": "role stable",
+                        }]
+                    ).to_csv(paths.processed_dir / "player_dossiers.csv", index=False)
+                    pd.DataFrame(
+                        [{
+                            "season": "2026",
+                            "roster_id": details["roster_id"],
+                            "team_name": f"Sleeper {prefix}",
+                            "display_name": f"manager-{prefix.lower()}",
+                            "is_my_team": "true",
+                        }]
+                    ).to_csv(paths.processed_dir / "teams.csv", index=False)
+                    pd.DataFrame(
+                        [{
+                            "season": "2026",
+                            "roster_id": details["roster_id"],
+                            "player_id": f"{prefix.lower()}-player",
+                            "player_name": f"{prefix} Player",
+                            "is_my_team": "true",
+                        }]
+                    ).to_csv(paths.processed_dir / "roster_players.csv", index=False)
+                    for filename, items in (
+                        ("target_theses.json", [{"player_id": f"{prefix.lower()}-target", "player_name": f"{prefix} Target", "analysis_text": f"{prefix} target evidence."}]),
+                        ("sell_theses.json", [{"player_id": f"{prefix.lower()}-sell", "player_name": f"{prefix} Sell", "analysis_text": f"{prefix} sell evidence."}]),
+                        ("trade_theses.json", [{"target_manager_roster_id": 11, "target_manager_name": f"{prefix} Manager", "analysis_text": f"{prefix} manager angle."}]),
+                        ("manager_dossiers.json", [{"roster_id": 11, "team_name": f"{prefix} Manager", "dynasty_cycle": "rebuild", "analysis_text": f"{prefix} manager evidence."}]),
+                    ):
+                        (paths.analysis_dir / filename).write_text(json.dumps({"items": items}), encoding="utf-8")
+
+                prompts: dict[str, list[str]] = {"alpha": [], "beta": []}
+
+                def fake_article(system_prompt, evidence, api_key, model):
+                    key = "alpha" if "Team: Alpha Custom" in system_prompt else "beta"
+                    prompts[key].append(system_prompt)
+                    marker = "Alpha" if key == "alpha" else "Beta"
+                    evidence_id = evidence[0]["evidence_id"]
+                    return {
+                        "narrative_markdown": (
+                            f"## Cornerstones\n{marker} report.\n\n## Shop Candidates\n{marker} names.\n\n"
+                            f"## Buy-Low Targets\n{marker} buys.\n\n## Sell-High Windows\n{marker} sells.\n\n"
+                            f"## Best Fits\n{marker} fits.\n\n## Steer Clear\n{marker} fades.\n\n"
+                            f"## Contenders\n{marker} contenders.\n\n## Rebuilders\n{marker} rebuilders.\n\n"
+                            f"## Target Theses\n{marker} targets.\n\n## Sell Windows\n{marker} windows.\n\n"
+                            f"## Manager Angles\n{marker} angles."
+                        ),
+                        "cited_evidence_ids": [evidence_id],
+                    }
+
+                with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False), patch.object(
+                    operator, "generate_article_via_llm", side_effect=fake_article
+                ):
+                    results = {
+                        league_id: operator.generate_articles_workflow(paths_by_league[league_id], contexts[league_id])
+                        for league_id in leagues
+                    }
+
+                for league_id, details in leagues.items():
+                    paths = paths_by_league[league_id]
+                    result = results[league_id]
+                    self.assertEqual(result["state"], "complete")
+                    report = (paths.analysis_dir / "team_report.md").read_text(encoding="utf-8")
+                    self.assertIn("model_mode: automatic_llm", report)
+                    self.assertIn(f"reporter_persona: {details['persona_id']}", report)
+
+                    build_browser_site(
+                        paths.site_dir,
+                        paths.processed_dir,
+                        paths.analysis_dir,
+                        league_id=league_id,
+                        config=scoped_config({}, contexts[league_id]),
+                    )
+                    bundle = json.loads((paths.site_dir / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+                    self.assertEqual(bundle["leagueId"], league_id)
+                    self.assertEqual(bundle["myTeamName"], details["team_name"])
+                    self.assertEqual(bundle["reporterPersona"]["persona_id"], details["persona_id"])
+                    self.assertEqual(bundle["strategyProfile"]["name"], details["strategy"])
+                    self.assertIn("Alpha" if league_id.endswith("alpha") else "Beta", bundle["analysis"]["teamReport"])
+
+                self.assertTrue(prompts["alpha"])
+                self.assertTrue(prompts["beta"])
+                self.assertTrue(all("Team: Beta Custom" not in prompt for prompt in prompts["alpha"]))
+                self.assertTrue(all("Team: Alpha Custom" not in prompt for prompt in prompts["beta"]))
+
+                connection = sqlite3.connect(database_path)
+                try:
+                    artifact_rows = connection.execute(
+                        "SELECT league_id, path, source_json FROM content_artifacts ORDER BY league_id"
+                    ).fetchall()
+                finally:
+                    connection.close()
+                artifact_leagues = {row[0] for row in artifact_rows}
+                self.assertEqual(artifact_leagues, set(leagues))
+                for league_id, path, source_json in artifact_rows:
+                    self.assertIn(f"/leagues/{league_id}/", path.replace("\\", "/"))
+                    self.assertIn(leagues[league_id]["persona_id"], source_json)
 
     def _seed_article_inputs(self, analysis_dir: Path, processed_dir: Path) -> None:
         processed_dir.mkdir(parents=True, exist_ok=True)
