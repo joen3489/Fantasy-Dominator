@@ -51,6 +51,7 @@ def build_news_tables(
     if not freshness:
         freshness.append(_freshness("news_sources", "disabled", "no_news_sources_enabled", "", None))
 
+    events = _dedupe_events(events)
     news_events = pd.DataFrame(events, columns=_news_event_columns())
     matches = _match_news_events(news_events, players)
     impact = _build_league_news_impact(news_events, matches, teams, roster_players)
@@ -61,6 +62,22 @@ def build_news_tables(
         "league_news_impact": impact,
         "news_source_freshness": pd.DataFrame(freshness, columns=_freshness_columns()),
     }
+
+
+def _dedupe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per source event while preserving cross-source corroboration."""
+
+    output: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, event in enumerate(events):
+        source = str(event.get("source") or "")
+        event_id = str(event.get("event_id") or "")
+        key = (source, event_id) if event_id else (source, f"anonymous:{index}")
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(event)
+    return output
 
 
 def _load_rotowire_rss(season: str, url: str, force: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:

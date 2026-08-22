@@ -1821,6 +1821,41 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(tables["league_news_impact"].iloc[0]["impact_type"], "market_heat")
         self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "refreshed")
 
+    def test_news_tables_deduplicate_repeated_source_events(self) -> None:
+        from src import news
+
+        duplicate = {
+            "source": "rotowire_rss",
+            "event_id": "same-event",
+            "event_type": "player_news",
+            "published_at": "2026-08-22T10:00:00+00:00",
+            "title": "Player: role update",
+            "summary": "Role update.",
+            "url": "https://news.example/same-event",
+            "player_id": "",
+            "player_name": "Player",
+            "team": "",
+            "position": "",
+            "source_trace": "https://news.example/feed",
+        }
+        with patch.object(
+            news,
+            "_load_rotowire_rss",
+            return_value=(
+                [duplicate, duplicate.copy()],
+                {"source": "rotowire_rss", "dataset": "nfl_player_news", "status": "refreshed", "source_url": "feed", "cache_path": "", "checked_at": "now"},
+            ),
+        ):
+            tables = build_news_tables(
+                {"current_season": "2026", "news_sources": {"enabled": ["rotowire_rss"]}},
+                object(),
+                {},
+                pd.DataFrame(),
+                pd.DataFrame(),
+            )
+
+        self.assertEqual(len(tables["news_events"]), 1)
+
     def test_cached_sleeper_trending_keeps_cache_time_instead_of_now(self) -> None:
         class FakeAPI:
             BASE_URL = "https://api.sleeper.app/v1"
