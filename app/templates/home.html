@@ -525,6 +525,18 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12px;
       }
+      .persona-help {
+        margin: -2px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .profile-advanced {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .profile-advanced summary { cursor: pointer; font-weight: 800; }
+      .profile-advanced textarea { width: 100%; margin-top: 8px; }
       .profile-actions {
         display: flex;
         align-items: center;
@@ -536,6 +548,21 @@
         font-size: 12px;
       }
       .profile-status.error { color: var(--sell); }
+      .writer-panel {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid #d7c99e;
+        border-radius: 8px;
+        background: var(--watch-bg);
+      }
+      .writer-panel h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
+      .writer-panel p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+      .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; align-items: center; }
+      .writer-actions input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fbfcf8; }
+      .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
+      .writer-status.error { color: var(--sell); }
+      @media (max-width: 520px) { .writer-actions { grid-template-columns: 1fr; } }
       .empty-feed {
         margin: 4px 2px;
         color: var(--muted);
@@ -571,7 +598,7 @@
             <span class="edition-kicker">Personal headquarters</span>
             <h2 id="edition-title">Your leagues, edited into a daily read.</h2>
             <p>Start with the signal. Open a league edition when you want the players, managers, markets, and evidence behind it.</p>
-            <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span></div>
+            <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span><span>{{ (continuity or {}).label or "Workspace status unknown" }}</span></div>
           </section>
           <nav class="league-strip" aria-label="Enabled leagues">
             {% for league in enabled_leagues %}
@@ -598,6 +625,7 @@
             {% if edition.headline %}
               <article class="issue-lead">
                 <span class="issue-byline">{{ edition.kicker or "Personal league edition" }} · {{ edition.edition_label or "Latest refresh" }}</span>
+                <span class="issue-byline">Reporter: {{ (edition.reporter_persona or {}).name or "The Front Office" }}</span>
                 <h3>{{ edition.headline }}</h3>
                 <p>{{ edition.dek or "The analyst is assembling the current read from your league data." }}</p>
                 <a href="/league/{{ featured_league.league_id }}/#view-today">Open the full edition →</a>
@@ -659,9 +687,21 @@
               <label>Contention window
                 <input data-profile-field="contention_window" placeholder="2026-2028">
               </label>
-              <label>Writer preferences JSON
-                <textarea data-profile-field="writer_preferences" spellcheck="false">{}</textarea>
+              <label>Reporter persona
+                <select data-profile-field="persona_id">
+                  {% for persona in writer_personas %}
+                    <option value="{{ persona.persona_id }}" data-description="{{ persona.description }}">{{ persona.name }}</option>
+                  {% endfor %}
+                </select>
               </label>
+              <p class="persona-help" data-persona-description>Voice controls tone and emphasis; evidence and safety rules stay fixed.</p>
+              <label>Editor note for this league
+                <textarea data-profile-field="custom_instructions" maxlength="800" placeholder="What should this reporter notice or sound like in this league?"></textarea>
+              </label>
+              <details class="profile-advanced">
+                <summary>Advanced writer preferences</summary>
+                <textarea data-profile-field="writer_preferences" spellcheck="false">{}</textarea>
+              </details>
             </div>
             <div class="profile-actions">
               <button class="primary-button" type="submit">Save league profile</button>
@@ -669,6 +709,18 @@
             </div>
           </form>
         </details>
+      {% endif %}
+
+      {% if enabled_leagues %}
+        <section class="writer-panel" data-writer-panel>
+          <h2>Writer Desk</h2>
+          <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
+          <div class="writer-actions">
+            <input type="password" data-writer-token autocomplete="off" placeholder="Operator key (optional locally)" aria-label="Front Office operator key">
+            <button class="primary-button" type="button" data-writer-button>Generate this edition</button>
+          </div>
+          <span class="writer-status" data-writer-status role="status"></span>
+        </section>
       {% endif %}
 
       <section aria-labelledby="feed-title">
@@ -791,6 +843,11 @@
           const profileLeague = profileForm.querySelector('[data-profile-league]');
           const profileStatus = profileForm.querySelector('[data-profile-status]');
           const profileField = (name) => profileForm.querySelector('[data-profile-field="' + name + '"]');
+          const personaDescription = profileForm.querySelector('[data-persona-description]');
+          const updatePersonaDescription = () => {
+            const selected = profileField('persona_id')?.selectedOptions?.[0];
+            if (personaDescription) personaDescription.textContent = selected?.dataset?.description || 'Voice controls tone and emphasis; evidence and safety rules stay fixed.';
+          };
 
           const loadProfile = async () => {
             const leagueId = profileLeague.value;
@@ -801,12 +858,16 @@
               if (!response.ok) throw new Error('profile load failed (' + response.status + ')');
               const profile = await response.json();
               const strategy = profile.strategy_profile || {};
+              const writerPreferences = profile.writer_preferences || {};
               profileField('team_name').value = profile.team_name || '';
               profileField('display_name').value = profile.display_name || '';
               profileField('strategy_name').value = profile.strategy_name || strategy.name || '';
               profileField('team_direction').value = profile.team_direction || strategy.team_direction || '';
               profileField('contention_window').value = profile.contention_window || strategy.contention_window || '';
-              profileField('writer_preferences').value = JSON.stringify(profile.writer_preferences || {}, null, 2);
+              profileField('persona_id').value = writerPreferences.persona_id || 'front_office';
+              profileField('custom_instructions').value = writerPreferences.custom_instructions || '';
+              profileField('writer_preferences').value = JSON.stringify(writerPreferences, null, 2);
+              updatePersonaDescription();
               profileStatus.textContent = 'Loaded for this league';
             } catch (error) {
               profileStatus.className = 'profile-status error';
@@ -830,6 +891,8 @@
               team_direction: profileField('team_direction').value.trim(),
               contention_window: profileField('contention_window').value.trim(),
             };
+            writerPreferences.persona_id = profileField('persona_id').value;
+            writerPreferences.custom_instructions = profileField('custom_instructions').value.trim();
             profileStatus.className = 'profile-status';
             profileStatus.textContent = 'Saving profile';
             try {
@@ -853,7 +916,40 @@
               profileStatus.textContent = error.message;
             }
           });
+          profileField('persona_id').addEventListener('change', updatePersonaDescription);
+          updatePersonaDescription();
           loadProfile();
+        }
+
+        const writerButton = document.querySelector('[data-writer-button]');
+        if (writerButton) {
+          const writerStatus = document.querySelector('[data-writer-status]');
+          const writerToken = document.querySelector('[data-writer-token]');
+          writerButton.addEventListener('click', async () => {
+            const leagueId = profileForm?.querySelector('[data-profile-league]')?.value || '';
+            writerButton.disabled = true;
+            writerButton.textContent = 'Starting writer';
+            writerStatus.className = 'writer-status';
+            writerStatus.textContent = 'Refreshing facts and queueing the reporters';
+            const headers = {'content-type': 'application/json'};
+            if (writerToken?.value) headers['x-front-office-token'] = writerToken.value;
+            try {
+              const response = await fetch('/api/operator/generate-insights', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({league_id: leagueId}),
+              });
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(payload.detail || 'writer request failed (' + response.status + ')');
+              writerStatus.textContent = payload.accepted ? 'Writer run started. Keep this page open, then refresh the issue.' : (payload.message || 'Writer is already running.');
+              writerButton.textContent = 'Writer running';
+            } catch (error) {
+              writerButton.disabled = false;
+              writerButton.textContent = 'Generate this edition';
+              writerStatus.className = 'writer-status error';
+              writerStatus.textContent = error.message;
+            }
+          });
         }
 
         const button = document.querySelector('[data-refresh-button]');

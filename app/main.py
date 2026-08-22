@@ -18,8 +18,9 @@ from src.browser_site import browser_bundle_is_complete, browser_bundle_missing,
 from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
+from src.personas import public_reporter_personas
 from src.sleeper_api import SleeperAPI
-from src.utils import load_config, load_json
+from src.utils import DATA_DIR, load_config, load_json
 
 from . import db
 from .auth import current_user
@@ -114,6 +115,8 @@ def create_app() -> FastAPI:
                 "attention": attention_items,
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
                 "operator_status": _operator_status_for_user(user_id),
+                "writer_personas": public_reporter_personas(),
+                "continuity": _continuity_view(user_id),
             },
         )
 
@@ -122,6 +125,10 @@ def create_app() -> FastAPI:
         items = _load_attention_safe(int(user["id"]))
         generated_at = items[0].generated_at if items else ""
         return {"generated_at": generated_at, "items": [_attention_view(item) for item in items]}
+
+    @app.get("/api/continuity")
+    def continuity(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        return _continuity_view(int(user["id"]))
 
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -164,7 +171,7 @@ def create_app() -> FastAPI:
             "roster_id": league.get("roster_id"),
             "season": league.get("season") or "",
             "strategy_profile": {},
-            "writer_preferences": {},
+            "writer_preferences": {"persona_id": "front_office", "custom_instructions": ""},
         }
 
     @app.put("/api/leagues/{league_id}/profile")
@@ -687,6 +694,28 @@ def _operator_status_for_user(user_id: int) -> dict[str, Any]:
     else:
         state = "complete"
     return {"state": state, "leagues": statuses, "updated_at": max(item.get("updated_at", "") for item in statuses)}
+
+
+def _continuity_view(user_id: int) -> dict[str, Any]:
+    """Expose an identity/storage receipt without exposing filesystem paths."""
+
+    leagues = db.list_user_leagues(user_id)
+    profile_count = sum(1 for league in leagues if db.get_team_profile(user_id, str(league["league_id"])))
+    workspace_count = sum(
+        1 for league in leagues if _private_paths(user_id, str(league["league_id"])).root.is_dir()
+    )
+    volume_configured = bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip())
+    database_present = (DATA_DIR / "app.db").is_file()
+    state = "durable" if volume_configured and database_present else "local_default"
+    return {
+        "state": state,
+        "label": "Durable workspace" if state == "durable" else "Local workspace",
+        "volume_configured": volume_configured,
+        "database_present": database_present,
+        "linked_leagues": len(leagues),
+        "team_profiles": profile_count,
+        "private_workspaces": workspace_count,
+    }
 
 
 app = create_app()

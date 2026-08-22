@@ -72,7 +72,7 @@ Then open:
 http://localhost:8765
 ```
 
-The app exposes /healthz, /login, the personal headquarters at /, and owned league sites at /league/<league_id>/. Use the home-screen Sleeper link flow to discover leagues. The headquarters includes a per-league team strategy editor backed by GET and PUT /api/leagues/<league_id>/profile.
+The app exposes /healthz, /login, the personal headquarters at /, and owned league sites at /league/<league_id>/. Use the home-screen Sleeper link flow to discover leagues. The headquarters includes a per-league team strategy and reporter editor backed by GET and PUT /api/leagues/<league_id>/profile, plus an authenticated `/api/continuity` receipt showing whether the current identity sees a configured durable workspace. Each league can choose a bounded reporter persona (The Front Office, The Scout, The Commissioner, or The Quant) plus a short editor note; the selected voice is carried into generated article prompts and published issue metadata.
 
 The browser surface is the primary weekly workspace. CSV, SQLite, and markdown outputs are supporting artifacts for auditability and ChatGPT sharing. scripts/serve.py remains a legacy static/local server for the default workspace.
 
@@ -121,7 +121,7 @@ The config file is now a legacy/default seed. Authenticated users link their own
 
 ## Writers and evidence
 
-Writer actions are explicit and cost-incurring. They read only the selected league's deterministic analysis and write section articles, manager/player insight packets, and the Daily GM Brief into that league's private analysis/operator workspace. Every generated artifact is indexed by user, league, season, and artifact key in content_artifacts; no writer is scheduled automatically.
+Writer actions are explicit and cost-incurring. They read only the selected league's deterministic analysis and write section articles, manager/player insight packets, and the Daily GM Brief into that league's private analysis/operator workspace. Every generated artifact is indexed by user, league, season, artifact key, and reporter persona in content_artifacts; no writer is scheduled automatically. The persona changes tone and emphasis only; deterministic evidence, citations, and read-only safety rules remain authoritative. See `docs/reporter_personas.md` for the contract.
 
 ## Tables
 

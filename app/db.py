@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.personas import normalize_writer_preferences
 from src.utils import DATA_DIR
 
 
@@ -192,7 +193,7 @@ def upsert_team_profile(user_id: int, league_id: str, profile: dict[str, Any]) -
     """Persist customization that belongs to one user's team in one league."""
 
     strategy = profile.get("strategy_profile", profile.get("strategy", {}))
-    writer_preferences = profile.get("writer_preferences", {})
+    writer_preferences = normalize_writer_preferences(profile.get("writer_preferences", {}))
     if not isinstance(strategy, dict):
         strategy = {}
     if not isinstance(writer_preferences, dict):

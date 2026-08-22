@@ -415,6 +415,30 @@ class FastAPIClerkAppTests(unittest.TestCase):
             row = conn.execute("SELECT clerk_user_id FROM users").fetchone()
         self.assertEqual(row[0], "user_valid")
 
+    def test_continuity_receipt_reports_linked_leagues_and_profiles(self) -> None:
+        token = self._token("user_continuity")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_continuity")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "continuity-league", "season": "2026", "league_type": "dynasty", "name": "Continuity", "roster_id": 2},
+        )
+        db.upsert_team_profile(
+            user_id,
+            "continuity-league",
+            {"team_name": "Continuity Team", "writer_preferences": {"persona_id": "quant"}},
+        )
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_DATA_DIR": ""}, clear=False):
+            response = self.client.get("/api/continuity", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["state"], "local_default")
+        self.assertEqual(payload["linked_leagues"], 1)
+        self.assertEqual(payload["team_profiles"], 1)
+        self.assertEqual(payload["private_workspaces"], 0)
+
     def test_home_renders_phone_first_attention_feed_and_league_pills(self) -> None:
         token = self._token("user_home_feed")
         self.client.get("/", cookies={"__session": token})
@@ -466,6 +490,11 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-profile-form', html)
         self.assertIn('data-profile-league', html)
         self.assertIn('Save league profile', html)
+        self.assertIn('data-profile-field="persona_id"', html)
+        self.assertIn("The Scout", html)
+        self.assertIn("The Commissioner", html)
+        self.assertIn('data-writer-button', html)
+        self.assertIn("Generate this edition", html)
         self.assertIn('data-testid="edition-hero"', html)
         self.assertIn('data-testid="front-page"', html)
         self.assertIn("Your rookie receiver is the morning", html)
@@ -720,6 +749,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "display_name": "joe3489",
                 "strategy_name": "Win the window",
                 "team_direction": "contend",
+                "writer_preferences": {"persona_id": "scout", "custom_instructions": "Stay close to role evidence."},
             },
         )
 
@@ -730,6 +760,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(config["current_season"], "2026")
         self.assertEqual(config["current_team"]["team_name"], "The Actual Team")
         self.assertEqual(config["strategy_profile"]["name"], "Win the window")
+        self.assertEqual(config["writer_preferences"]["persona_id"], "scout")
+        self.assertEqual(config["writer_preferences"]["custom_instructions"], "Stay close to role evidence.")
         self.assertEqual(config["context"]["league_id"], "scoped-league")
 
     def test_healthz_is_open(self) -> None:

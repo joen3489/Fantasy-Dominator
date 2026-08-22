@@ -16,6 +16,7 @@ from . import articles
 from .browser_site import build_browser_site
 from .context import FantasyContext
 from .league_paths import LeaguePaths
+from .personas import persona_metadata, persona_prompt_block
 from .utils import (
     ANALYSIS_DIR,
     OPERATOR_INBOX_DIR,
@@ -417,7 +418,12 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
     raise ValueError("Anthropic response did not include an emit_insight_cards tool call.")
 
 
-def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model: str) -> dict[str, Any]:
+def generate_daily_gm_brief_via_llm(
+    packet: dict[str, Any],
+    api_key: str,
+    model: str,
+    writer_preferences: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Sibling to generate_insight_output_via_llm() for a different output shape: one narrative
     blob instead of a list of entity cards, so it gets its own persona-carrying system prompt and
     its own forced tool rather than overloading the entity-card schema."""
@@ -431,7 +437,7 @@ def generate_daily_gm_brief_via_llm(packet: dict[str, Any], api_key: str, model:
         json={
             "model": model,
             "max_tokens": 2048,
-            "system": DAILY_GM_BRIEF_SYSTEM_PROMPT,
+            "system": f"{DAILY_GM_BRIEF_SYSTEM_PROMPT}\n\n{persona_prompt_block(writer_preferences)}\n\n{_SHARED_SAFETY_RULES}",
             "tools": [DAILY_GM_BRIEF_TOOL],
             "tool_choice": {"type": "tool", "name": "emit_daily_gm_brief"},
             "messages": [{"role": "user", "content": json.dumps({"evidence": packet.get("evidence", [])})}],
@@ -630,8 +636,12 @@ _CITATION_RULES = (
 )
 
 
-def _article_system_prompt(article: articles.Article) -> str:
-    return f"{articles.load_prompt(article.prompt_filename)}\n\n{_SHARED_SAFETY_RULES}\n\n{_CITATION_RULES}"
+def _article_system_prompt(article: articles.Article, writer_preferences: dict[str, Any] | None = None) -> str:
+    return (
+        f"{articles.load_prompt(article.prompt_filename)}\n\n"
+        f"{persona_prompt_block(writer_preferences)}\n\n"
+        f"{_SHARED_SAFETY_RULES}\n\n{_CITATION_RULES}"
+    )
 
 
 def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]], api_key: str, model: str) -> dict[str, Any]:
@@ -693,13 +703,20 @@ def validate_article_output(output: dict[str, Any], evidence_ids: set[str], head
     return {"valid": not errors, "errors": errors, "warnings": warnings, "narrative": narrative, "word_count": len(narrative.split())}
 
 
-def _render_article_markdown(article: articles.Article, narrative: str, generated_at: str, output_path: Path) -> str:
+def _render_article_markdown(
+    article: articles.Article,
+    narrative: str,
+    generated_at: str,
+    output_path: Path,
+    writer_preferences: dict[str, Any] | None = None,
+) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
         "---",
         f"artifact_type: {article.key}",
         f"generated_at: {generated_at}",
         "model_mode: automatic_llm",
+        f"reporter_persona: {persona_metadata(writer_preferences)['persona_id']}",
     ]
     for key in ("roster_id", "team_name"):
         value = _front_matter_value(existing, key)
@@ -751,12 +768,15 @@ def generate_articles_workflow(
             if not evidence:
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
                 continue
-            output = generate_article_via_llm(_article_system_prompt(article), evidence, api_key, model)
+            output = generate_article_via_llm(_article_system_prompt(article, ctx.writer_preferences), evidence, api_key, model)
             evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
             validation = validate_article_output(output, evidence_ids, article.headers)
             if validation["valid"]:
                 output_path = ANALYSIS_DIR / article.output_filename
-                output_path.write_text(_render_article_markdown(article, validation["narrative"], generated_at, output_path), encoding="utf-8")
+                output_path.write_text(
+                    _render_article_markdown(article, validation["narrative"], generated_at, output_path, ctx.writer_preferences),
+                    encoding="utf-8",
+                )
                 _record_article_artifact(context, article, output_path, validation)
                 if not article.is_summary:
                     ctx.section_outputs[article.key] = validation["narrative"]
@@ -778,6 +798,7 @@ def generate_articles_workflow(
         "state": state,
         "message": f"Articles generated: {len(completed)} complete, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
         "generated_at": generated_at,
+        "reporter_persona": persona_metadata(ctx.writer_preferences),
         "articles": results,
     }
 
@@ -804,6 +825,7 @@ def _record_article_artifact(
                 "mode": "automatic_llm",
                 "valid": bool(validation.get("valid")),
                 "writer_preferences": context.writer_preferences,
+                "reporter_persona": persona_metadata(context.writer_preferences),
             },
         )
     except (TypeError, ValueError, OSError):

@@ -13,6 +13,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from .personas import normalize_writer_preferences
+
 
 @dataclass(frozen=True)
 class FantasyContext:
@@ -78,6 +80,7 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         if not context.is_legacy
         else deepcopy(context.strategy_profile or config.get("strategy_profile") or {})
     )
+    config["writer_preferences"] = normalize_writer_preferences(context.writer_preferences)
 
     # These fields are intentionally metadata rather than configuration used
     # by the legacy analytics modules.  They make the selected scope visible
@@ -91,7 +94,7 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         "league_name": context.league_name,
         "team_name": context.team_name,
         "display_name": context.display_name,
-        "writer_preferences": deepcopy(context.writer_preferences),
+        "writer_preferences": normalize_writer_preferences(context.writer_preferences),
     }
     return config
 

@@ -11,6 +11,8 @@ cannot remove the evidence, source trace, confidence, or risk that came with the
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
+from .personas import persona_metadata
+
 
 def build_editorial_issue(
     tables: Mapping[str, Sequence[Mapping[str, Any]]],
@@ -64,6 +66,8 @@ def build_editorial_issue(
         "source_count": len(source_health),
     }
     writer_mode = _text(analysis.get("dailyGmBriefMode")) or "deterministic_template"
+    writer_preferences = config.get("writer_preferences") or (config.get("context") or {}).get("writer_preferences") or {}
+    reporter = persona_metadata(writer_preferences)
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
 
@@ -81,6 +85,7 @@ def build_editorial_issue(
         "headline": lead["headline"],
         "dek": _issue_dek(team_label, lead, signal_summary),
         "writer_mode": _writer_mode_label(writer_mode),
+        "reporter_persona": reporter,
         "freshness_label": source_summary["label"],
         "lead": lead,
         "stories": stories,

@@ -66,6 +66,7 @@ EDITORIAL_STYLE = r"""
       line-height: 1.45;
     }
     .issue-writer-mode { flex: 0 0 auto; background: #d4c38e; color: #202722; }
+    .issue-reporter { color: #d7e2d8; font-size: 12px; font-weight: 800; }
     .issue-byline { margin-top: 22px; }
     .issue-byline span { display: inline-flex; align-items: center; gap: 6px; }
     .issue-byline span + span::before { content: "•"; color: #789181; }
@@ -216,6 +217,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-writer-mode" class="tag issue-writer-mode">Evidence-led template</span>
           </div>
           <div class="issue-byline">
+            <span id="issue-reporter">Reporter is loading</span>
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
           </div>
@@ -252,6 +254,7 @@ EDITORIAL_JS = r"""
       setText('issue-headline', issue.headline || 'Your edition is waiting for a refresh');
       setText('issue-dek', issue.dek || 'No editorial read has been compiled yet.');
       setText('issue-as-of', issue.as_of_label || 'As of the latest refresh');
+      setText('issue-reporter', (issue.reporter_persona || {}).name || 'The Front Office');
       setText('issue-freshness', issue.freshness_label || 'Freshness unavailable');
       setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
       const freshness = issue.source_health_summary || {};

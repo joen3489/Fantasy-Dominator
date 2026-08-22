@@ -586,6 +586,24 @@ class VModelTests(unittest.TestCase):
         self.assertTrue(partial_result["valid"])
         self.assertTrue(partial_result["warnings"])
 
+    def test_reporter_persona_contract_is_bounded_and_reaches_article_prompt(self) -> None:
+        from src import articles
+        from src.personas import DEFAULT_PERSONA_ID, normalize_writer_preferences, persona_prompt_block, public_reporter_personas
+
+        self.assertEqual(len(public_reporter_personas()), 4)
+        normalized = normalize_writer_preferences({"persona_id": "not-real", "custom_instructions": "x" * 1200})
+        self.assertEqual(normalized["persona_id"], DEFAULT_PERSONA_ID)
+        self.assertEqual(len(normalized["custom_instructions"]), 800)
+
+        prompt = operator._article_system_prompt(
+            articles.ARTICLES[0],
+            {"persona_id": "quant", "custom_instructions": "Compare picks to market value."},
+        )
+        self.assertIn("Reporter persona: The Quant", prompt)
+        self.assertIn("Compare picks to market value.", prompt)
+        self.assertIn("Never claim a trade", prompt)
+        self.assertIn("The persona controls tone and emphasis only", persona_prompt_block(normalized))
+
     def _seed_article_inputs(self, analysis_dir: Path, processed_dir: Path) -> None:
         processed_dir.mkdir(parents=True, exist_ok=True)
         (processed_dir / "player_dossiers.csv").write_text(
@@ -1121,14 +1139,18 @@ class VModelTests(unittest.TestCase):
                     "current_season": "2099",
                     "current_team": {"roster_id": 2, "team_name": "League Custom Team", "display_name": "custom"},
                     "strategy_profile": {"name": "League-specific rebuild", "team_direction": "rebuild"},
+                    "writer_preferences": {"persona_id": "scout", "custom_instructions": "Stay close to role evidence."},
                     "tracked_picks": [{"pick_season": "2099", "round": 1}],
                 },
             )
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
 
         self.assertEqual(bundle["currentSeason"], "2099")
         self.assertEqual(bundle["strategyProfile"]["name"], "League-specific rebuild")
         self.assertEqual(bundle["trackedPicks"][0]["round"], 1)
+        self.assertEqual(bundle["reporterPersona"]["persona_id"], "scout")
+        self.assertEqual(editorial["reporter_persona"]["name"], "The Scout")
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"

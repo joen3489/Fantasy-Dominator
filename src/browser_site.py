@@ -221,6 +221,8 @@ def _write_data_chunks(
         "myRosterId": my_roster_id,
         "myTeamName": my_team_name,
         "strategyProfile": config.get("strategy_profile") or {},
+        "writerPreferences": config.get("writer_preferences") or {},
+        "reporterPersona": editorial.get("reporter_persona") or {},
         "trackedPicks": config.get("tracked_picks") or [],
         "currentSeason": config.get("current_season", ""),
         "configuredLeagues": config.get("leagues") or {},
@@ -255,6 +257,7 @@ def _write_data_chunks(
         "payloadPolicy": "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded",
         "leagueId": str(league_id or ""),
         "editorialSchema": editorial.get("schema_version", "issue_v1"),
+        "reporterPersona": editorial.get("reporter_persona") or {},
     }
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
