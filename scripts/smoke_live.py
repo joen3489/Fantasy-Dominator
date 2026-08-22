@@ -52,6 +52,11 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     if payload.get("ok") is not True:
         errors.append(f"/healthz reported {payload}")
+    expected_revision = os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip()
+    if expected_revision and str(payload.get("revision") or "") != expected_revision:
+        errors.append(
+            f"running revision={payload.get('revision')!r}; expected {expected_revision!r}"
+        )
     if payload.get("auth_mode") != "live":
         errors.append(f"auth_mode={payload.get('auth_mode')!r}; expected live Clerk keys")
     if payload.get("auth_configuration_ready") is not True:

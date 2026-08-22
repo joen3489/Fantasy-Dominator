@@ -130,6 +130,7 @@ Optional environment variables:
 - FRONT_OFFICE_PLAYER_CACHE_MAX_AGE_SECONDS controls the large `/players/nfl` cache expiry (default 24 hours).
 - FRONT_OFFICE_NEWS_CACHE_MAX_AGE_SECONDS controls RotoWire/Sleeper-trending cache expiry (default 900 seconds).
 - FRONT_OFFICE_EXTERNAL_CACHE_MAX_AGE_SECONDS controls DynastyProcess, nflverse, and configured external cache expiry (default 24 hours).
+- FRONT_OFFICE_EXPECTED_REVISION makes the live smoke check fail if Railway is serving a different Git revision.
 - HOST=0.0.0.0 and PORT=8765 are the app defaults.
 
 Normal scheduled refreshes now honor those expiry windows. A stale source is

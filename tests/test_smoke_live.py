@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from scripts.smoke_live import (
     validate_edition_bundle,
@@ -32,23 +33,43 @@ class LiveSmokeContractTests(unittest.TestCase):
         self.assertTrue(any("ANTHROPIC_API_KEY" in warning for warning in warnings))
 
     def test_health_accepts_ready_store_and_warns_only_for_optional_writer(self) -> None:
-        errors, warnings = validate_health_payload(
-            {
-                "ok": True,
-                "auth_mode": "live",
-                "auth_configuration_ready": True,
-                "public_url_ready": True,
-                "data_root_configured": True,
-                "database_present": True,
-                "database_schema_ready": True,
-                "operator_token_configured": True,
-                "scheduler_enabled": True,
-                "writer_api_configured": False,
-            }
-        )
+        payload = {
+            "ok": True,
+            "revision": "abc123",
+            "auth_mode": "live",
+            "auth_configuration_ready": True,
+            "public_url_ready": True,
+            "data_root_configured": True,
+            "database_present": True,
+            "database_schema_ready": True,
+            "operator_token_configured": True,
+            "scheduler_enabled": True,
+            "writer_api_configured": False,
+        }
+        with patch.dict("os.environ", {"FRONT_OFFICE_EXPECTED_REVISION": "abc123"}, clear=False):
+            errors, warnings = validate_health_payload(payload)
 
         self.assertEqual(errors, [])
         self.assertEqual(len(warnings), 1)
+
+    def test_health_can_reject_a_stale_deployed_revision(self) -> None:
+        payload = {
+            "ok": True,
+            "revision": "old",
+            "auth_mode": "live",
+            "auth_configuration_ready": True,
+            "public_url_ready": True,
+            "data_root_configured": True,
+            "database_present": True,
+            "database_schema_ready": True,
+            "operator_token_configured": True,
+            "scheduler_enabled": True,
+            "writer_api_configured": True,
+        }
+        with patch.dict("os.environ", {"FRONT_OFFICE_EXPECTED_REVISION": "new"}, clear=False):
+            errors, _ = validate_health_payload(payload)
+
+        self.assertIn("running revision='old'; expected 'new'", errors)
 
     def test_health_rejects_explicit_deployment_gate_blockers(self) -> None:
         errors, _ = validate_health_payload(
