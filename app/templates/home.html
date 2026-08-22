@@ -561,6 +561,7 @@
       .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; align-items: center; }
       .writer-actions input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fbfcf8; }
       .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
+      .writer-note { margin: 0; color: #70551b; font-size: 12px; line-height: 1.4; }
       .writer-status.error { color: var(--sell); }
       @media (max-width: 520px) { .writer-actions { grid-template-columns: 1fr; } }
       .empty-feed {
@@ -719,6 +720,9 @@
         <section class="writer-panel" data-writer-panel>
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
+          {% if not writer_api_configured %}
+            <p class="writer-note" data-testid="writer-fallback-note">The API writer is not configured here yet. The evidence-led edition remains available; add the production writer key to unlock persona-written articles.</p>
+          {% endif %}
           <div class="writer-actions">
             <input type="password" data-writer-token autocomplete="off" placeholder="Operator key (optional locally)" aria-label="Front Office operator key">
             <button class="primary-button" type="button" data-writer-button>Generate this edition</button>

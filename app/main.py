@@ -133,6 +133,7 @@ def create_app() -> FastAPI:
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
                 "operator_status": _operator_status_for_user(user_id),
                 "writer_personas": public_reporter_personas(),
+                "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
                 "continuity": _continuity_view(user_id),
             },
         )
