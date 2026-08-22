@@ -223,6 +223,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-reporter">Reporter is loading</span>
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
+            <span id="issue-latest-news">Latest news is loading</span>
           </div>
           <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
         </div>
@@ -261,6 +262,7 @@ EDITORIAL_JS = r"""
       setText('issue-reporter', (issue.reporter_persona || {}).name || 'The Front Office');
       setText('issue-freshness', issue.freshness_label || 'Freshness unavailable');
       setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
+      setText('issue-latest-news', issue.latest_news_label ? `Latest news ${issue.latest_news_label}` : 'Latest news not recorded');
       const freshness = issue.source_health_summary || {};
       const freshnessNode = document.getElementById('issue-freshness');
       if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';

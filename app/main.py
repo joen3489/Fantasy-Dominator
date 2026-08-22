@@ -929,6 +929,8 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         "as_of_label": str(editorial.get("as_of_label") or "Latest refresh"),
         "reporter_name": str(reporter_name or "The Front Office"),
         "writer_mode": writer_mode,
+        "latest_news_published_at": str(editorial.get("latest_news_published_at") or ""),
+        "latest_news_label": str(editorial.get("latest_news_label") or "Not recorded"),
     }
 
 

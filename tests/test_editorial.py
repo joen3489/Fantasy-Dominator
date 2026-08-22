@@ -89,6 +89,7 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertEqual(issue["schema_version"], "issue_v1")
         self.assertEqual(issue["league_id"], "league-1")
         self.assertEqual(issue["team_name"], "My Team")
+        self.assertEqual(issue["latest_news_label"], "Aug 1")
         self.assertEqual(issue["lead"]["entity_name"], "Pillar Player")
         self.assertIn("pillar", issue["lead"]["headline"].lower())
         self.assertIn("Projected PPG", {claim["label"] for claim in issue["lead"]["claims"]})

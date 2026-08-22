@@ -53,6 +53,11 @@ def build_editorial_issue(
     news_rows = _sorted_news(tables, my_roster_id)
     if news_rows:
         _append_unique(stories, seen, _news_story(news_rows[0]), limit=3)
+    league_news_rows = _rows(tables, "league_news_impact")
+    latest_news_published_at = max(
+        (_text(row.get("published_at")) for row in league_news_rows if _text(row.get("published_at"))),
+        default="",
+    )
 
     manager_rows = _sorted_rows(tables, "manager_behavior_signals", "trade_activity_score")
     manager_row = _first_matching(manager_rows, my_roster_id) or (manager_rows[0] if manager_rows else None)
@@ -98,6 +103,8 @@ def build_editorial_issue(
         "article_modes": article_modes,
         "reporter_persona": reporter,
         "freshness_label": source_summary["label"],
+        "latest_news_published_at": latest_news_published_at,
+        "latest_news_label": _short_date(latest_news_published_at) if latest_news_published_at else "Not recorded",
         "lead": lead,
         "stories": stories,
         "signal_summary": signal_summary,
