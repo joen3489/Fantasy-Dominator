@@ -170,6 +170,44 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertEqual(issue["article_modes"]["team_report"], "automatic_llm")
         self.assertEqual(issue["article_modes"]["daily_brief"], "deterministic_template")
 
+    def test_private_manager_profile_changes_evidence_led_edition(self) -> None:
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}],
+                "manager_behavior_signals": [
+                    {
+                        "roster_id": "9",
+                        "team_name": "Rival Team",
+                        "trade_activity_score": "80",
+                        "plain_language_label": "pick buyer",
+                        "evidence": "future_1sts_in=4",
+                        "confidence": "high",
+                    }
+                ],
+            },
+            league_id="profile-league",
+            my_roster_id=2,
+            my_team_name="My Team",
+            config={
+                "manager_trade_profiles": [
+                    {
+                        "roster_id": "9",
+                        "manager_name": "Rival Team",
+                        "trade_style": "patient pick accumulator",
+                        "preferred_assets": "future firsts",
+                        "protected_assets": "young running backs",
+                        "editor_note": "Start with picks; do not lead with veterans.",
+                    }
+                ]
+            },
+        )
+
+        profile_story = next(story for story in issue["stories"] if story["story_id"] == "manager:note:9")
+        self.assertEqual(profile_story["eyebrow"], "Personalized manager lens")
+        self.assertIn("Start with picks", profile_story["dek"])
+        self.assertIn("not source evidence", profile_story["evidence"])
+        self.assertEqual(issue["signal_summary"]["custom_manager_profiles"], 1)
+
 
 class EditorialUiTests(unittest.TestCase):
     def test_injector_adds_reader_facade_and_preserves_workbench_hooks(self) -> None:

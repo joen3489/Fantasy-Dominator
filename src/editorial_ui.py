@@ -293,11 +293,12 @@ EDITORIAL_JS = r"""
     }
 
     function editorialPulse(summary) {
-      const metrics = [
+        const metrics = [
         ['priority_reads', 'ranked reads'],
         ['market_consensus', 'market values'],
         ['news_signals', 'news signals'],
-        ['manager_profiles', 'manager profiles']
+        ['manager_profiles', 'manager profiles'],
+        ['custom_manager_profiles', 'private profiles']
       ];
       return metrics.map(([key, labelText]) => `<div class="pulse-metric"><strong>${escapeHtml(String(summary[key] ?? 0))}</strong><span>${escapeHtml(labelText)}</span></div>`).join('');
     }

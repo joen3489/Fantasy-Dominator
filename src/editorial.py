@@ -58,6 +58,14 @@ def build_editorial_issue(
     manager_row = _first_matching(manager_rows, my_roster_id) or (manager_rows[0] if manager_rows else None)
     if manager_row:
         _append_unique(stories, seen, _manager_story(manager_row), limit=4)
+    manager_trade_profiles = _manager_trade_profile_rows(config)
+    custom_manager_profile = _select_manager_trade_profile(
+        manager_trade_profiles,
+        manager_rows,
+        my_roster_id,
+    )
+    if custom_manager_profile:
+        _append_unique(stories, seen, _manager_profile_story(custom_manager_profile), limit=5)
 
     source_health = _source_health(tables)
     source_summary = _source_summary(source_health)
@@ -66,6 +74,7 @@ def build_editorial_issue(
         "market_consensus": len(_rows(tables, "market_consensus_values")),
         "news_signals": len(_rows(tables, "league_news_impact")),
         "manager_profiles": len(_rows(tables, "manager_behavior_signals")),
+        "custom_manager_profiles": len(manager_trade_profiles),
         "source_count": len(source_health),
     }
     article_modes = _article_modes(analysis)
@@ -434,6 +443,8 @@ def _source_health_label(source: str, dataset: str, fallback: str) -> str:
         "nflverse": "nflverse",
         "fantasy_nerds": "Fantasy Nerds",
     }
+
+
     dataset_names = {
         "nfl_player_news": "NFL player news",
         "trending_add": "Trending adds",
@@ -447,6 +458,64 @@ def _source_health_label(source: str, dataset: str, fallback: str) -> str:
     if source_label and dataset_label:
         return f"{source_label} · {dataset_label}"
     return source_label or dataset_label or fallback
+
+
+def _manager_trade_profile_rows(config: Mapping[str, Any]) -> list[dict[str, Any]]:
+    context = config.get("context") if isinstance(config.get("context"), Mapping) else {}
+    rows = config.get("manager_trade_profiles") or context.get("manager_trade_profiles") or []
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
+def _select_manager_trade_profile(
+    profiles: list[dict[str, Any]],
+    manager_rows: list[dict[str, Any]],
+    my_roster_id: int | str | None,
+) -> dict[str, Any] | None:
+    if not profiles:
+        return None
+    observed_ids = {str(row.get("roster_id")) for row in manager_rows if row.get("roster_id") not in (None, "")}
+    for profile in profiles:
+        roster_id = str(profile.get("roster_id") or "")
+        if roster_id and roster_id in observed_ids and roster_id != str(my_roster_id):
+            return profile
+    for profile in profiles:
+        if str(profile.get("roster_id") or "") != str(my_roster_id):
+            return profile
+    return profiles[0]
+
+
+def _manager_profile_story(profile: Mapping[str, Any]) -> dict[str, Any]:
+    roster_id = _text(profile.get("roster_id"))
+    manager_name = _text(profile.get("manager_name")) or "A league manager"
+    trade_style = _text(profile.get("trade_style")) or "an unclassified trade style"
+    preferred = _text(profile.get("preferred_assets")) or "not specified"
+    protected = _text(profile.get("protected_assets")) or "not specified"
+    editor_note = _text(profile.get("editor_note"))
+    note = editor_note or f"Working style: {trade_style}."
+    return {
+        "story_id": f"manager:note:{roster_id or manager_name}",
+        "story_type": "manager",
+        "eyebrow": "Personalized manager lens",
+        "headline": f"Your working read on {manager_name}",
+        "dek": f"Private profile: {note}",
+        "action": "Move: use this as a conversation hypothesis, then verify it against current behavior before acting.",
+        "watchout": "This is private editor context, not confirmed league evidence.",
+        "confidence": "editorial",
+        "priority_score": "",
+        "entity_type": "manager",
+        "entity_id": f"note:{roster_id or manager_name}",
+        "entity_name": manager_name,
+        "team_name": manager_name,
+        "anchor": _anchor("manager", roster_id),
+        "claims": [
+            {"label": "Trade style", "value": trade_style},
+            {"label": "Likely to chase", "value": preferred},
+            {"label": "Likely to protect", "value": protected},
+        ],
+        "evidence": f"Private editor context, not source evidence: {note}",
+        "sources": [],
+        "is_lead": False,
+    }
 
 
 def _source_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:

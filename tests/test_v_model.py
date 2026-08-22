@@ -777,6 +777,12 @@ class VModelTests(unittest.TestCase):
                     self.assertEqual(bundle["strategyProfile"]["name"], details["strategy"])
                     self.assertEqual(bundle["managerTradeProfiles"][0]["trade_style"], "pick seller")
                     self.assertIn("Alpha" if league_id.endswith("alpha") else "Beta", bundle["analysis"]["teamReport"])
+                    editorial = json.loads((paths.site_dir / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
+                    self.assertEqual(editorial["signal_summary"]["custom_manager_profiles"], 1)
+                    profile_story = next(
+                        story for story in editorial["stories"] if story["story_id"] == "manager:note:11"
+                    )
+                    self.assertIn(league_id, profile_story["dek"])
 
                 self.assertTrue(prompts["alpha"])
                 self.assertTrue(prompts["beta"])
