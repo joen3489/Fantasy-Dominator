@@ -149,6 +149,23 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertIn("role signal", scout["lead"]["headline"])
         self.assertNotEqual(quant["lead"]["headline"], scout["lead"]["headline"])
 
+    def test_issue_reports_mixed_writer_mode_truthfully(self) -> None:
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "dailyGmBriefMode": "deterministic_template",
+                "teamReportMode": "automatic_llm",
+                "marketWatchMode": "automatic_llm",
+            },
+            league_id="mixed-league",
+            my_roster_id=2,
+            my_team_name="Mixed Team",
+        )
+
+        self.assertEqual(issue["writer_mode"], "Mixed edition")
+        self.assertEqual(issue["article_modes"]["team_report"], "automatic_llm")
+        self.assertEqual(issue["article_modes"]["daily_brief"], "deterministic_template")
+
 
 class EditorialUiTests(unittest.TestCase):
     def test_injector_adds_reader_facade_and_preserves_workbench_hooks(self) -> None:

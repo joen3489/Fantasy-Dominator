@@ -68,7 +68,7 @@ def build_editorial_issue(
         "manager_profiles": len(_rows(tables, "manager_behavior_signals")),
         "source_count": len(source_health),
     }
-    writer_mode = _text(analysis.get("dailyGmBriefMode")) or "deterministic_template"
+    article_modes = _article_modes(analysis)
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
 
@@ -85,7 +85,8 @@ def build_editorial_issue(
         "team_name": team_label,
         "headline": lead["headline"],
         "dek": _issue_dek(team_label, lead, signal_summary, persona_id),
-        "writer_mode": _writer_mode_label(writer_mode),
+        "writer_mode": _writer_mode_label(article_modes),
+        "article_modes": article_modes,
         "reporter_persona": reporter,
         "freshness_label": source_summary["label"],
         "lead": lead,
@@ -457,8 +458,29 @@ def _issue_dek(team_name: str, lead: Mapping[str, Any], summary: Mapping[str, An
     )
 
 
-def _writer_mode_label(mode: str) -> str:
-    return "Analyst-written" if mode == "automatic_llm" else "Evidence-led template"
+def _article_modes(analysis: Mapping[str, Any]) -> dict[str, str]:
+    fields = {
+        "daily_brief": "dailyGmBriefMode",
+        "team_report": "teamReportMode",
+        "market_watch": "marketWatchMode",
+        "trade_desk": "tradeDeskReadMode",
+        "manager_intel": "managerIntelMode",
+    }
+    return {
+        key: _text(analysis.get(field)) or "deterministic_template"
+        for key, field in fields.items()
+    }
+
+
+def _writer_mode_label(article_modes: Mapping[str, str]) -> str:
+    modes = set(article_modes.values())
+    has_llm = "automatic_llm" in modes
+    has_template = "deterministic_template" in modes
+    if has_llm and has_template:
+        return "Mixed edition"
+    if has_llm:
+        return "Analyst-written"
+    return "Evidence-led template"
 
 
 def _issue_id(as_of: str, season: str) -> str:
