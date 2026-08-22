@@ -772,6 +772,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("fetch('/api/operator/storage-audit'", html)
         self.assertIn('data-testid="edition-hero"', html)
         self.assertIn('data-testid="edition-proof"', html)
+        self.assertIn('data-testid="edition-lineup"', html)
+        self.assertIn("All league editions", html)
+        self.assertIn('class="edition-card selected"', html)
         self.assertIn("news rows", html)
         self.assertIn("news sources current", html)
         self.assertIn("Latest news:", html)
@@ -834,7 +837,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.text
         self.assertIn("Beta focus headline", html)
-        self.assertNotIn("Alpha focus headline", html)
+        self.assertIn("Alpha focus headline", html)
         self.assertIn("In focus: <strong>Beta League</strong>", html)
         self.assertIn('class="league-pill selected" href="/?league_id=beta"', html)
         self.assertIn('value="beta" selected', html)
@@ -845,7 +848,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
         self.assertEqual(fallback.status_code, 200)
         self.assertIn("Alpha focus headline", fallback.text)
-        self.assertNotIn("Beta focus headline", fallback.text)
+        self.assertIn("Beta focus headline", fallback.text)
         self.assertIn("In focus: <strong>Alpha League</strong>", fallback.text)
 
     def test_manager_trade_profiles_are_private_league_scoped_and_reach_writer_context(self) -> None:
