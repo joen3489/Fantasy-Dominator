@@ -650,7 +650,11 @@
       {% else %}
         <section class="empty-hero">
           <h2>Link Sleeper</h2>
-          <p>Point me at your Sleeper username. I'll find the bodies.</p>
+          {% if (continuity or {}).identity_state == "identity_check" %}
+            <p data-testid="identity-check-message">This login is valid, but it has no leagues attached. Verify the Clerk production identity before reconnecting your Sleeper account; the Front Office will not guess across users.</p>
+          {% else %}
+            <p>Point me at your Sleeper username. I'll find the bodies.</p>
+          {% endif %}
           <form class="link-row" method="post" action="/api/leagues/link">
             <input name="sleeper_username" autocomplete="username" placeholder="Sleeper username" aria-label="Sleeper username">
             <input type="hidden" name="season" value="2026">

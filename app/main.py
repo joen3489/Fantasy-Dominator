@@ -758,6 +758,18 @@ def _continuity_view(user_id: int) -> dict[str, Any]:
     workspace_count = sum(
         1 for league in leagues if _private_paths(user_id, str(league["league_id"])).root.is_dir()
     )
+    if leagues:
+        identity_state = "linked"
+        identity_message = "This login has linked league workspaces."
+    elif db.another_user_has_leagues(user_id):
+        identity_state = "identity_check"
+        identity_message = (
+            "This login has no linked leagues while preserved league workspaces exist under another identity. "
+            "Verify the Clerk instance before reconnecting."
+        )
+    else:
+        identity_state = "needs_link"
+        identity_message = "Link a Sleeper account to create your first league workspace."
     volume_configured = bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip())
     database_present = (DATA_DIR / "app.db").is_file()
     state = "durable" if volume_configured and database_present else "local_default"
@@ -769,6 +781,8 @@ def _continuity_view(user_id: int) -> dict[str, Any]:
         "linked_leagues": len(leagues),
         "team_profiles": profile_count,
         "private_workspaces": workspace_count,
+        "identity_state": identity_state,
+        "identity_message": identity_message,
     }
 
 

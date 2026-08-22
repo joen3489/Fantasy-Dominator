@@ -173,6 +173,24 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
         conn.close()
 
 
+def another_user_has_leagues(user_id: int) -> bool:
+    """Return whether another authenticated identity has a stored league.
+
+    This is intentionally a boolean. It helps diagnose a Clerk identity
+    mismatch without exposing another user's league names, IDs, or counts.
+    """
+
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM user_leagues WHERE user_id != ? LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def get_user_league(user_id: int, league_id: str) -> dict[str, Any] | None:
     conn = _connect()
     try:

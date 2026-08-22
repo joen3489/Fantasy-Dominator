@@ -493,6 +493,26 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(payload["linked_leagues"], 1)
         self.assertEqual(payload["team_profiles"], 1)
         self.assertEqual(payload["private_workspaces"], 0)
+        self.assertEqual(payload["identity_state"], "linked")
+
+    def test_empty_home_reports_identity_check_without_exposing_other_leagues(self) -> None:
+        token = self._token("user_new_identity")
+        self.client.get("/", cookies={"__session": token})
+        self.client.get("/", cookies={"__session": self._token("user_existing_identity")})
+        existing_user_id = self._user_id("user_existing_identity")
+        db.upsert_user_league(
+            existing_user_id,
+            {"league_id": "private-league", "season": "2026", "league_type": "dynasty", "name": "Private League", "roster_id": 1},
+        )
+
+        response = self.client.get("/", cookies={"__session": token})
+        continuity = self.client.get("/api/continuity", cookies={"__session": token}).json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-testid="identity-check-message"', response.text)
+        self.assertNotIn("Private League", response.text)
+        self.assertEqual(continuity["identity_state"], "identity_check")
+        self.assertNotIn("league_id", continuity["identity_message"])
 
     def test_home_renders_phone_first_attention_feed_and_league_pills(self) -> None:
         token = self._token("user_home_feed")
