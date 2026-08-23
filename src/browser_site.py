@@ -72,10 +72,18 @@ def build_browser_site(
         "player_profile_tags": _records(processed_dir / "player_profile_tags.csv"),
         "player_opportunity_scores": _records(processed_dir / "player_opportunity_scores.csv"),
     }
-    my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
-    my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
-    my_team_name = _my_team_name(tables["teams"], my_roster_id)
     config = dict(config) if config is not None else load_config()
+    my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
+    context = config.get("context") if isinstance(config, Mapping) and isinstance(config.get("context"), Mapping) else {}
+    configured_roster_id = context.get("roster_id")
+    if configured_roster_id not in (None, ""):
+        try:
+            my_roster_id = int(configured_roster_id)
+        except (TypeError, ValueError):
+            my_roster_id = None
+    else:
+        my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
+    my_team_name = _my_team_name(tables["teams"], my_roster_id)
     # The raw Sleeper name is a useful fallback, but the reader belongs to the
     # saved league profile.  Keep the presentation identity aligned with the
     # same scoped customization used by the editorial and draft-room payloads.

@@ -1231,6 +1231,44 @@ class VModelTests(unittest.TestCase):
         self.assertIn("source_trace", tables["player_dossiers"].columns)
         self.assertGreater(len(tables["player_transaction_history"]), 0)
 
+    def test_browser_context_roster_id_overrides_stale_my_team_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            site = Path(tmp) / "site"
+            processed.mkdir()
+            self._write_minimal_processed_tables(processed)
+            pd.DataFrame(
+                [
+                    {"roster_id": 2, "display_name": "joe3489", "team_name": "Lulu’s Potatoe’s"},
+                    {"roster_id": 4, "display_name": "Crumplesacks", "team_name": "Moose Caboose"},
+                ]
+            ).to_csv(processed / "teams.csv", index=False)
+            pd.DataFrame(
+                [
+                    {"roster_id": 2, "player_name": "Lulu Player", "position": "QB", "is_my_team": False},
+                    {"roster_id": 4, "player_name": "Stale Player", "position": "QB", "is_my_team": True},
+                ]
+            ).to_csv(processed / "roster_players.csv", index=False)
+
+            build_browser_site(
+                site,
+                processed,
+                config={
+                    "context": {
+                        "user_id": "17",
+                        "league_id": "league",
+                        "season": "2026",
+                        "roster_id": 2,
+                        "identity_status": "verified_roster_match",
+                    }
+                },
+            )
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["myRosterId"], 2)
+        self.assertEqual(bundle["myTeamName"], "Lulu’s Potatoe’s")
+        self.assertEqual(bundle["identityReceipt"]["roster_id"], 2)
+
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             processed = Path(tmp) / "processed"
