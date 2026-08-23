@@ -16,6 +16,7 @@ class LiveSmokeContractTests(unittest.TestCase):
             {
                 "ok": True,
                 "auth_mode": "development",
+                "development_auth_allowed": False,
                 "auth_configuration_ready": False,
                 "public_url_ready": False,
                 "data_root_configured": False,
@@ -31,6 +32,26 @@ class LiveSmokeContractTests(unittest.TestCase):
         self.assertTrue(any("durable" in error for error in errors))
         self.assertTrue(any("schema" in error for error in errors))
         self.assertTrue(any("ANTHROPIC_API_KEY" in warning for warning in warnings))
+
+    def test_health_accepts_explicit_private_development_auth(self) -> None:
+        errors, warnings = validate_health_payload(
+            {
+                "ok": True,
+                "auth_mode": "development",
+                "development_auth_allowed": True,
+                "auth_configuration_ready": True,
+                "public_url_ready": True,
+                "data_root_configured": True,
+                "database_present": True,
+                "database_schema_ready": True,
+                "operator_token_configured": True,
+                "scheduler_enabled": True,
+                "writer_api_configured": True,
+            }
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
 
     def test_health_accepts_ready_store_and_warns_only_for_optional_writer(self) -> None:
         payload = {

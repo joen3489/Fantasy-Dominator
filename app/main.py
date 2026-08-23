@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
 
         publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
         auth_mode = _clerk_key_mode(publishable_key)
+        development_auth_allowed = _development_auth_allowed()
         auth_issuer_configured = bool(os.environ.get("CLERK_ISSUER", "").strip())
         auth_jwks_configured = bool(os.environ.get("CLERK_JWKS_URL", "").strip())
         storage = db.storage_health()
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
             "ok": True,
             "revision": _deployment_revision(),
             "auth_mode": auth_mode,
+            "development_auth_allowed": development_auth_allowed,
             "auth_issuer_configured": auth_issuer_configured,
             "auth_jwks_configured": auth_jwks_configured,
             "auth_configuration_ready": bool(publishable_key and auth_issuer_configured and auth_jwks_configured),
@@ -436,6 +438,17 @@ def _clerk_key_mode(publishable_key: str) -> str:
     return "unknown" if publishable_key else "not_configured"
 
 
+def _development_auth_allowed() -> bool:
+    """Return whether a private deployment explicitly permits Clerk test auth."""
+
+    return os.environ.get("FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _deployment_revision() -> str:
     """Return a safe release identifier when the platform provides one."""
 
@@ -449,9 +462,9 @@ def _deployment_revision() -> str:
 def _production_gate() -> dict[str, Any]:
     """Describe whether a deployed instance is safe to use as a personal headquarters.
 
-    Local development intentionally stays open.  A Railway deployment with a
-    development Clerk key or an unset data root must not invite the user to
-    link leagues into an ephemeral or wrong identity store.
+    Local development intentionally stays open. A Railway deployment with a
+    development Clerk key normally stays closed, but a private personal
+    deployment may explicitly opt into that existing Clerk identity.
     """
 
     deployed = bool(
@@ -463,8 +476,12 @@ def _production_gate() -> dict[str, Any]:
 
     blockers: list[str] = []
     publishable_key = os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
-    if _clerk_key_mode(publishable_key) != "live":
-        blockers.append("Use a live Clerk publishable key for production authentication.")
+    auth_mode = _clerk_key_mode(publishable_key)
+    if auth_mode != "live" and not (auth_mode == "development" and _development_auth_allowed()):
+        blockers.append(
+            "Use a live Clerk publishable key for production authentication, or set "
+            "FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH=true for a private deployment."
+        )
     if not os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip():
         blockers.append("Mount the durable application volume and set FRONT_OFFICE_DATA_DIR.")
     if not db.storage_health().get("database_schema_ready"):

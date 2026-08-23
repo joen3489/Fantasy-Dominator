@@ -483,6 +483,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             {
                 "RAILWAY_PUBLIC_DOMAIN": "fantasy.test",
                 "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH": "false",
                 "FRONT_OFFICE_DATA_DIR": "",
                 "FRONT_OFFICE_OPERATOR_TOKEN": "",
                 "FRONT_OFFICE_SCHEDULER": "on",
@@ -497,6 +498,27 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("FRONT_OFFICE_DATA_DIR", response.text)
         self.assertNotIn("mountSignIn", response.text)
 
+    def test_private_railway_deployment_allows_existing_development_auth(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RAILWAY_PUBLIC_DOMAIN": "fantasy.test",
+                "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH": "true",
+                "FRONT_OFFICE_DATA_DIR": "/app/data",
+                "FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret",
+                "FRONT_OFFICE_SCHEDULER": "on",
+            },
+            clear=False,
+        ):
+            response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["auth_mode"], "development")
+        self.assertTrue(response.json()["development_auth_allowed"])
+        self.assertTrue(response.json()["deployment_ready"])
+        self.assertEqual(response.json()["deployment_blockers"], [])
+
     def test_healthz_reports_safe_deployment_signals(self) -> None:
         with patch.dict(
             os.environ,
@@ -504,6 +526,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "CLERK_PUBLISHABLE_KEY": "pk_test_123",
                 "FRONT_OFFICE_PUBLIC_URL": "https://fantasy.test",
                 "FRONT_OFFICE_DATA_DIR": "/app/data",
+                "FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH": "false",
             },
             clear=False,
         ):
@@ -516,6 +539,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "ok": True,
                 "revision": "",
                 "auth_mode": "development",
+                "development_auth_allowed": False,
                 "auth_issuer_configured": True,
                 "auth_jwks_configured": True,
                 "auth_configuration_ready": True,

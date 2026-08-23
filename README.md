@@ -106,6 +106,12 @@ refreshing returns a setup error until live auth, durable storage, and the
 protected scheduler configuration are ready. This prevents an ephemeral or
 wrong-identity deployment from looking like an empty personal headquarters.
 
+For a private personal Railway deployment, set
+`FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH=true` to keep using the existing Clerk
+development instance and preserve its current user identity. This is an
+intentional private-use exception; public deployments should use a live Clerk
+instance on a custom domain instead.
+
 Generated state is intentionally not stored in Git. For production continuity,
 mount a durable Railway volume at `/app/data` and set
 `FRONT_OFFICE_DATA_DIR=/app/data`. This single root contains the app identity
@@ -125,6 +131,7 @@ show the refresh receipt rather than an empty shell or raw file-not-found JSON.
 Optional environment variables:
 
 - FRONT_OFFICE_REQUIRE_OPERATOR_TOKEN=true fails operator actions closed even when the token variable is missing.
+- FRONT_OFFICE_ALLOW_DEVELOPMENT_AUTH=true permits the existing Clerk development instance for a private personal deployment.
 - FRONT_OFFICE_LIVE_CACHE_MAX_AGE_SECONDS controls normal Sleeper cache expiry for the current season (default 900 seconds).
 - FRONT_OFFICE_HISTORICAL_CACHE_MAX_AGE_SECONDS controls historical Sleeper cache expiry (default 30 days).
 - FRONT_OFFICE_PLAYER_CACHE_MAX_AGE_SECONDS controls the large `/players/nfl` cache expiry (default 24 hours).

@@ -57,8 +57,12 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
         errors.append(
             f"running revision={payload.get('revision')!r}; expected {expected_revision!r}"
         )
-    if payload.get("auth_mode") != "live":
-        errors.append(f"auth_mode={payload.get('auth_mode')!r}; expected live Clerk keys")
+    auth_mode = payload.get("auth_mode")
+    development_auth_allowed = payload.get("development_auth_allowed") is True
+    if auth_mode != "live" and not (auth_mode == "development" and development_auth_allowed):
+        errors.append(
+            f"auth_mode={auth_mode!r}; expected live Clerk keys or an explicit private development-auth opt-in"
+        )
     if payload.get("auth_configuration_ready") is not True:
         errors.append("Clerk publishable key, issuer, and JWKS configuration is incomplete")
     if payload.get("public_url_ready") is not True:
