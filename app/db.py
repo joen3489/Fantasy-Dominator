@@ -594,13 +594,16 @@ def reconcile_team_profile_identity(
     user_id: int,
     league: dict[str, Any],
     previous_league: dict[str, Any] | None = None,
+    force: bool = False,
 ) -> dict[str, Any] | None:
     """Re-key a profile after Sleeper proves the league's owned roster.
 
     A profile is private customization, not an identity source. When an old
     row was unverified or pointed at a different roster, preserve its strategy
-    and writer notes but clear the stale team/display labels. The next scoped
-    refresh will derive the current Sleeper name from the exact roster ID.
+    and writer notes but clear the stale team/display labels. An explicit
+    identity recheck may force the same cleanup when a legacy row was falsely
+    marked verified. The next scoped refresh derives the current Sleeper name
+    from the exact roster ID.
     """
 
     league_id = str(league.get("league_id") or "")
@@ -623,7 +626,7 @@ def reconcile_team_profile_identity(
         except (TypeError, ValueError):
             return False
 
-    identity_changed = (
+    identity_changed = force or (
         previous_status not in {"verified", "verified_roster_match"}
         or not _same_roster(previous_roster_id, expected_roster_id)
         or not _same_roster(profile_roster_id, expected_roster_id)

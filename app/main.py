@@ -234,7 +234,7 @@ def create_app() -> FastAPI:
             or load_config().get("current_season")
             or datetime.now(timezone.utc).year
         )
-        return _link_user_leagues(int(user["id"]), sleeper_username, season)
+        return _link_user_leagues(int(user["id"]), sleeper_username, season, reset_identity_labels=True)
 
     @app.post("/api/leagues/refresh")
     def refresh_user_leagues(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -538,7 +538,12 @@ def _require_deployment_ready() -> None:
         )
 
 
-def _link_user_leagues(user_id: int, sleeper_username: str, season: str) -> dict[str, Any]:
+def _link_user_leagues(
+    user_id: int,
+    sleeper_username: str,
+    season: str,
+    reset_identity_labels: bool = False,
+) -> dict[str, Any]:
     """Link leagues using Sleeper ownership, never a display-name choice."""
 
     entries = discover_leagues(SleeperAPI(), sleeper_username, season)
@@ -554,10 +559,18 @@ def _link_user_leagues(user_id: int, sleeper_username: str, season: str) -> dict
         previous = db.get_user_league(user_id, str(entry.get("league_id") or ""))
         saved = db.upsert_user_league(user_id, entry)
         db.migrate_legacy_team_profile(user_id, saved, _legacy_config())
-        db.reconcile_team_profile_identity(user_id, saved, previous)
+        db.reconcile_team_profile_identity(user_id, saved, previous, force=reset_identity_labels)
         stored.append(saved)
 
     save_registry(entries, user_id=user_id)
+    # Identity repair must not leave an old ready bundle in front of the
+    # corrected roster. Rebuild from existing processed facts immediately;
+    # the normal refresh job can still fetch newer source data afterward.
+    for entry in stored:
+        paths = _private_paths(user_id, str(entry.get("league_id") or ""))
+        if not (paths.processed_dir / "teams.csv").is_file():
+            continue
+        _rebuild_browser_job(entry, user_id)
     return {"leagues": stored, "sleeper_username": sleeper_username, "season": str(season)}
 
 
