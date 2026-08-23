@@ -214,7 +214,7 @@ def create_app() -> FastAPI:
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         _require_deployment_ready()
-        return _link_user_leagues(int(user["id"]), body.sleeper_username, body.season)
+        return _link_user_leagues(int(user["id"]), body.sleeper_username, body.season, reset_identity_labels=True)
 
     @app.post("/api/leagues/identity/refresh")
     def refresh_league_identity(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:

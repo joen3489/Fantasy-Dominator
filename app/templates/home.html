@@ -708,6 +708,15 @@
               <span>Latest news: <strong>{{ featured_receipt.latest_news_label or "Not recorded" }}</strong></span>
               <span>Writer output: <strong>{{ featured_content.label or "Not recorded" }}</strong></span>
             </div>
+            <details class="identity-relink-panel">
+              <summary>Change linked Sleeper account</summary>
+              <p>Use your Sleeper username here. The Front Office will resolve the Sleeper user ID and each league's exact roster ID; it will never choose a team by display name.</p>
+              <form class="link-row" data-relink-form data-relink-league="{{ featured_league.league_id }}">
+                <input data-relink-username value="{{ user.sleeper_username or '' }}" autocomplete="username" placeholder="Sleeper username" aria-label="Linked Sleeper username">
+                <button class="primary-button" type="submit">Relink Sleeper account</button>
+              </form>
+              <span class="profile-status" data-relink-status role="status"></span>
+            </details>
           </section>
           <nav class="league-strip" aria-label="Enabled leagues">
             {% for league in enabled_leagues %}
@@ -1127,6 +1136,41 @@
               identityRefresh.disabled = false;
               identityRefresh.textContent = 'Try identity check again';
               if (identityRefreshStatus) identityRefreshStatus.textContent = error.message;
+            }
+          });
+        }
+
+        const relinkForm = document.querySelector('[data-relink-form]');
+        if (relinkForm) {
+          const relinkButton = relinkForm.querySelector('button[type="submit"]');
+          const relinkStatus = document.querySelector('[data-relink-status]');
+          relinkForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const username = (relinkForm.querySelector('[data-relink-username]').value || '').trim();
+            if (!username) return;
+            relinkButton.disabled = true;
+            relinkButton.textContent = 'Resolving Sleeper user';
+            if (relinkStatus) relinkStatus.textContent = '';
+            try {
+              const response = await fetch('/api/leagues/link', {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({sleeper_username: username, season: '2026'}),
+              });
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(payload.detail || `relink failed (${response.status})`);
+              const leagueId = relinkForm.dataset.relinkLeague;
+              if (relinkStatus) relinkStatus.textContent = 'Sleeper user linked; forcing this league refresh';
+              await fetch('/api/leagues/' + encodeURIComponent(leagueId) + '/refresh', {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({}),
+              });
+              window.location.reload();
+            } catch (error) {
+              relinkButton.disabled = false;
+              relinkButton.textContent = 'Try relink again';
+              if (relinkStatus) relinkStatus.textContent = error.message;
             }
           });
         }
