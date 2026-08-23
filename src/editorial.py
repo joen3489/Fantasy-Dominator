@@ -11,7 +11,7 @@ cannot remove the evidence, source trace, confidence, or risk that came with the
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from .personas import persona_metadata
+from .personas import persona_metadata, reporter_lineup
 
 
 def build_editorial_issue(
@@ -39,7 +39,7 @@ def build_editorial_issue(
     scoped_priority = _prioritize_team(priority_rows, my_roster_id)
     lead_row = scoped_priority[0] if scoped_priority else None
     writer_preferences = config.get("writer_preferences") or (config.get("context") or {}).get("writer_preferences") or {}
-    reporter = persona_metadata(writer_preferences)
+    reporter = persona_metadata(writer_preferences, "daily_brief")
     persona_id = reporter["persona_id"]
     lead = _priority_story(lead_row, is_lead=True, persona_id=persona_id) if lead_row else _quiet_story(my_team_name)
 
@@ -102,6 +102,7 @@ def build_editorial_issue(
         "writer_mode": _writer_mode_label(article_modes),
         "article_modes": article_modes,
         "reporter_persona": reporter,
+        "reporter_lineup": reporter_lineup(writer_preferences),
         "freshness_label": source_summary["label"],
         "latest_news_published_at": latest_news_published_at,
         "latest_news_label": _short_date(latest_news_published_at) if latest_news_published_at else "Not recorded",

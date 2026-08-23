@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +36,8 @@ def build_analysis_artifacts(
     target_theses = build_target_theses(dataframes, active_roster_id, active_team_name, generated_at)
     sell_theses = build_sell_theses(dataframes, active_roster_id, active_team_name, generated_at)
     trade_theses = build_trade_theses(dataframes, active_roster_id, active_team_name, generated_at)
-    manager_dossier_items = build_manager_dossier_items(dataframes, generated_at)
+    previous_manager_items = _load_prior_items(analysis_dir / "manager_dossiers.json")
+    manager_dossier_items = build_manager_dossier_items(dataframes, generated_at, previous_manager_items)
     player_dossier_items = build_player_dossier_items(dataframes, generated_at)
     validations = validate_analysis_artifacts(target_theses, sell_theses, trade_theses)
 
@@ -44,7 +46,14 @@ def build_analysis_artifacts(
         "target_theses.json": _json_artifact("target_theses", target_theses, generated_at, active_roster_id, active_team_name),
         "sell_theses.json": _json_artifact("sell_theses", sell_theses, generated_at, active_roster_id, active_team_name),
         "trade_theses.json": _json_artifact("trade_theses", trade_theses, generated_at, active_roster_id, active_team_name),
-        "manager_dossiers.json": _json_artifact("manager_dossiers", manager_dossier_items, generated_at, active_roster_id, active_team_name),
+        "manager_dossiers.json": _json_artifact(
+            "manager_dossiers",
+            manager_dossier_items,
+            generated_at,
+            active_roster_id,
+            active_team_name,
+            metadata=_dossier_receipt(manager_dossier_items),
+        ),
         "player_dossiers.json": _json_artifact("player_dossiers", player_dossier_items, generated_at, active_roster_id, active_team_name),
         "analysis_validation.json": _json_artifact("analysis_validation", validations, generated_at, active_roster_id, active_team_name),
     }
@@ -82,6 +91,7 @@ def build_analysis_artifacts(
         "sell_thesis_count": len(sell_theses),
         "trade_thesis_count": len(trade_theses),
         "manager_dossier_count": len(manager_dossier_items),
+        "manager_dossier_receipt": _dossier_receipt(manager_dossier_items),
         "player_dossier_count": len(player_dossier_items),
         "validation_error_count": len(validations["errors"]),
         "source_tables": _source_tables(),
@@ -476,18 +486,31 @@ def build_manager_intel(
     return "\n".join(lines).strip() + "\n"
 
 
-def build_manager_dossier_items(dataframes: dict[str, pd.DataFrame], generated_at: str) -> list[dict[str, Any]]:
+def build_manager_dossier_items(
+    dataframes: dict[str, pd.DataFrame],
+    generated_at: str,
+    previous_items: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     cycles = _rows(dataframes.get("manager_cycle_profiles", pd.DataFrame()))
     tags = _rows(dataframes.get("manager_profile_tags", pd.DataFrame()))
     tags_by_id: dict[str, list[dict[str, Any]]] = {}
     for tag in tags:
         tags_by_id.setdefault(str(tag.get("entity_id", "")), []).append(tag)
     items: list[dict[str, Any]] = []
+    previous_by_roster = {
+        str(item.get("roster_id")): item
+        for item in (previous_items or [])
+        if isinstance(item, dict) and item.get("roster_id") not in (None, "")
+    }
     for index, cycle in enumerate(cycles, start=1):
         roster_id = str(cycle.get("roster_id", ""))
         selected_tags = tags_by_id.get(roster_id, [])[:6]
         tag_text = ", ".join(str(tag.get("tag", "")) for tag in selected_tags if tag.get("tag"))
         evidence = str(cycle.get("evidence", ""))
+        fingerprint = _fingerprint({"cycle": cycle, "tags": selected_tags})
+        previous = previous_by_roster.get(roster_id) or {}
+        previous_fingerprint = str(previous.get("evidence_fingerprint") or "")
+        update_status = "new" if not previous else ("unchanged" if previous_fingerprint == fingerprint else "updated")
         risk = "medium: manager cycle is an estimated tendency, not intent"
         items.append(
             {
@@ -505,6 +528,9 @@ def build_manager_dossier_items(dataframes: dict[str, pd.DataFrame], generated_a
                     f"with {cycle.get('trade_temperature', 'unknown trade activity')} and {cycle.get('pick_posture', 'unclear pick posture')}. "
                     f"Tags: {tag_text or 'none'}. Evidence: {evidence}."
                 ),
+                "evidence_fingerprint": fingerprint,
+                "update_status": update_status,
+                "updated_fields": _changed_dossier_fields(previous, cycle, tag_text),
                 "generated_at": generated_at,
             }
         )
@@ -564,12 +590,54 @@ def validate_analysis_artifacts(*artifact_lists: list[dict[str, Any]]) -> dict[s
     return {"valid": not errors, "errors": errors}
 
 
+def _load_prior_items(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    items = payload.get("items", []) if isinstance(payload, dict) else []
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _fingerprint(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def _changed_dossier_fields(previous: dict[str, Any], cycle: dict[str, Any], tag_text: str) -> list[str]:
+    if not previous:
+        return ["all"]
+    comparisons = {
+        "team_name": cycle.get("team_name", ""),
+        "dynasty_cycle": cycle.get("dynasty_cycle", ""),
+        "evidence": cycle.get("evidence", ""),
+        "tags": tag_text,
+        "confidence": cycle.get("confidence", "low"),
+    }
+    return [key for key, value in comparisons.items() if str(previous.get(key, "")) != str(value)]
+
+
+def _dossier_receipt(items: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [str(item.get("update_status") or "") for item in items]
+    return {
+        "update_mode": "incremental_receipt",
+        "item_count": len(items),
+        "new_count": statuses.count("new"),
+        "updated_count": statuses.count("updated"),
+        "unchanged_count": statuses.count("unchanged"),
+        "fingerprint": _fingerprint([item.get("evidence_fingerprint") for item in items]),
+    }
+
+
 def _json_artifact(
     artifact_type: str,
     items: list[dict[str, Any]] | dict[str, Any],
     generated_at: str,
     roster_id: int | None,
     team_name: str,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "artifact_type": artifact_type,
@@ -581,6 +649,7 @@ def _json_artifact(
         "team_name": team_name,
         "source_tables": _source_tables(),
         "items": items if isinstance(items, list) else [items],
+        **(metadata or {}),
     }
 
 

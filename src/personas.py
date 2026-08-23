@@ -18,11 +18,67 @@ class ReporterPersona:
     name: str
     description: str
     voice_contract: str
+    role: str = "analyst"
 
 
 DEFAULT_PERSONA_ID = "front_office"
 
 REPORTER_PERSONAS: dict[str, ReporterPersona] = {
+    "topline_tony": ReporterPersona(
+        persona_id="topline_tony",
+        name="Topline Tony",
+        description="The league's fast-moving news editor: stakes, matchups, and what changed this week.",
+        role="league topline reporter",
+        voice_contract=(
+            "Write like Topline Tony, a crisp beat reporter who starts with the week-defining development. "
+            "Connect last week's moves to this week's matchups, name the stakes, and keep the reader moving. "
+            "Use one memorable line when the evidence earns it, but do not bury the decision under theater."
+        ),
+    ),
+    "waiver_wire_waverly": ReporterPersona(
+        persona_id="waiver_wire_waverly",
+        name="Waiver Wire Waverly",
+        description="A patient market watcher who finds risers, fallers, and roster-specific fits.",
+        role="waiver and player-market reporter",
+        voice_contract=(
+            "Write like Waiver Wire Waverly: curious, practical, and alert to the player behind the headline. "
+            "Separate a real role change from a noisy box-score spike, explain fit for this roster, and label "
+            "the cost, confidence, and reason to pass."
+        ),
+    ),
+    "trade_desk_talia": ReporterPersona(
+        persona_id="trade_desk_talia",
+        name="Trade Desk Talia",
+        description="A counterparty specialist who sees trades through both managers' incentives.",
+        role="trade and market-structure reporter",
+        voice_contract=(
+            "Write like Trade Desk Talia: read the same asset from both sides of the table. Explain what each "
+            "manager appears to value from observed behavior, distinguish a plausible fit from a fantasy quote, "
+            "and identify the disagreement that could create value."
+        ),
+    ),
+    "look_ahead_lonnie": ReporterPersona(
+        persona_id="look_ahead_lonnie",
+        name="Look-Ahead Lonnie",
+        description="A long-horizon strategist focused on schedules, windows, stashes, and deadlines.",
+        role="long-horizon strategy reporter",
+        voice_contract=(
+            "Write like Look-Ahead Lonnie: calm, patient, and slightly early to the important thing. "
+            "Favor timelines, playoff paths, schedule pressure, roster windows, and conditional stashes. "
+            "Make the future actionable without pretending a projection is a promise."
+        ),
+    ),
+    "dossier_dana": ReporterPersona(
+        persona_id="dossier_dana",
+        name="Dossier Dana",
+        description="A league archivist who turns seasons of transactions into useful manager profiles.",
+        role="team and manager dossier editor",
+        voice_contract=(
+            "Write like Dossier Dana: observant, evidence-first, and excellent at remembering the room. "
+            "Describe roster construction and repeated behavior across seasons, distinguish observation from "
+            "inference, and surface where this manager may be a useful trade partner."
+        ),
+    ),
     "front_office": ReporterPersona(
         persona_id="front_office",
         name="The Front Office",
@@ -62,6 +118,18 @@ REPORTER_PERSONAS: dict[str, ReporterPersona] = {
 }
 
 
+# The edition is a newsroom, not one voice repeated five times. League
+# preferences may override an assignment through ``article_reporters`` while
+# keeping these defaults useful for every newly linked league.
+DEFAULT_ARTICLE_REPORTERS: dict[str, str] = {
+    "team_report": "topline_tony",
+    "market_watch": "waiver_wire_waverly",
+    "trade_desk": "trade_desk_talia",
+    "manager_intel": "dossier_dana",
+    "daily_brief": "look_ahead_lonnie",
+}
+
+
 def normalize_writer_preferences(value: Any) -> dict[str, Any]:
     """Return a safe, backward-compatible preference payload for one league."""
 
@@ -70,24 +138,38 @@ def normalize_writer_preferences(value: Any) -> dict[str, Any]:
     if persona_id not in REPORTER_PERSONAS:
         persona_id = DEFAULT_PERSONA_ID
     custom_instructions = str(preferences.get("custom_instructions") or "").strip()
+    article_reporters = preferences.get("article_reporters")
+    if not isinstance(article_reporters, Mapping):
+        article_reporters = {}
     preferences["persona_id"] = persona_id
     preferences["custom_instructions"] = custom_instructions[:800]
+    preferences["article_reporters"] = {
+        str(article_key): str(selected).strip().lower()
+        for article_key, selected in article_reporters.items()
+        if str(article_key).strip() and str(selected).strip().lower() in REPORTER_PERSONAS
+    }
     return preferences
 
 
-def resolve_reporter_persona(value: Any = None) -> ReporterPersona:
+def resolve_reporter_persona(value: Any = None, article_key: str | None = None) -> ReporterPersona:
     preferences = normalize_writer_preferences(value)
-    return REPORTER_PERSONAS[preferences["persona_id"]]
+    selected = preferences.get("article_reporters", {}).get(str(article_key or ""))
+    global_persona = preferences["persona_id"]
+    # Existing league profiles that explicitly selected scout/quant/etc. keep
+    # their global voice. New/default profiles use the newsroom lineup.
+    if not selected and global_persona not in {DEFAULT_PERSONA_ID, ""}:
+        return REPORTER_PERSONAS[global_persona]
+    return REPORTER_PERSONAS[selected or DEFAULT_ARTICLE_REPORTERS.get(str(article_key or ""), global_persona)]
 
 
-def persona_prompt_block(value: Any = None) -> str:
+def persona_prompt_block(value: Any = None, article_key: str | None = None) -> str:
     """Render only the voice contract; shared safety rules are appended by callers."""
 
     preferences = normalize_writer_preferences(value)
-    persona = REPORTER_PERSONAS[preferences["persona_id"]]
+    persona = resolve_reporter_persona(preferences, article_key)
     custom = preferences.get("custom_instructions", "")
     lines = [
-        f"Reporter persona: {persona.name}.",
+        f"Reporter persona: {persona.name} ({persona.role}).",
         f"Persona contract: {persona.voice_contract}",
         "The persona controls tone and emphasis only; it never overrides evidence, citations, or safety rules.",
     ]
@@ -96,23 +178,38 @@ def persona_prompt_block(value: Any = None) -> str:
     return "\n".join(lines)
 
 
-def public_reporter_personas() -> list[dict[str, str]]:
+def public_reporter_personas(include_newsroom: bool = False) -> list[dict[str, str]]:
     """Return the selector-safe persona catalog for authenticated UI surfaces."""
 
+    personas = REPORTER_PERSONAS.values() if include_newsroom else (
+        REPORTER_PERSONAS["front_office"],
+        REPORTER_PERSONAS["scout"],
+        REPORTER_PERSONAS["commissioner"],
+        REPORTER_PERSONAS["quant"],
+    )
     return [
         {
             "persona_id": persona.persona_id,
             "name": persona.name,
             "description": persona.description,
+            "role": persona.role,
         }
-        for persona in REPORTER_PERSONAS.values()
+        for persona in personas
     ]
 
 
-def persona_metadata(value: Any = None) -> dict[str, str]:
-    persona = resolve_reporter_persona(value)
+def persona_metadata(value: Any = None, article_key: str | None = None) -> dict[str, str]:
+    persona = resolve_reporter_persona(value, article_key)
     return {
         "persona_id": persona.persona_id,
         "name": persona.name,
         "description": persona.description,
+        "role": persona.role,
+        "article_key": str(article_key or ""),
     }
+
+
+def reporter_lineup(value: Any = None) -> list[dict[str, str]]:
+    """Return the resolved reporter for every article in editorial order."""
+
+    return [persona_metadata(value, article_key) for article_key in DEFAULT_ARTICLE_REPORTERS]

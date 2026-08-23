@@ -45,6 +45,8 @@ def discover_leagues(api: SleeperAPI, username: str, season: str) -> list[dict[s
                 "season": str(season),
                 "league_type": classify_league(league),
                 "roster_id": roster_id,
+                "sleeper_user_id": user_id,
+                "identity_status": "verified_roster_match" if roster_id is not None else "unverified",
                 "total_rosters": league.get("total_rosters"),
             }
         )

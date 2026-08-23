@@ -9,6 +9,7 @@ import pandas as pd
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
+from .personas import reporter_lineup
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
 
@@ -164,6 +165,7 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "sellTheses": _json_items(analysis_dir / "sell_theses.json"),
         "tradeTheses": _json_items(analysis_dir / "trade_theses.json"),
         "managerDossierItems": _json_items(analysis_dir / "manager_dossiers.json"),
+        "managerDossierReceipt": _json_receipt(analysis_dir / "manager_dossiers.json"),
         "playerDossierItems": _json_items(analysis_dir / "player_dossiers.json"),
         "contextPackets": _json_items(analysis_dir / "analysis_context_packets.json"),
         "validation": _json_items(analysis_dir / "analysis_validation.json"),
@@ -209,6 +211,20 @@ def _json_items(path: Path) -> list[dict[str, Any]]:
     return []
 
 
+def _json_receipt(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {
+        key: payload.get(key)
+        for key in ("update_mode", "item_count", "new_count", "updated_count", "unchanged_count", "fingerprint")
+        if key in payload
+    } if isinstance(payload, dict) else {}
+
+
 def _text_or_empty(path: Path) -> str:
     if not path.exists():
         return ""
@@ -250,6 +266,17 @@ def _write_data_chunks(
         my_team_name=my_team_name,
         config=config,
     )
+    context = config.get("context") if isinstance(config.get("context"), Mapping) else {}
+    identity_receipt = {
+        "status": "verified" if context.get("user_id") and context.get("roster_id") not in (None, "") else "unverified",
+        "user_id": context.get("user_id"),
+        "league_id": str(league_id or context.get("league_id") or ""),
+        "season": str(context.get("season") or config.get("current_season") or ""),
+        "roster_id": context.get("roster_id"),
+        "team_name": my_team_name,
+        "display_name": context.get("display_name", ""),
+        "source": "verified_roster_scope" if context.get("roster_id") not in (None, "") else "legacy_or_unassigned",
+    }
     draft_room = build_draft_room(
         tables,
         config,
@@ -267,6 +294,8 @@ def _write_data_chunks(
         "writerPreferences": config.get("writer_preferences") or {},
         "managerTradeProfiles": config.get("manager_trade_profiles") or [],
         "reporterPersona": editorial.get("reporter_persona") or {},
+        "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
+        "identityReceipt": identity_receipt,
         "trackedPicks": config.get("tracked_picks") or [],
         "currentSeason": config.get("current_season", ""),
         "configuredLeagues": config.get("leagues") or {},
@@ -307,6 +336,8 @@ def _write_data_chunks(
         "leagueId": str(league_id or ""),
         "editorialSchema": editorial.get("schema_version", "issue_v1"),
         "reporterPersona": editorial.get("reporter_persona") or {},
+        "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
+        "identityReceipt": identity_receipt,
     }
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
@@ -878,7 +909,7 @@ def _page(
       <div id="manager-cycle-table"></div>
       <h3>Manager Tag Evidence</h3>
       <div id="manager-profile-tag-table"></div>
-      <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossiers"></div></div>
+      <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossier-receipt" class="note"></div><div id="manager-dossiers"></div></div>
     </div>
 
     <div id="manager-map" class="view-block">
@@ -1067,7 +1098,7 @@ def _page(
           <button id="operator-reload" type="button">Reload Latest</button>
           <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
         </div>
-        <p class="note">Update &amp; Write Analysis refreshes the data, then has Claude write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site (requires ANTHROPIC_API_KEY on the server). Each article falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
+      <p class="note">Update &amp; Write Analysis refreshes the data, then has the configured writer provider write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site. Each article has its own reporter lens and falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
         <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
         <div id="operator-status-panel"></div>
         <div id="operator-chat-context-status"></div>
@@ -1643,6 +1674,10 @@ def _page(
       document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
       document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
       document.getElementById('manager-dossiers').innerHTML = markdownBrief(analysis.managerDossiers);
+      const dossierReceipt = analysis.managerDossierReceipt || {{}};
+      document.getElementById('manager-dossier-receipt').textContent = dossierReceipt.item_count
+        ? `${{dossierReceipt.item_count}} dossiers · ${{dossierReceipt.updated_count || 0}} updated · ${{dossierReceipt.unchanged_count || 0}} unchanged this refresh`
+        : 'No dossier update receipt yet.';
       document.getElementById('news-impact-brief').innerHTML = markdownBrief(analysis.newsImpactBrief);
       document.getElementById('market-gap-table').innerHTML = table(filteredMarketGaps(), marketGapColumns);
       document.getElementById('edge-we-value-more').innerHTML = counterpartyCards(filteredCounterpartyEdges('we_may_value_more').slice(0, 5));

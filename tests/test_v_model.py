@@ -315,7 +315,7 @@ class VModelTests(unittest.TestCase):
                 result = operator.generate_insights_automatically()
 
         self.assertEqual(result["state"], "failed")
-        self.assertIn("ANTHROPIC_API_KEY", result["message"])
+        self.assertIn("OPENAI_API_KEY", result["message"])
         mock_post.assert_not_called()
 
     def test_generate_insight_output_via_llm_uses_tool_forced_request(self) -> None:
@@ -395,7 +395,11 @@ class VModelTests(unittest.TestCase):
             def dispatching_post(*args, **kwargs):
                 return self._dispatching_llm_response(kwargs["json"]["tool_choice"]["name"])
 
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+            with patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=True,
+            ):
                 with patch.multiple(operator, **dirs):
                     with patch("src.operator.requests.post", side_effect=dispatching_post):
                         result = operator.generate_insights_automatically()
@@ -414,7 +418,11 @@ class VModelTests(unittest.TestCase):
             dirs = self._operator_dirs(Path(tmp))
             self._seed_dossiers(dirs["ANALYSIS_DIR"])
 
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+            with patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=True,
+            ):
                 with patch.multiple(operator, **dirs):
                     with patch("src.operator.requests.post", side_effect=RuntimeError("network down")):
                         result = operator.generate_insights_automatically()
@@ -435,7 +443,11 @@ class VModelTests(unittest.TestCase):
                     raise RuntimeError("brief model overloaded")
                 return self._dispatching_llm_response("emit_insight_cards")
 
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+            with patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=True,
+            ):
                 with patch.multiple(operator, **dirs):
                     with patch("src.operator.requests.post", side_effect=cards_only_post):
                         result = operator.generate_insights_automatically()
@@ -747,7 +759,11 @@ class VModelTests(unittest.TestCase):
                         "cited_evidence_ids": [evidence_id],
                     }
 
-                with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False), patch.object(
+                with patch.dict(
+                    os.environ,
+                    {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                    clear=False,
+                ), patch.object(
                     operator, "generate_article_via_llm", side_effect=fake_article
                 ):
                     results = {
@@ -851,7 +867,10 @@ class VModelTests(unittest.TestCase):
                 }
                 return resp
 
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+            with patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+            ), \
                  patch.object(operator, "ANALYSIS_DIR", analysis), \
                  patch.object(articles, "PROCESSED_DIR", processed), \
                  patch.object(articles, "resolve_active_roster_id", return_value=2), \
@@ -968,6 +987,17 @@ class VModelTests(unittest.TestCase):
 
         self.assertEqual(my_roster_id, 2)
         self.assertEqual(roster_map[2]["team_name"], "Melkor Lord of Light")
+
+    def test_stale_team_name_cannot_override_configured_roster_id(self) -> None:
+        users = [
+            {"user_id": "u2", "display_name": "joe3489", "metadata": {"team_name": "Melkor Lord of Light"}},
+            {"user_id": "u4", "display_name": "Crumplesacks", "metadata": {"team_name": "Moose Caboose"}},
+        ]
+        rosters = [{"roster_id": 2, "owner_id": "u2"}, {"roster_id": 4, "owner_id": "u4"}]
+
+        _, my_roster_id = build_roster_maps(rosters, users, "joe3489", "Moose Caboose", 2)
+
+        self.assertEqual(my_roster_id, 2)
 
     def test_players_table_exports_canonical_fields(self) -> None:
         rows = players_table(

@@ -41,8 +41,11 @@ def build_roster_maps(
             "team_name": team_name,
         }
         roster_map[roster_id] = record
-        if configured_roster_id is not None and roster_id == configured_roster_id:
-            my_roster_id = roster_id
+        if configured_roster_id is not None:
+            # An exact roster ID is the authenticated identity contract. Do
+            # not let a stale team name later in the loop overwrite it.
+            if roster_id == configured_roster_id:
+                my_roster_id = roster_id
         elif display_name.lower() == my_display_name.lower() or team_name.lower() == my_team_name.lower():
             my_roster_id = roster_id
 

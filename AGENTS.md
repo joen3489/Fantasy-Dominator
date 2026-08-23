@@ -1,0 +1,103 @@
+# Fantasy Dominator agent guide
+
+This repository is the Fantasy Dominator personal fantasy-football front office.
+The product is a private, browser-first media experience over a trustworthy
+Sleeper data room. Future changes should make it easier for one manager to
+understand multiple teams, find actionable edges, and read evidence-backed
+editorial written in distinct voices.
+
+## Non-negotiable product rules
+
+1. Sleeper is the source of truth for league identity, rosters, users,
+   transactions, drafts, picks, and player metadata.
+2. Preserve raw source payloads before normalization. Deterministic code owns
+   facts, joins, scores, projections, labels, freshness, and source traces.
+3. The identity boundary is explicit:
+   `Clerk user -> Sleeper user -> league -> roster_id -> team profile`.
+   A display name or team name is never a substitute for a roster ID.
+4. League/team customization is private state. It must not leak between users,
+   leagues, or rosters, and it must not overwrite canonical source facts.
+5. Writers are editorial lenses over validated evidence. They may emphasize,
+   explain, and disagree; they may not invent facts, replace deterministic
+   analysis, execute trades, send messages, or imply that an estimate is an
+   observed action.
+6. The human manager makes the final decision. Recommendations must show why,
+   risk, confidence, and source trace.
+7. Content generation is explicit and cost-incurring. Do not regenerate a
+   dossier or article when its evidence fingerprint and relevant inputs have
+   not changed.
+8. The media facade should make the data room legible, not hide it. Every
+   important story should have a path to the underlying evidence and freshness
+   receipt.
+
+## Source-of-truth map
+
+- `docs/data_contract.md`: enforceable table, source, trace, and V-model rules.
+- `docs/sprint_plan.md`: ordered product roadmap and acceptance checks.
+- `docs/front_office_principles.md`: product north star and design doctrine.
+- `docs/reporter_personas.md`: writer voices and article assignments.
+- `docs/production_runbook.md`: Railway, Clerk, durable storage, and smoke
+  verification procedure.
+- `docs/decision_log.md`: regression lessons and decisions that should not be
+  rediscovered by future work.
+- `config/leagues.yml`: legacy/default seed and strategy configuration; it is
+  not a replacement for authenticated league-scoped state.
+- `data/processed/`, `data/analysis/`, and `data/site/`: generated artifacts;
+  inspect them, but do not treat generated prose as canonical facts.
+
+When documents appear to conflict, use this order: raw source and code
+behavior, `docs/data_contract.md`, this guide and product principles, then the
+roadmap. Update the relevant document when a decision changes; do not leave
+contradictory instructions in place.
+
+## Safe change protocol
+
+Before changing an identity, refresh, writer, or serving path:
+
+- trace the full path from browser request to store/action, database or file
+  write, generated artifact, and browser response;
+- preserve existing user changes and unrelated work in the working tree;
+- keep read-only behavior for Sleeper and external sources;
+- make migrations additive and idempotent;
+- add an adversarial test for the failure mode, not only a happy-path test;
+- expose a receipt or status when identity, freshness, storage, or generation
+  is limited;
+- never add secrets, session tokens, or private production data to Git.
+
+For LLM work, use the provider boundary in `src/llm.py`. Keep model/provider
+configuration in environment variables, keep structured output schemas strict,
+and pass only the selected league's validated context. Luna is the configured
+OpenAI model (`gpt-5.6-luna`); `reasoning.effort` is a separate tuning value,
+not part of the model name.
+
+## Verification gate
+
+Run the smallest relevant tests while iterating, then run the full gate before
+handoff:
+
+```powershell
+python -m unittest discover -s tests -p "test*.py"
+python scripts\validate_local_data.py
+git diff --check
+```
+
+For a deployment, also run `python scripts\smoke_live.py` with
+`FRONT_OFFICE_EXPECTED_REVISION` set to the commit that should be live. A
+local green suite does not prove that Railway is serving the intended revision,
+that the current Clerk identity can see its teams, or that `/app/data` is a
+durable volume. Authenticated production verification is required for those
+claims; see `docs/production_runbook.md`.
+
+## Anti-regression checklist
+
+- Can the current Clerk user see the same linked Sleeper user and roster after
+  refresh, logout/login, and deployment?
+- Does an exact `roster_id` win over stale or duplicate team names?
+- Can a shared or legacy bundle ever serve private content for the wrong
+  identity?
+- Is every article assigned the intended reporter lens?
+- Is the evidence current enough for the claim being made?
+- Are unchanged dossiers skipped instead of spending another generation call?
+- Does a degraded provider/source state remain visible to the reader?
+- Does the UI present a useful story first while keeping evidence one click
+  away?

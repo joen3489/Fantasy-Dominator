@@ -16,6 +16,15 @@ The app should help a dynasty manager understand:
 - which news items create trade windows
 - what the analyst layer thinks, with evidence and confidence
 
+## Current implementation note (2026-08-23)
+
+The writing layer is now provider-neutral through `src/llm.py`. OpenAI
+`gpt-5.6-luna` is the default production writer, with reasoning effort set
+independently; Anthropic remains available only when explicitly configured.
+Sprint 13 and Sprint 16 entries below describe the historical Anthropic-first
+implementation and its validation lessons. Their provider-specific names do
+not override the current adapter or deployment configuration.
+
 Core invariants:
 
 - Sleeper is the league source of truth.

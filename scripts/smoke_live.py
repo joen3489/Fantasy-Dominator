@@ -81,7 +81,8 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
         blockers = payload.get("deployment_blockers") or ["the deployment gate is not ready"]
         errors.append("deployment gate is not ready: " + "; ".join(str(blocker) for blocker in blockers))
     if payload.get("writer_api_configured") is not True:
-        warnings.append("ANTHROPIC_API_KEY is not configured; only deterministic editions are available")
+        key_env = str(payload.get("writer_api_key_env") or "the configured writer API key")
+        warnings.append(f"{key_env} is not configured; only deterministic editions are available")
     return errors, warnings
 
 

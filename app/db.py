@@ -31,6 +31,7 @@ def init_db(path: Path | None = None) -> None:
                 id INTEGER PRIMARY KEY,
                 clerk_user_id TEXT UNIQUE NOT NULL,
                 sleeper_username TEXT,
+                sleeper_user_id TEXT,
                 created_at TEXT
             );
 
@@ -41,6 +42,8 @@ def init_db(path: Path | None = None) -> None:
                 league_type TEXT,
                 name TEXT,
                 roster_id INTEGER,
+                identity_status TEXT NOT NULL DEFAULT 'unverified',
+                identity_checked_at TEXT,
                 enabled INTEGER DEFAULT 1,
                 PRIMARY KEY(user_id, league_id)
             );
@@ -104,6 +107,9 @@ def init_db(path: Path | None = None) -> None:
             );
             """
         )
+        _ensure_column(conn, "users", "sleeper_user_id", "TEXT")
+        _ensure_column(conn, "user_leagues", "identity_status", "TEXT NOT NULL DEFAULT 'unverified'")
+        _ensure_column(conn, "user_leagues", "identity_checked_at", "TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -119,7 +125,7 @@ def get_or_create_user(clerk_user_id: str) -> dict[str, Any]:
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, clerk_user_id, sleeper_username, created_at FROM users WHERE clerk_user_id = ?",
+            "SELECT id, clerk_user_id, sleeper_username, sleeper_user_id, created_at FROM users WHERE clerk_user_id = ?",
             (clerk_user_id,),
         ).fetchone()
         if row is None:
@@ -130,11 +136,15 @@ def get_or_create_user(clerk_user_id: str) -> dict[str, Any]:
 
 
 def set_sleeper_username(user_id: int, sleeper_username: str) -> None:
+    set_sleeper_account(user_id, sleeper_username, None)
+
+
+def set_sleeper_account(user_id: int, sleeper_username: str, sleeper_user_id: str | None) -> None:
     conn = _connect()
     try:
         conn.execute(
-            "UPDATE users SET sleeper_username = ? WHERE id = ?",
-            (sleeper_username, user_id),
+            "UPDATE users SET sleeper_username = ?, sleeper_user_id = ? WHERE id = ?",
+            (sleeper_username, sleeper_user_id, user_id),
         )
         conn.commit()
     finally:
@@ -146,13 +156,18 @@ def upsert_user_league(user_id: int, entry: dict[str, Any]) -> dict[str, Any]:
     try:
         conn.execute(
             """
-            INSERT INTO user_leagues(user_id, league_id, season, league_type, name, roster_id, enabled)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO user_leagues(
+                user_id, league_id, season, league_type, name, roster_id,
+                identity_status, identity_checked_at, enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(user_id, league_id) DO UPDATE SET
                 season = excluded.season,
                 league_type = excluded.league_type,
                 name = excluded.name,
-                roster_id = excluded.roster_id
+                roster_id = excluded.roster_id,
+                identity_status = excluded.identity_status,
+                identity_checked_at = excluded.identity_checked_at
             """,
             (
                 user_id,
@@ -161,12 +176,15 @@ def upsert_user_league(user_id: int, entry: dict[str, Any]) -> dict[str, Any]:
                 str(entry.get("league_type") or ""),
                 str(entry.get("name") or ""),
                 entry.get("roster_id"),
+                str(entry.get("identity_status") or ("verified_roster_match" if entry.get("roster_id") not in (None, "") else "unverified")),
+                str(entry.get("identity_checked_at") or datetime.now(timezone.utc).isoformat()),
             ),
         )
         conn.commit()
         row = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id, enabled
+            SELECT user_id, league_id, season, league_type, name, roster_id,
+                   identity_status, identity_checked_at, enabled
             FROM user_leagues
             WHERE user_id = ? AND league_id = ?
             """,
@@ -184,7 +202,8 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id, enabled
+            SELECT user_id, league_id, season, league_type, name, roster_id,
+                   identity_status, identity_checked_at, enabled
             FROM user_leagues
             WHERE user_id = ?
             ORDER BY enabled DESC, name COLLATE NOCASE, league_id
@@ -347,7 +366,8 @@ def get_user_league(user_id: int, league_id: str) -> dict[str, Any] | None:
     try:
         row = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id, enabled
+            SELECT user_id, league_id, season, league_type, name, roster_id,
+                   identity_status, identity_checked_at, enabled
             FROM user_leagues
             WHERE user_id = ? AND league_id = ?
             """,
@@ -708,7 +728,7 @@ def list_users_with_sleeper() -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT id, clerk_user_id, sleeper_username, created_at
+            SELECT id, clerk_user_id, sleeper_username, sleeper_user_id, created_at
             FROM users
             WHERE sleeper_username IS NOT NULL AND sleeper_username != ''
             ORDER BY id
@@ -744,7 +764,8 @@ def toggle_league(user_id: int, league_id: str, enabled: bool | None = None) -> 
     try:
         current = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id, enabled
+            SELECT user_id, league_id, season, league_type, name, roster_id,
+                   identity_status, identity_checked_at, enabled
             FROM user_leagues
             WHERE user_id = ? AND league_id = ?
             """,
@@ -760,7 +781,8 @@ def toggle_league(user_id: int, league_id: str, enabled: bool | None = None) -> 
         conn.commit()
         row = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id, enabled
+            SELECT user_id, league_id, season, league_type, name, roster_id,
+                   identity_status, identity_checked_at, enabled
             FROM user_leagues
             WHERE user_id = ? AND league_id = ?
             """,
@@ -777,6 +799,14 @@ def _connect(path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    """Apply additive schema migrations without disturbing the durable store."""
+
+    columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:

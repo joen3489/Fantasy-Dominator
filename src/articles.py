@@ -81,6 +81,7 @@ class Article:
     scope: Callable[[ArticleContext], list[dict[str, Any]]]
     section: str
     is_summary: bool = False
+    reporter_id: str = "front_office"
 
     @property
     def output_filename(self) -> str:
@@ -280,11 +281,11 @@ def _scope_daily_brief(ctx: ArticleContext) -> list[dict[str, Any]]:
 
 
 ARTICLES: list[Article] = [
-    Article("team_report", "Your Team Report", "team_report.md", ("## Cornerstones", "## Shop Candidates"), _scope_team_report, "team-report"),
-    Article("market_watch", "Market Watch", "market_watch.md", ("## Buy-Low Targets", "## Sell-High Windows"), _scope_market_watch, "market-watch"),
-    Article("trade_desk", "Trade Desk Read", "trade_desk.md", ("## Best Fits", "## Steer Clear"), _scope_trade_desk, "trade-desk-read"),
-    Article("manager_intel", "Manager Intel", "manager_intel.md", ("## Contenders", "## Rebuilders"), _scope_manager_intel, "manager-intel"),
-    Article("daily_brief", "Daily GM Brief", "daily_brief.md", ("## Target Theses", "## Sell Windows", "## Manager Angles"), _scope_daily_brief, "daily-gm-brief", is_summary=True),
+    Article("team_report", "Your Team Report", "team_report.md", ("## Cornerstones", "## Shop Candidates"), _scope_team_report, "team-report", reporter_id="topline_tony"),
+    Article("market_watch", "Market Watch", "market_watch.md", ("## Buy-Low Targets", "## Sell-High Windows"), _scope_market_watch, "market-watch", reporter_id="waiver_wire_waverly"),
+    Article("trade_desk", "Trade Desk Read", "trade_desk.md", ("## Best Fits", "## Steer Clear"), _scope_trade_desk, "trade-desk-read", reporter_id="trade_desk_talia"),
+    Article("manager_intel", "Manager Intel", "manager_intel.md", ("## Contenders", "## Rebuilders"), _scope_manager_intel, "manager-intel", reporter_id="dossier_dana"),
+    Article("daily_brief", "Daily GM Brief", "daily_brief.md", ("## Target Theses", "## Sell Windows", "## Manager Angles"), _scope_daily_brief, "daily-gm-brief", is_summary=True, reporter_id="look_ahead_lonnie"),
 ]
 
 

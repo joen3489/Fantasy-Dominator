@@ -620,6 +620,10 @@
       .article-card-kicker { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
       .article-card-title { font-family: Georgia, 'Times New Roman', serif; font-size: 17px; line-height: 1.05; }
       .article-card-status { color: #70551b; font-size: 11px; line-height: 1.25; }
+      .reporter-lineup { display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: thin; }
+      .reporter-chip { display: grid; gap: 2px; min-width: 126px; padding: 8px 9px; background: #f4f0e7; border: 1px solid var(--line); border-radius: 8px; }
+      .reporter-chip strong { font-size: 12px; white-space: nowrap; }
+      .reporter-chip small { color: var(--muted); font-size: 10px; line-height: 1.2; }
       .edition-lineup { display: grid; gap: 10px; margin-top: 18px; }
       .edition-lineup-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
       .edition-lineup-heading h2 { margin: 0; font-size: 16px; text-transform: uppercase; letter-spacing: .08em; }
@@ -692,6 +696,8 @@
             {% set featured_content = (featured_league.content_status or {}) %}
             <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
               <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
+              {% if featured_league.managed_team_name %}<span>Managing: <strong>{{ featured_league.managed_team_name }}</strong></span>{% endif %}
+              <span>Identity: <strong>{{ featured_league.identity_label or "Roster needs verification" }}</strong></span>
               <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
               <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
               <span>{{ featured_receipt.as_of_label or "Latest refresh" }}</span>
@@ -800,8 +806,15 @@
           <section class="article-shelf" aria-labelledby="article-shelf-title" data-testid="article-shelf">
             <div class="article-shelf-heading">
               <h2 id="article-shelf-title">The desk</h2>
-              <p>Five ways into the same evidence-backed league edition.</p>
+              <p>Five reporters, five lenses on the same evidence-backed edition.</p>
             </div>
+            {% if edition.reporter_lineup %}
+              <div class="reporter-lineup" data-testid="reporter-lineup" aria-label="Edition newsroom">
+                {% for reporter in edition.reporter_lineup %}
+                  <span class="reporter-chip"><strong>{{ reporter.name }}</strong><small>{{ reporter.role }}</small></span>
+                {% endfor %}
+              </div>
+            {% endif %}
             <div class="article-shelf-grid">
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-today">
                 <span class="article-card-kicker">Daily GM Brief</span>

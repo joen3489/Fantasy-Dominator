@@ -362,6 +362,16 @@ def refresh_user(
 
             app_db = app_db_module
             app_db.init_db()
+            sleeper_user_ids = {
+                str(entry.get("sleeper_user_id") or "")
+                for entry in entries
+                if entry.get("sleeper_user_id")
+            }
+            app_db.set_sleeper_account(
+                db_user_id,
+                username,
+                next(iter(sleeper_user_ids), None),
+            )
         except (TypeError, ValueError):
             db_user_id = None
 

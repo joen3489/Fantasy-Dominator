@@ -31,6 +31,8 @@ class FantasyContext:
     strategy_profile: dict[str, Any] = field(default_factory=dict)
     writer_preferences: dict[str, Any] = field(default_factory=dict)
     manager_trade_profiles: list[dict[str, Any]] = field(default_factory=list)
+    identity_status: str = "unverified"
+    identity_checked_at: str = ""
 
     @property
     def scope_key(self) -> str:
@@ -96,6 +98,8 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         "league_name": context.league_name,
         "team_name": context.team_name,
         "display_name": context.display_name,
+        "identity_status": context.identity_status,
+        "identity_checked_at": context.identity_checked_at,
         "writer_preferences": normalize_writer_preferences(context.writer_preferences),
         "manager_trade_profiles": deepcopy(context.manager_trade_profiles),
     }
@@ -128,6 +132,11 @@ def context_from_league_row(
     except (TypeError, ValueError):
         roster_id = None
 
+    identity_status = str(
+        league.get("identity_status")
+        or ("verified_roster_match" if roster_id is not None else "unverified")
+    )
+
     return FantasyContext(
         user_id=str(user_id),
         league_id=str(league.get("league_id", "")),
@@ -140,4 +149,6 @@ def context_from_league_row(
         strategy_profile=deepcopy(dict(strategy)),
         writer_preferences=deepcopy(dict(writer_preferences)),
         manager_trade_profiles=[deepcopy(dict(item)) for item in (manager_trade_profiles or []) if isinstance(item, Mapping)],
+        identity_status=identity_status,
+        identity_checked_at=str(league.get("identity_checked_at") or ""),
     )

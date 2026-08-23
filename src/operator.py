@@ -16,6 +16,7 @@ from . import articles
 from .browser_site import build_browser_site
 from .context import FantasyContext
 from .league_paths import LeaguePaths
+from .llm import call_structured_tool, configured_llm, writer_api_configuration
 from .personas import persona_metadata, persona_prompt_block
 from .utils import (
     ANALYSIS_DIR,
@@ -35,10 +36,6 @@ VALIDATED_INSIGHTS_PATH = ANALYSIS_DIR / "validated_insight_cards.json"
 INSIGHT_VALIDATION_PATH = ANALYSIS_DIR / "insight_card_validation.json"
 DAILY_GM_BRIEF_PATH = ANALYSIS_DIR / "daily_gm_brief.md"
 DAILY_GM_BRIEF_VALIDATION_PATH = ANALYSIS_DIR / "daily_gm_brief_validation.json"
-
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_API_VERSION = "2023-06-01"
-DEFAULT_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
 
 FORBIDDEN_TERMS = (
     "accepted",
@@ -346,9 +343,7 @@ def import_insight_output(payload: dict[str, Any], paths: LeaguePaths | None = N
 
 
 def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model: str) -> dict[str, Any]:
-    """Call the Anthropic Messages API with the packet's own instructions/evidence,
-    forcing a tool call so the response is reliably structured JSON matching
-    required_output_schema -- far more robust than parsing freeform text."""
+    """Force a structured insight tool call through the configured provider."""
     instructions = packet.get("instructions", {})
     system_prompt = (
         f"{instructions.get('role', '')}\n\n"
@@ -391,31 +386,14 @@ def generate_insight_output_via_llm(packet: dict[str, Any], api_key: str, model:
             "required": ["items"],
         },
     }
-    response = requests.post(
-        ANTHROPIC_API_URL,
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_API_VERSION,
-            "content-type": "application/json",
-        },
-        json={
-            "model": model,
-            "max_tokens": 8192,
-            "system": system_prompt,
-            "tools": [tool],
-            "tool_choice": {"type": "tool", "name": "emit_insight_cards"},
-            "messages": [{"role": "user", "content": json.dumps({"evidence": packet.get("evidence", [])})}],
-        },
-        timeout=60,
+    return call_structured_tool(
+        system_prompt=system_prompt,
+        evidence=packet.get("evidence", []),
+        api_key=api_key,
+        model=model,
+        tool=tool,
+        request_post=requests.post,
     )
-    response.raise_for_status()
-    body = response.json()
-    if body.get("stop_reason") == "max_tokens":
-        raise ValueError("Anthropic response was truncated at the token limit before finishing the insight cards.")
-    for block in body.get("content", []):
-        if block.get("type") == "tool_use" and block.get("name") == "emit_insight_cards":
-            return block.get("input", {})
-    raise ValueError("Anthropic response did not include an emit_insight_cards tool call.")
 
 
 def generate_daily_gm_brief_via_llm(
@@ -427,31 +405,14 @@ def generate_daily_gm_brief_via_llm(
     """Sibling to generate_insight_output_via_llm() for a different output shape: one narrative
     blob instead of a list of entity cards, so it gets its own persona-carrying system prompt and
     its own forced tool rather than overloading the entity-card schema."""
-    response = requests.post(
-        ANTHROPIC_API_URL,
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_API_VERSION,
-            "content-type": "application/json",
-        },
-        json={
-            "model": model,
-            "max_tokens": 2048,
-            "system": f"{DAILY_GM_BRIEF_SYSTEM_PROMPT}\n\n{persona_prompt_block(writer_preferences)}\n\n{_SHARED_SAFETY_RULES}",
-            "tools": [DAILY_GM_BRIEF_TOOL],
-            "tool_choice": {"type": "tool", "name": "emit_daily_gm_brief"},
-            "messages": [{"role": "user", "content": json.dumps({"evidence": packet.get("evidence", [])})}],
-        },
-        timeout=60,
+    return call_structured_tool(
+        system_prompt=f"{DAILY_GM_BRIEF_SYSTEM_PROMPT}\n\n{persona_prompt_block(writer_preferences, 'daily_brief')}\n\n{_SHARED_SAFETY_RULES}",
+        evidence=packet.get("evidence", []),
+        api_key=api_key,
+        model=model,
+        tool=DAILY_GM_BRIEF_TOOL,
+        request_post=requests.post,
     )
-    response.raise_for_status()
-    body = response.json()
-    if body.get("stop_reason") == "max_tokens":
-        raise ValueError("Anthropic response was truncated at the token limit before finishing the narrative.")
-    for block in body.get("content", []):
-        if block.get("type") == "tool_use" and block.get("name") == "emit_daily_gm_brief":
-            return block.get("input", {})
-    raise ValueError("Anthropic response did not include an emit_daily_gm_brief tool call.")
 
 
 def validate_daily_gm_brief_output(output: dict[str, Any]) -> dict[str, Any]:
@@ -538,16 +499,17 @@ def generate_insights_automatically(paths: LeaguePaths | None = None) -> dict[st
         with operator_scope(paths):
             return generate_insights_automatically()
     generated_at = _now()
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    llm = configured_llm()
+    api_key = os.environ.get(llm.api_key_env, "")
     if not api_key:
         return {
             "state": "failed",
-            "message": "ANTHROPIC_API_KEY is not set. No LLM call was attempted.",
+            "message": f"{llm.api_key_env} is not set. No LLM call was attempted.",
             "generated_at": generated_at,
             "insight_cards": {"state": "skipped"},
             "daily_gm_brief": {"state": "skipped"},
         }
-    model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
+    model = llm.model
 
     build_insight_packet()
     packet = _safe_json(INSIGHT_PACKET_PATH)
@@ -564,7 +526,12 @@ def generate_insights_automatically(paths: LeaguePaths | None = None) -> dict[st
 
     try:
         card_output = generate_insight_output_via_llm(packet, api_key, model)
-        card_output = dict(card_output) | {"generation_mode": "automatic_llm", "model": model}
+        card_output = dict(card_output) | {
+            "generation_mode": "automatic_llm",
+            "model": model,
+            "provider": llm.provider,
+            "reasoning_effort": llm.reasoning_effort,
+        }
         import_result = import_insight_output(card_output)
         results["insight_cards"] = {
             "state": import_result["state"],
@@ -677,7 +644,7 @@ def _article_system_prompt(
     context_block = _article_context_prompt_block(context)
     sections = [
         articles.load_prompt(article.prompt_filename),
-        persona_prompt_block(writer_preferences),
+        persona_prompt_block(writer_preferences, article.key),
     ]
     if context_block:
         sections.append(context_block)
@@ -686,33 +653,15 @@ def _article_system_prompt(
 
 
 def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]], api_key: str, model: str) -> dict[str, Any]:
-    """Focused single-article call. Small output (one section, a few hundred words) so a 4096
-    ceiling has ample headroom and truncation is a non-issue, unlike the old all-cards-at-once call."""
-    response = requests.post(
-        ANTHROPIC_API_URL,
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_API_VERSION,
-            "content-type": "application/json",
-        },
-        json={
-            "model": model,
-            "max_tokens": 4096,
-            "system": system_prompt,
-            "tools": [ARTICLE_TOOL],
-            "tool_choice": {"type": "tool", "name": "emit_article"},
-            "messages": [{"role": "user", "content": json.dumps({"evidence": evidence})}],
-        },
-        timeout=60,
+    """Focused single-article call through the provider-neutral structured adapter."""
+    return call_structured_tool(
+        system_prompt=system_prompt,
+        evidence=evidence,
+        api_key=api_key,
+        model=model,
+        tool=ARTICLE_TOOL,
+        request_post=requests.post,
     )
-    response.raise_for_status()
-    body = response.json()
-    if body.get("stop_reason") == "max_tokens":
-        raise ValueError("Anthropic response was truncated at the token limit before finishing the article.")
-    for block in body.get("content", []):
-        if block.get("type") == "tool_use" and block.get("name") == "emit_article":
-            return block.get("input", {})
-    raise ValueError("Anthropic response did not include an emit_article tool call.")
 
 
 def validate_article_output(output: dict[str, Any], evidence_ids: set[str], headers: tuple[str, ...]) -> dict[str, Any]:
@@ -750,6 +699,7 @@ def _render_article_markdown(
     generated_at: str,
     output_path: Path,
     writer_preferences: dict[str, Any] | None = None,
+    article_key: str | None = None,
 ) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
@@ -757,7 +707,8 @@ def _render_article_markdown(
         f"artifact_type: {article.key}",
         f"generated_at: {generated_at}",
         "model_mode: automatic_llm",
-        f"reporter_persona: {persona_metadata(writer_preferences)['persona_id']}",
+        f"reporter_persona: {persona_metadata(writer_preferences, article_key)['persona_id']}",
+        f"reporter_name: {persona_metadata(writer_preferences, article_key)['name']}",
     ]
     for key in ("roster_id", "team_name"):
         value = _front_matter_value(existing, key)
@@ -778,10 +729,16 @@ def generate_articles_workflow(
         with operator_scope(paths):
             return generate_articles_workflow(context=context)
     generated_at = _now()
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    llm = configured_llm()
+    api_key = os.environ.get(llm.api_key_env, "")
     if not api_key:
-        return {"state": "failed", "message": "ANTHROPIC_API_KEY is not set. No LLM call was attempted.", "generated_at": generated_at, "articles": {}}
-    model = os.environ.get("FRONT_OFFICE_INSIGHT_MODEL", DEFAULT_INSIGHT_MODEL)
+        return {
+            "state": "failed",
+            "message": f"{llm.api_key_env} is not set. No LLM call was attempted.",
+            "generated_at": generated_at,
+            "articles": {},
+        }
+    model = llm.model
 
     ctx = articles.ArticleContext(
         analysis_dir=ANALYSIS_DIR,
@@ -820,13 +777,25 @@ def generate_articles_workflow(
             if validation["valid"]:
                 output_path = ANALYSIS_DIR / article.output_filename
                 output_path.write_text(
-                    _render_article_markdown(article, validation["narrative"], generated_at, output_path, ctx.writer_preferences),
+                    _render_article_markdown(
+                        article,
+                        validation["narrative"],
+                        generated_at,
+                        output_path,
+                        ctx.writer_preferences,
+                        article.key,
+                    ),
                     encoding="utf-8",
                 )
                 _record_article_artifact(context, article, output_path, validation)
                 if not article.is_summary:
                     ctx.section_outputs[article.key] = validation["narrative"]
-                results[article.key] = {"state": "complete", "message": f"{article.title} written.", "warnings": validation["warnings"]}
+                results[article.key] = {
+                    "state": "complete",
+                    "message": f"{article.title} written.",
+                    "warnings": validation["warnings"],
+                    "reporter": persona_metadata(ctx.writer_preferences, article.key),
+                }
             else:
                 results[article.key] = {"state": "failed", "message": f"{article.title} failed validation.", "errors": validation["errors"]}
         except Exception as exc:  # noqa: BLE001 - one article failing must not sink the rest.
@@ -844,7 +813,10 @@ def generate_articles_workflow(
         "state": state,
         "message": f"Articles generated: {len(completed)} complete, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
         "generated_at": generated_at,
-        "reporter_persona": persona_metadata(ctx.writer_preferences),
+        "provider": llm.provider,
+        "model": model,
+        "reasoning_effort": llm.reasoning_effort,
+        "reporter_persona": persona_metadata(ctx.writer_preferences, "daily_brief"),
         "articles": results,
     }
 
@@ -871,7 +843,8 @@ def _record_article_artifact(
                 "mode": "automatic_llm",
                 "valid": bool(validation.get("valid")),
                 "writer_preferences": context.writer_preferences,
-                "reporter_persona": persona_metadata(context.writer_preferences),
+                "reporter_persona": persona_metadata(context.writer_preferences, article.key),
+                "llm": writer_api_configuration(),
             },
         )
     except (TypeError, ValueError, OSError):

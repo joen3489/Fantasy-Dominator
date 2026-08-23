@@ -25,13 +25,14 @@ class LiveSmokeContractTests(unittest.TestCase):
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
                 "writer_api_configured": False,
+                "writer_api_key_env": "OPENAI_API_KEY",
             }
         )
 
         self.assertTrue(any("expected live" in error for error in errors))
         self.assertTrue(any("durable" in error for error in errors))
         self.assertTrue(any("schema" in error for error in errors))
-        self.assertTrue(any("ANTHROPIC_API_KEY" in warning for warning in warnings))
+        self.assertTrue(any("OPENAI_API_KEY" in warning for warning in warnings))
 
     def test_health_accepts_explicit_private_development_auth(self) -> None:
         errors, warnings = validate_health_payload(

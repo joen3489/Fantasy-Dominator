@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
-from src.analysis import build_manager_intel, build_team_report
+from src.analysis import build_analysis_artifacts, build_manager_intel, build_team_report
 
 
 class DeterministicArticleTests(unittest.TestCase):
@@ -105,6 +107,35 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertIn("trades=8; future_1sts_net=-2", report)
         self.assertIn("Confidence: high", report)
         self.assertNotIn("Evidence Team: picks", report)
+
+    def test_manager_dossiers_emit_incremental_update_receipts(self) -> None:
+        dataframes = {
+            "manager_cycle_profiles": pd.DataFrame(
+                [{
+                    "roster_id": 4,
+                    "team_name": "Archive Team",
+                    "dynasty_cycle": "contender",
+                    "trade_temperature": "active",
+                    "pick_posture": "pick spender",
+                    "confidence": "high",
+                    "evidence": "trades=3",
+                }]
+            ),
+            "manager_profile_tags": pd.DataFrame(
+                [{"entity_id": 4, "tag": "aggressive buyer"}]
+            ),
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            analysis_dir = Path(tmp)
+            first = build_analysis_artifacts(analysis_dir, dataframes, {}, 2)
+            first_payload = (analysis_dir / "manager_dossiers.json").read_text(encoding="utf-8")
+            second = build_analysis_artifacts(analysis_dir, dataframes, {}, 2)
+            second_payload = (analysis_dir / "manager_dossiers.json").read_text(encoding="utf-8")
+
+        self.assertEqual(first["manager_dossier_receipt"]["new_count"], 1)
+        self.assertEqual(second["manager_dossier_receipt"]["unchanged_count"], 1)
+        self.assertNotEqual(first_payload, second_payload)  # generated_at remains an honest refresh receipt.
 
 
 if __name__ == "__main__":

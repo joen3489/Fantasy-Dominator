@@ -19,6 +19,7 @@ from src.browser_site import browser_bundle_is_complete, browser_bundle_missing,
 from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
+from src.llm import writer_api_configuration
 from src.personas import persona_metadata, public_reporter_personas
 from src.sleeper_api import SleeperAPI
 from src.utils import DATA_DIR, load_config, load_json
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
             "off",
         }
         deployment_gate = _production_gate()
+        writer_config = writer_api_configuration()
         return {
             "ok": True,
             "revision": _deployment_revision(),
@@ -123,7 +125,10 @@ def create_app() -> FastAPI:
             "data_root_configured": bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()),
             "database_present": (DATA_DIR / "app.db").is_file(),
             **storage,
-            "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+            "writer_api_configured": writer_config["configured"],
+            "writer_provider": writer_config["provider"],
+            "writer_model": writer_config["model"],
+            "writer_api_key_env": writer_config["api_key_env"],
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
             "scheduler_enabled": scheduler_enabled,
             "deployment_ready": deployment_gate["ready"],
@@ -179,8 +184,8 @@ def create_app() -> FastAPI:
                 "attention": attention_items,
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
                 "operator_status": _operator_status_for_user(user_id),
-                "writer_personas": public_reporter_personas(),
-                "writer_api_configured": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+                "writer_personas": public_reporter_personas(include_newsroom=True),
+                "writer_api_configured": writer_api_configuration()["configured"],
                 "continuity": _continuity_view(user_id),
                 "deployment_gate": _production_gate(),
             },
@@ -211,7 +216,8 @@ def create_app() -> FastAPI:
         _require_deployment_ready()
         entries = discover_leagues(SleeperAPI(), body.sleeper_username, body.season)
         user_id = int(user["id"])
-        db.set_sleeper_username(user_id, body.sleeper_username)
+        sleeper_user_ids = {str(entry.get("sleeper_user_id") or "") for entry in entries if entry.get("sleeper_user_id")}
+        db.set_sleeper_account(user_id, body.sleeper_username, next(iter(sleeper_user_ids), None))
         stored = [db.upsert_user_league(user_id, entry) for entry in entries]
         config = _legacy_config()
         for entry in stored:
@@ -576,14 +582,39 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
     # truthful recovery response. An incomplete private root must not hide a
     # usable migration fallback.
     for candidate in (private, legacy):
-        if browser_bundle_is_complete(candidate.site_dir):
+        if browser_bundle_is_complete(candidate.site_dir) and _bundle_matches_identity(candidate, league):
             return candidate
     for candidate in (private, legacy):
-        if (candidate.site_dir / "index.html").is_file():
+        if (candidate.site_dir / "index.html").is_file() and (candidate is private or _bundle_matches_identity(candidate, league)):
             return candidate
     # Read-only migration fallback for v2 data generated before user roots
     # existed. New refreshes always use the private root below.
-    return legacy if legacy.root.exists() else private
+    return legacy if legacy.root.exists() and _bundle_matches_identity(legacy, league) else private
+
+
+def _bundle_matches_identity(paths: LeaguePaths, league: dict[str, Any]) -> bool:
+    """Reject a complete bundle whose selected roster is not this league row."""
+
+    bundle_path = paths.site_dir / "data" / "app_bundle.json"
+    if not bundle_path.is_file():
+        return False
+    try:
+        payload = load_json(bundle_path)
+    except (OSError, ValueError):
+        return False
+    # Small empty bundles are generic migration fixtures; generated bundles
+    # always contain myRosterId and identityReceipt.
+    if not isinstance(payload, dict) or not payload:
+        return True
+    expected = league.get("roster_id")
+    receipt = payload.get("identityReceipt") if isinstance(payload.get("identityReceipt"), dict) else {}
+    selected = receipt.get("roster_id", payload.get("myRosterId"))
+    if expected in (None, ""):
+        return str(receipt.get("status") or "").lower() in {"verified", "verified_roster_match"}
+    try:
+        return int(selected) == int(expected)
+    except (TypeError, ValueError):
+        return False
 
 
 def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:
@@ -601,7 +632,7 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
         if key in seen:
             continue
         seen.add(key)
-        if browser_bundle_is_complete(paths.site_dir):
+        if browser_bundle_is_complete(paths.site_dir) and (paths is candidates[0] or _bundle_matches_identity(paths, league)):
             return
         if not (paths.processed_dir / "refresh_metadata.csv").is_file():
             continue
@@ -823,6 +854,23 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
 def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, Any]:
     view = dict(row)
     view["enabled"] = bool(row.get("enabled"))
+    identity_status = str(row.get("identity_status") or "unverified").lower()
+    view["identity_verified"] = identity_status in {"verified", "verified_roster_match"} and row.get("roster_id") not in (None, "")
+    view["identity_label"] = "Roster verified" if view["identity_verified"] else "Roster needs verification"
+    view["managed_team_name"] = ""
+    if user_id is not None:
+        profile = db.get_team_profile(int(user_id), str(row.get("league_id") or ""))
+        view["managed_team_name"] = str((profile or {}).get("team_name") or "")
+        if not view["managed_team_name"]:
+            private = _private_paths(int(user_id), str(row.get("league_id") or ""))
+            if _bundle_matches_identity(private, row):
+                try:
+                    payload = load_json(private.site_dir / "data" / "app_bundle.json")
+                    receipt = payload.get("identityReceipt") if isinstance(payload, dict) else {}
+                    bundle_team = payload.get("myTeamName") if isinstance(payload, dict) else ""
+                    view["managed_team_name"] = str((receipt or {}).get("team_name") or bundle_team or "")
+                except (OSError, ValueError):
+                    pass
     view["refresh_status"] = _refresh_status(str(row.get("league_id") or ""), user_id)
     readiness = _edition_readiness(user_id, row) if user_id is not None else None
     view["edition_readiness"] = readiness

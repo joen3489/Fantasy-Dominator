@@ -90,7 +90,7 @@ Railway runs the authenticated app with:
 python -m app.main
 ```
 
-railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and ANTHROPIC_API_KEY only for explicit writer actions.
+railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and the configured writer provider only for explicit writer actions. Luna uses `FRONT_OFFICE_LLM_PROVIDER=openai`, `FRONT_OFFICE_LLM_MODEL=gpt-5.6-luna`, `FRONT_OFFICE_LLM_REASONING_EFFORT=medium|high|xhigh|max`, and `OPENAI_API_KEY`. Anthropic remains available with `FRONT_OFFICE_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` during migration.
 
 For a real production Clerk deployment, use a `pk_live_` publishable key and
 set `FRONT_OFFICE_PUBLIC_URL=https://your-public-domain/` (the app also falls
@@ -150,7 +150,7 @@ continuity receipt, and every owned league edition. If
 `FRONT_OFFICE_OPERATOR_TOKEN` is also supplied locally, it checks the
 operator-safe storage audit and verifies that the current identity has at least
 one preserved league. It fails when live Clerk or durable SQLite configuration
-is incomplete and warns when the optional Anthropic writer key is absent:
+is incomplete and warns when the configured writer key is absent:
 
 ```powershell
 python scripts\smoke_live.py
@@ -173,7 +173,7 @@ The config file is now a legacy/default seed. Authenticated users link their own
 
 ## Writers and evidence
 
-Writer actions are explicit and cost-incurring. They read only the selected league's deterministic analysis and write section articles, manager/player insight packets, and the Daily GM Brief into that league's private analysis/operator workspace. Every generated artifact is indexed by user, league, season, artifact key, and reporter persona in content_artifacts; no writer is scheduled automatically. The persona changes tone and emphasis only; deterministic evidence, citations, and read-only safety rules remain authoritative. See `docs/reporter_personas.md` for the contract.
+Writer actions are explicit and cost-incurring. They read only the selected league's deterministic analysis and write section articles, manager/player insight packets, and the Daily GM Brief into that league's private analysis/operator workspace. Every generated artifact is indexed by user, league, season, artifact key, and reporter persona in content_artifacts; no writer is scheduled automatically. The newsroom assigns a distinct reporter lens to each article, while `article_reporters` can override the lineup for one league. The persona changes tone and emphasis only; deterministic evidence, citations, and read-only safety rules remain authoritative. See `docs/reporter_personas.md` for the contract.
 
 ## Tables
 
