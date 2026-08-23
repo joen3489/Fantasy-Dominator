@@ -567,10 +567,7 @@ def _link_user_leagues(
     # corrected roster. Rebuild from existing processed facts immediately;
     # the normal refresh job can still fetch newer source data afterward.
     for entry in stored:
-        paths = _private_paths(user_id, str(entry.get("league_id") or ""))
-        if not (paths.processed_dir / "teams.csv").is_file():
-            continue
-        _rebuild_browser_job(entry, user_id)
+        _rebuild_browser_job(entry, user_id, allow_legacy_fallback=True)
     return {"leagues": stored, "sleeper_username": sleeper_username, "season": str(season)}
 
 
@@ -814,7 +811,11 @@ def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[
     return result | {"message": "League refreshed, writers run, and browser bundle rebuilt."}
 
 
-def _rebuild_browser_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
+def _rebuild_browser_job(
+    league: dict[str, Any] | None,
+    user_id: int,
+    allow_legacy_fallback: bool = False,
+) -> dict[str, Any]:
     if league is None:
         rebuilt = []
         for row in db.list_user_leagues(user_id):
@@ -823,11 +824,25 @@ def _rebuild_browser_job(league: dict[str, Any] | None, user_id: int) -> dict[st
             rebuilt.append(_rebuild_browser_job(row, user_id))
         return {"state": "complete", "message": "Browser bundles rebuilt.", "leagues": rebuilt}
     paths = _private_paths(user_id, str(league["league_id"]))
+    processed_dir = paths.processed_dir
+    analysis_dir = paths.analysis_dir
+    # Existing installations may still have their validated facts in the
+    # pre-user legacy root. Build a private shell from those facts once the
+    # identity is repaired so the shared fallback cannot keep serving stale
+    # personalized prose. Normal refreshes will subsequently write private
+    # processed and analysis data.
+    if allow_legacy_fallback and not (processed_dir / "teams.csv").is_file():
+        legacy = LeaguePaths.for_league(str(league["league_id"]))
+        if (legacy.processed_dir / "teams.csv").is_file():
+            processed_dir = legacy.processed_dir
+            analysis_dir = legacy.analysis_dir
+        else:
+            return {"state": "skipped", "message": "No processed league facts available yet."}
     context = _context_for_league(user_id, league)
     path = build_browser_site(
         paths.site_dir,
-        paths.processed_dir,
-        paths.analysis_dir,
+        processed_dir,
+        analysis_dir,
         league_type=str(league.get("league_type") or "dynasty"),
         league_id=str(league.get("league_id") or ""),
         config=scoped_config(load_config(), context),
