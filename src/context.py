@@ -124,9 +124,10 @@ def context_from_league_row(
     if not isinstance(writer_preferences, Mapping):
         writer_preferences = {}
 
+    # The authenticated league row is the only identity boundary. A private
+    # profile may contain a stale roster from an older migration, so it must
+    # never resurrect an unverified or missing Sleeper roster assignment.
     roster_id = league.get("roster_id")
-    if roster_id is None:
-        roster_id = profile.get("roster_id")
     try:
         roster_id = int(roster_id) if roster_id is not None else None
     except (TypeError, ValueError):
@@ -136,6 +137,7 @@ def context_from_league_row(
         league.get("identity_status")
         or ("verified_roster_match" if roster_id is not None else "unverified")
     )
+    identity_verified = identity_status.lower() in {"verified", "verified_roster_match"} and roster_id is not None
 
     return FantasyContext(
         user_id=str(user_id),
@@ -144,8 +146,8 @@ def context_from_league_row(
         roster_id=roster_id,
         league_type=str(league.get("league_type", "dynasty")),
         league_name=str(league.get("name", league.get("league_name", ""))),
-        team_name=str(profile.get("team_name", "")),
-        display_name=str(profile.get("display_name", "")),
+        team_name=str(profile.get("team_name", "")) if identity_verified else "",
+        display_name=str(profile.get("display_name", "")) if identity_verified else "",
         strategy_profile=deepcopy(dict(strategy)),
         writer_preferences=deepcopy(dict(writer_preferences)),
         manager_trade_profiles=[deepcopy(dict(item)) for item in (manager_trade_profiles or []) if isinstance(item, Mapping)],

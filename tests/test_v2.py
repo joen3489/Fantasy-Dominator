@@ -1140,6 +1140,77 @@ class FastAPIClerkAppTests(unittest.TestCase):
         stored = db.list_user_leagues(self._user_id("user_link"))
         self.assertEqual(stored[0]["name"], "Linked")
 
+    def test_identity_refresh_uses_stored_sleeper_account_and_repairs_stale_profile(self) -> None:
+        token = self._token("user_identity_refresh")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_identity_refresh")
+        db.set_sleeper_account(user_id, "joe3489", "old-sleeper-id")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "league-a",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Alpha",
+                "roster_id": 4,
+                "identity_status": "unverified",
+            },
+        )
+        db.upsert_team_profile(
+            user_id,
+            "league-a",
+            {"roster_id": 4, "team_name": "Moose Caboose", "strategy_profile": {"name": "Rebuild"}},
+        )
+        entries = [
+            {
+                "league_id": "league-a",
+                "name": "Alpha",
+                "season": "2026",
+                "league_type": "dynasty",
+                "roster_id": 2,
+                "sleeper_user_id": "78858689238679552",
+                "identity_status": "verified_roster_match",
+            }
+        ]
+        with patch("app.main.discover_leagues", return_value=entries) as discover:
+            response = self.client.post("/api/leagues/identity/refresh", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        discover.assert_called_once()
+        self.assertEqual(discover.call_args.args[1:], ("joe3489", "2026"))
+        stored = db.get_user_league(user_id, "league-a")
+        profile = db.get_team_profile(user_id, "league-a")
+        self.assertEqual(stored["roster_id"], 2)
+        self.assertEqual(stored["identity_status"], "verified_roster_match")
+        self.assertEqual(profile["roster_id"], 2)
+        self.assertEqual(profile["team_name"], "")
+        self.assertEqual(profile["strategy_profile"]["name"], "Rebuild")
+
+    def test_unverified_profile_label_cannot_appear_as_managed_team(self) -> None:
+        token = self._token("user_unverified_profile")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_unverified_profile")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "league-a",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Alpha",
+                "roster_id": None,
+                "identity_status": "unverified",
+            },
+        )
+        db.upsert_team_profile(user_id, "league-a", {"roster_id": 4, "team_name": "Moose Caboose"})
+
+        home = self.client.get("/?league_id=league-a", cookies={"__session": token})
+        profile = self.client.get("/api/leagues/league-a/profile", cookies={"__session": token})
+
+        self.assertEqual(home.status_code, 200)
+        self.assertNotIn("Managing: <strong>Moose Caboose</strong>", home.text)
+        self.assertIn("Roster needs verification", home.text)
+        self.assertEqual(profile.json()["team_name"], "")
+
     def test_unready_railway_blocks_linking_into_ephemeral_store(self) -> None:
         token = self._token("user_unready_link")
         with patch.dict(

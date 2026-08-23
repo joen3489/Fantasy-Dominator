@@ -554,7 +554,14 @@ def migrate_legacy_team_profile(
     league: dict[str, Any],
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Idempotently copy the old single-team YAML settings into one scope."""
+    """Idempotently copy strategy settings into one authenticated scope.
+
+    The legacy YAML contains a singleton team name and display identity. Those
+    labels are not safe to migrate into an authenticated league because the
+    current Sleeper roster and name are the source of truth. Strategy settings
+    are useful defaults; identity labels must come from the linked roster (or
+    be entered as an explicit league customization later).
+    """
 
     league_id = str(league.get("league_id") or "")
     existing = get_team_profile(user_id, league_id)
@@ -575,10 +582,64 @@ def migrate_legacy_team_profile(
         {
             "roster_id": league_roster_id or configured_roster_id,
             "season": league.get("season") or config.get("current_season") or "",
-            "team_name": current_team.get("team_name") or "",
-            "display_name": current_team.get("display_name") or "",
+            "team_name": "",
+            "display_name": "",
             "strategy_profile": strategy if isinstance(strategy, dict) else {},
             "writer_preferences": {},
+        },
+    )
+
+
+def reconcile_team_profile_identity(
+    user_id: int,
+    league: dict[str, Any],
+    previous_league: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Re-key a profile after Sleeper proves the league's owned roster.
+
+    A profile is private customization, not an identity source. When an old
+    row was unverified or pointed at a different roster, preserve its strategy
+    and writer notes but clear the stale team/display labels. The next scoped
+    refresh will derive the current Sleeper name from the exact roster ID.
+    """
+
+    league_id = str(league.get("league_id") or "")
+    profile = get_team_profile(user_id, league_id)
+    if profile is None:
+        return None
+
+    expected_roster_id = league.get("roster_id")
+    if expected_roster_id in (None, ""):
+        return profile
+
+    previous = previous_league or {}
+    previous_status = str(previous.get("identity_status") or "unverified").lower()
+    previous_roster_id = previous.get("roster_id")
+    profile_roster_id = profile.get("roster_id")
+
+    def _same_roster(left: Any, right: Any) -> bool:
+        try:
+            return int(left) == int(right)
+        except (TypeError, ValueError):
+            return False
+
+    identity_changed = (
+        previous_status not in {"verified", "verified_roster_match"}
+        or not _same_roster(previous_roster_id, expected_roster_id)
+        or not _same_roster(profile_roster_id, expected_roster_id)
+    )
+    if not identity_changed:
+        return profile
+
+    return upsert_team_profile(
+        user_id,
+        league_id,
+        {
+            **profile,
+            "roster_id": expected_roster_id,
+            "season": league.get("season") or profile.get("season") or "",
+            "team_name": "",
+            "display_name": "",
         },
     )
 

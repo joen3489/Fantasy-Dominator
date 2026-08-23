@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from app import db
 from src.articles import ArticleContext, _scope_team_report
-from src.context import FantasyContext, scoped_config
+from src.context import FantasyContext, context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 
 
@@ -40,6 +40,21 @@ class ContextIsolationTests(unittest.TestCase):
         self.assertEqual(scoped["strategy_profile"]["name"], "Win now")
         self.assertEqual(scoped["context"]["league_id"], "league-b")
         self.assertEqual(base["strategy_profile"]["name"], "Legacy rebuild")
+
+    def test_unverified_league_cannot_inherit_roster_from_private_profile(self) -> None:
+        context = context_from_league_row(
+            "17",
+            {
+                "league_id": "league-a",
+                "season": "2026",
+                "identity_status": "unverified",
+                "roster_id": None,
+            },
+            {"roster_id": 4, "team_name": "Moose Caboose"},
+        )
+
+        self.assertIsNone(context.roster_id)
+        self.assertEqual(context.team_name, "")
 
     def test_user_league_paths_are_private_and_reject_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -114,6 +129,56 @@ class ContextIsolationTests(unittest.TestCase):
 
                 self.assertEqual(migrated["team_name"], "Custom Team")
                 self.assertEqual(db.get_team_profile(int(user["id"]), "league-a")["strategy_profile"]["name"], "Contend")
+
+    def test_identity_reconciliation_rekeys_profile_and_clears_stale_team_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(db, "DB_PATH", Path(temporary) / "app.db"):
+                db.init_db()
+                user = db.get_or_create_user("identity-repair")
+                user_id = int(user["id"])
+                db.upsert_user_league(
+                    user_id,
+                    {
+                        "league_id": "league-a",
+                        "season": "2026",
+                        "league_type": "dynasty",
+                        "name": "Alpha",
+                        "roster_id": 4,
+                        "identity_status": "unverified",
+                    },
+                )
+                db.upsert_team_profile(
+                    user_id,
+                    "league-a",
+                    {
+                        "roster_id": 4,
+                        "season": "2026",
+                        "team_name": "Moose Caboose",
+                        "display_name": "stale-manager",
+                        "strategy_profile": {"name": "Keep this strategy", "team_direction": "rebuild"},
+                        "writer_preferences": {"persona_id": "scout"},
+                    },
+                )
+
+                previous = db.get_user_league(user_id, "league-a")
+                current = db.upsert_user_league(
+                    user_id,
+                    {
+                        "league_id": "league-a",
+                        "season": "2026",
+                        "league_type": "dynasty",
+                        "name": "Alpha",
+                        "roster_id": 2,
+                        "identity_status": "verified_roster_match",
+                    },
+                )
+                repaired = db.reconcile_team_profile_identity(user_id, current, previous)
+
+                self.assertEqual(repaired["roster_id"], 2)
+                self.assertEqual(repaired["team_name"], "")
+                self.assertEqual(repaired["display_name"], "")
+                self.assertEqual(repaired["strategy_profile"]["name"], "Keep this strategy")
+                self.assertEqual(repaired["writer_preferences"]["persona_id"], "scout")
 
     def test_article_scope_reads_selected_processed_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

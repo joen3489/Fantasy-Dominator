@@ -214,16 +214,27 @@ def create_app() -> FastAPI:
     @app.post("/api/leagues/link")
     def link_leagues(body: LinkLeagueBody, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         _require_deployment_ready()
-        entries = discover_leagues(SleeperAPI(), body.sleeper_username, body.season)
-        user_id = int(user["id"])
-        sleeper_user_ids = {str(entry.get("sleeper_user_id") or "") for entry in entries if entry.get("sleeper_user_id")}
-        db.set_sleeper_account(user_id, body.sleeper_username, next(iter(sleeper_user_ids), None))
-        stored = [db.upsert_user_league(user_id, entry) for entry in entries]
-        config = _legacy_config()
-        for entry in stored:
-            db.migrate_legacy_team_profile(user_id, entry, config)
-        save_registry(entries, user_id=user_id)
-        return {"leagues": stored}
+        return _link_user_leagues(int(user["id"]), body.sleeper_username, body.season)
+
+    @app.post("/api/leagues/identity/refresh")
+    def refresh_league_identity(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        """Re-derive the signed-in manager's roster IDs from their Sleeper account.
+
+        This endpoint accepts no team name or roster selector. It uses the
+        Sleeper account already linked to this Clerk user, then reconciles any
+        stale profile labels before the next league refresh.
+        """
+
+        _require_deployment_ready()
+        sleeper_username = str(user.get("sleeper_username") or "").strip()
+        if not sleeper_username:
+            raise HTTPException(status_code=409, detail="Link a Sleeper username before refreshing identity.")
+        season = str(
+            os.environ.get("FRONT_OFFICE_CURRENT_SEASON", "").strip()
+            or load_config().get("current_season")
+            or datetime.now(timezone.utc).year
+        )
+        return _link_user_leagues(int(user["id"]), sleeper_username, season)
 
     @app.post("/api/leagues/refresh")
     def refresh_user_leagues(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -251,7 +262,25 @@ def create_app() -> FastAPI:
     @app.get("/api/leagues/{league_id}/profile")
     def team_profile(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         league = _owned_league(user, league_id)
-        return db.get_team_profile(int(user["id"]), league_id) or {
+        profile = db.get_team_profile(int(user["id"]), league_id)
+        if profile is not None:
+            identity_status = str(league.get("identity_status") or "unverified").lower()
+            identity_verified = identity_status in {"verified", "verified_roster_match"} and league.get("roster_id") not in (None, "")
+            try:
+                profile_matches_identity = int(profile.get("roster_id")) == int(league.get("roster_id"))
+            except (TypeError, ValueError):
+                profile_matches_identity = False
+            if identity_verified and profile_matches_identity:
+                return profile
+            # Keep strategy notes available, but never return a stale profile
+            # label that the browser could mistake for the owned roster.
+            return {
+                **profile,
+                "roster_id": league.get("roster_id"),
+                "team_name": "",
+                "display_name": "",
+            }
+        return {
             "league_id": league_id,
             "roster_id": league.get("roster_id"),
             "season": league.get("season") or "",
@@ -507,6 +536,29 @@ def _require_deployment_ready() -> None:
             status_code=503,
             detail="Production setup is incomplete. Repair the deployment before linking or refreshing leagues.",
         )
+
+
+def _link_user_leagues(user_id: int, sleeper_username: str, season: str) -> dict[str, Any]:
+    """Link leagues using Sleeper ownership, never a display-name choice."""
+
+    entries = discover_leagues(SleeperAPI(), sleeper_username, season)
+    sleeper_user_ids = {
+        str(entry.get("sleeper_user_id") or "")
+        for entry in entries
+        if entry.get("sleeper_user_id")
+    }
+    db.set_sleeper_account(user_id, sleeper_username, next(iter(sleeper_user_ids), None))
+
+    stored: list[dict[str, Any]] = []
+    for entry in entries:
+        previous = db.get_user_league(user_id, str(entry.get("league_id") or ""))
+        saved = db.upsert_user_league(user_id, entry)
+        db.migrate_legacy_team_profile(user_id, saved, _legacy_config())
+        db.reconcile_team_profile_identity(user_id, saved, previous)
+        stored.append(saved)
+
+    save_registry(entries, user_id=user_id)
+    return {"leagues": stored, "sleeper_username": sleeper_username, "season": str(season)}
 
 
 def _public_home_url(request: Request) -> str:
@@ -860,7 +912,18 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["managed_team_name"] = ""
     if user_id is not None:
         profile = db.get_team_profile(int(user_id), str(row.get("league_id") or ""))
-        view["managed_team_name"] = str((profile or {}).get("team_name") or "")
+        profile_roster_id = (profile or {}).get("roster_id")
+        profile_matches_identity = False
+        if view["identity_verified"]:
+            try:
+                profile_matches_identity = int(profile_roster_id) == int(row.get("roster_id"))
+            except (TypeError, ValueError):
+                profile_matches_identity = False
+        # Never show a private profile label while the league identity is
+        # missing or points at another roster. That was the Moose Caboose
+        # regression: a stale profile became the apparent source of truth.
+        if profile_matches_identity:
+            view["managed_team_name"] = str((profile or {}).get("team_name") or "")
         if not view["managed_team_name"]:
             private = _private_paths(int(user_id), str(row.get("league_id") or ""))
             if _bundle_matches_identity(private, row):
