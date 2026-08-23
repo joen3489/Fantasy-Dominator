@@ -394,7 +394,12 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 def _league_settings(entry: dict[str, Any], paths: LeaguePaths) -> dict[str, Any]:
     season = str(entry.get("season") or "")
-    candidates = [paths.raw_dir / season / "league.json"] if season else []
+    league_id = str(entry.get("league_id") or paths.league_id or "")
+    candidates = [paths.raw_dir / season / f"league_{league_id}.json"] if season and league_id else []
+    # Keep the old generic names as a read-only migration fallback for legacy
+    # bundles created before league-scoped cache keys existed.
+    if season:
+        candidates.append(paths.raw_dir / season / "league.json")
     candidates.append(paths.raw_dir / "league.json")
     for path in candidates:
         if not path.exists():

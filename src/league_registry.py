@@ -26,17 +26,25 @@ def classify_league(league: dict[str, Any]) -> str:
     return "redraft"
 
 
-def discover_leagues(api: SleeperAPI, username: str, season: str) -> list[dict[str, Any]]:
-    user = api.user(username)
+def discover_leagues(api: SleeperAPI, username: str, season: str, force: bool = False) -> list[dict[str, Any]]:
+    user = api.user(username, force=True) if force else api.user(username)
     user_id = str(user.get("user_id") or username)
-    leagues = api.user_leagues(user_id, str(season))
+    leagues = (
+        api.user_leagues(user_id, str(season), force=True)
+        if force
+        else api.user_leagues(user_id, str(season))
+    )
     entries: list[dict[str, Any]] = []
 
     for league in leagues:
         league_id = str(league.get("league_id") or "")
         if not league_id:
             continue
-        rosters = api.rosters(str(season), league_id)
+        rosters = (
+            api.rosters(str(season), league_id, force=True)
+            if force
+            else api.rosters(str(season), league_id)
+        )
         roster_id = _user_roster_id(rosters, user_id)
         entries.append(
             {

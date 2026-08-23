@@ -27,7 +27,7 @@ class CachePolicyTests(unittest.TestCase):
     def test_expired_current_sleeper_cache_refetches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)
-            cache_path = raw_dir / "2026" / "league.json"
+            cache_path = raw_dir / "2026" / "league_league-1.json"
             cache_path.parent.mkdir(parents=True)
             cache_path.write_text(json.dumps({"name": "old"}), encoding="utf-8")
             expired_at = (datetime.now(timezone.utc) - timedelta(minutes=30)).timestamp()
@@ -50,7 +50,7 @@ class CachePolicyTests(unittest.TestCase):
     def test_fresh_historical_cache_stays_local(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)
-            cache_path = raw_dir / "2025" / "league.json"
+            cache_path = raw_dir / "2025" / "league_league-1.json"
             cache_path.parent.mkdir(parents=True)
             cache_path.write_text(json.dumps({"name": "historical"}), encoding="utf-8")
 
@@ -64,6 +64,35 @@ class CachePolicyTests(unittest.TestCase):
 
             self.assertEqual(payload["name"], "historical")
             request.assert_not_called()
+
+    def test_league_payload_caches_are_isolated_by_league_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            responses = {
+                "/league/league-a": {"name": "League A"},
+                "/league/league-b": {"name": "League B"},
+                "/league/league-a/rosters": [{"roster_id": 2, "owner_id": "user-a"}],
+                "/league/league-b/rosters": [{"roster_id": 7, "owner_id": "user-a"}],
+            }
+
+            def response_for(url: str, *args, **kwargs) -> MagicMock:
+                response = MagicMock()
+                response.json.return_value = responses[url.split("/v1", 1)[-1]]
+                response.raise_for_status.return_value = None
+                return response
+
+            with patch("src.sleeper_api.requests.Session.get", side_effect=response_for) as request:
+                api = SleeperAPI(raw_dir=raw_dir, current_season="2026")
+                self.assertEqual(api.league("2026", "league-a")["name"], "League A")
+                self.assertEqual(api.league("2026", "league-b")["name"], "League B")
+                self.assertEqual(api.rosters("2026", "league-a")[0]["roster_id"], 2)
+                self.assertEqual(api.rosters("2026", "league-b")[0]["roster_id"], 7)
+
+            self.assertEqual(request.call_count, 4)
+            self.assertTrue((raw_dir / "2026" / "league_league-a.json").is_file())
+            self.assertTrue((raw_dir / "2026" / "league_league-b.json").is_file())
+            self.assertTrue((raw_dir / "2026" / "rosters_league-a.json").is_file())
+            self.assertTrue((raw_dir / "2026" / "rosters_league-b.json").is_file())
 
     def test_stale_rotowire_cache_is_kept_but_marked_limited_on_failure(self) -> None:
         xml = """

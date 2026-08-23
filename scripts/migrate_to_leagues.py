@@ -37,7 +37,7 @@ def main() -> None:
             copied.append(f"{source} -> {target}")
 
     entries = [entry for entry in load_registry(REGISTRY_PATH) if str(entry.get("league_id")) != league_id]
-    league = _cached_league_payload(current_season)
+    league = _cached_league_payload(current_season, league_id)
     entries.append(
         {
             "league_id": league_id,
@@ -60,12 +60,19 @@ def main() -> None:
     print(f"Wrote registry: {REGISTRY_PATH}")
 
 
-def _cached_league_payload(season: str) -> dict[str, Any]:
-    path = LeaguePaths.default().raw_dir / season / "league.json"
-    if not path.exists():
-        return {}
-    data = load_json(path)
-    return data if isinstance(data, dict) else {}
+def _cached_league_payload(season: str, league_id: str) -> dict[str, Any]:
+    raw_dir = LeaguePaths.default().raw_dir
+    candidates = []
+    if str(league_id).strip():
+        candidates.append(raw_dir / season / f"league_{league_id}.json")
+    candidates.append(raw_dir / season / "league.json")
+    for path in candidates:
+        if not path.exists():
+            continue
+        data = load_json(path)
+        if isinstance(data, dict):
+            return data
+    return {}
 
 
 def _configured_roster_id(config: dict[str, Any]) -> int | None:

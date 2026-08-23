@@ -558,7 +558,7 @@ def _link_user_leagues(
 ) -> dict[str, Any]:
     """Link leagues using Sleeper ownership, never a display-name choice."""
 
-    entries = discover_leagues(SleeperAPI(), sleeper_username, season)
+    entries = discover_leagues(SleeperAPI(), sleeper_username, season, force=True)
     sleeper_user_ids = {
         str(entry.get("sleeper_user_id") or "")
         for entry in entries

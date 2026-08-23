@@ -101,7 +101,7 @@ class SleeperAPI:
     def league(self, season: str, league_id: str, force: bool = False) -> dict[str, Any]:
         return self.get(
             f"/league/{league_id}",
-            self.raw_dir / season / "league.json",
+            self.raw_dir / season / f"league_{league_id}.json",
             force,
             self._season_cache_max_age(season),
         )
@@ -109,7 +109,7 @@ class SleeperAPI:
     def users(self, season: str, league_id: str, force: bool = False) -> list[dict[str, Any]]:
         return self.get(
             f"/league/{league_id}/users",
-            self.raw_dir / season / "users.json",
+            self.raw_dir / season / f"users_{league_id}.json",
             force,
             self._season_cache_max_age(season),
         )
@@ -117,7 +117,7 @@ class SleeperAPI:
     def rosters(self, season: str, league_id: str, force: bool = False) -> list[dict[str, Any]]:
         return self.get(
             f"/league/{league_id}/rosters",
-            self.raw_dir / season / "rosters.json",
+            self.raw_dir / season / f"rosters_{league_id}.json",
             force,
             self._season_cache_max_age(season),
         )
@@ -125,7 +125,7 @@ class SleeperAPI:
     def traded_picks(self, season: str, league_id: str, force: bool = False) -> list[dict[str, Any]]:
         return self.get(
             f"/league/{league_id}/traded_picks",
-            self.raw_dir / season / "traded_picks.json",
+            self.raw_dir / season / f"traded_picks_{league_id}.json",
             force,
             self._season_cache_max_age(season),
         )
@@ -133,7 +133,7 @@ class SleeperAPI:
     def drafts(self, season: str, league_id: str, force: bool = False) -> list[dict[str, Any]]:
         return self.get(
             f"/league/{league_id}/drafts",
-            self.raw_dir / season / "drafts.json",
+            self.raw_dir / season / f"drafts_{league_id}.json",
             force,
             self._season_cache_max_age(season),
         )
@@ -149,7 +149,7 @@ class SleeperAPI:
     def transactions(self, season: str, league_id: str, week: int, force: bool = False) -> list[dict[str, Any]]:
         return self.get(
             f"/league/{league_id}/transactions/{week}",
-            self.raw_dir / season / f"transactions_week_{week:02d}.json",
+            self.raw_dir / season / f"transactions_{league_id}_week_{week:02d}.json",
             force,
             self._season_cache_max_age(season),
         )
