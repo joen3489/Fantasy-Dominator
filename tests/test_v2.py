@@ -1376,6 +1376,22 @@ class FastAPIClerkAppTests(unittest.TestCase):
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
 
+    def test_targeted_refresh_endpoint_queues_owned_league_refresh(self) -> None:
+        token = self._token("user_targeted_refresh")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_targeted_refresh")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "targeted", "season": "2026", "league_type": "dynasty", "name": "Targeted", "roster_id": 2},
+        )
+
+        with patch("app.main.front_operator.start_job", return_value={"accepted": True}) as start_job:
+            response = self.client.post("/api/leagues/targeted/refresh", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        start_job.assert_called_once()
+        self.assertEqual(start_job.call_args.args[0], "refresh")
+
     def test_league_readiness_reports_building_then_failed(self) -> None:
         token = self._token("user_readiness")
         self.client.get("/", cookies={"__session": token})

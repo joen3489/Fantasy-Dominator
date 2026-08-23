@@ -698,7 +698,7 @@
               <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
               {% if featured_league.managed_team_name %}<span>Managing: <strong>{{ featured_league.managed_team_name }}</strong></span>{% endif %}
               <span>Identity: <strong>{{ featured_league.identity_label or "Roster needs verification" }}</strong></span>
-              <button class="refresh-button identity-refresh-button" type="button" data-identity-refresh aria-label="Recheck this league's Sleeper roster identity">Recheck Sleeper identity</button>
+              <button class="refresh-button identity-refresh-button" type="button" data-identity-refresh data-identity-refresh-league="{{ featured_league.league_id }}" aria-label="Recheck this league's Sleeper roster identity">Recheck Sleeper identity</button>
               <span class="profile-status" data-identity-refresh-status role="status"></span>
               <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
               <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
@@ -1116,7 +1116,8 @@
               const payload = await response.json().catch(() => ({}));
               if (!response.ok) throw new Error(payload.detail || `identity refresh failed (${response.status})`);
               if (identityRefreshStatus) identityRefreshStatus.textContent = 'Roster identity refreshed; rebuilding this edition';
-              await fetch('/api/leagues/refresh', {
+              const leagueId = identityRefresh.dataset.identityRefreshLeague;
+              await fetch('/api/leagues/' + encodeURIComponent(leagueId) + '/refresh', {
                 method: 'POST',
                 headers: {'content-type': 'application/json'},
                 body: JSON.stringify({}),

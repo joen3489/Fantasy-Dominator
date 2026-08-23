@@ -247,6 +247,18 @@ def create_app() -> FastAPI:
             lambda: _refresh_job(None, user_id),
         )
 
+    @app.post("/api/leagues/{league_id}/refresh")
+    def refresh_one_league(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        """Force-refresh one owned league after an identity recheck."""
+
+        _require_deployment_ready()
+        league = _owned_enabled_league(user, league_id)
+        user_id = int(user["id"])
+        return front_operator.start_job(
+            "refresh",
+            lambda: _refresh_and_rebuild_league(league, user_id),
+        )
+
     @app.post("/api/leagues/{league_id}/toggle")
     def toggle_league(
         league_id: str,
@@ -788,6 +800,12 @@ def _refresh_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
         context=context,
     )
     return {"state": "complete", "message": "Data refresh complete."}
+
+
+def _refresh_and_rebuild_league(league: dict[str, Any], user_id: int) -> dict[str, Any]:
+    result = _refresh_job(league, user_id)
+    rebuilt = _rebuild_browser_job(league, user_id)
+    return result | {"bundle": rebuilt}
 
 
 def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
