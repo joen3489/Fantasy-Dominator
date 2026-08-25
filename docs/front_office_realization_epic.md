@@ -725,6 +725,15 @@ then opened the Moose Caboose manager dossier and rendered 24 event rows.
 Expanding the evidence drawer showed the event-level Sleeper trace and the
 motive/future-behavior boundary. Public revision smoke also passed.
 
+## 2026-08-25 manager-fit outcome entry-path slice
+
+The manager dossier's current trade-fit cards now use the same scoped
+recommendation outcome ledger as the main Trade Desk. Each direct manager
+entry carries a `manager-fit:<roster_id>:<player_id>` key, the fit's evidence,
+risk, and confidence, and a manager-fit outcome control. This makes the
+manager page a learnable decision surface without confusing a fit hypothesis
+with a completed trade or creating a second feedback system.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

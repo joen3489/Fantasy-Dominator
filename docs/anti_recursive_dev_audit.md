@@ -238,3 +238,12 @@ and ordered deterministically, and has an entry-path test for the rendered
 timeline and event evidence. A foreign roster fixture is excluded. This keeps
 the slice aligned with the identity and evidence rules before any writer
 interpretation is added.
+
+## 2026-08-25 - Direct manager decisions must reach the existing outcome seam
+
+The manager dossier reused Trade Desk fit evidence but had no outcome control,
+so the same hypothesis had different learning behavior depending on entry
+path. The direct card now carries a stable `manager-fit` key into the existing
+recommendation interaction endpoint with evidence, risk, confidence, and the
+exact target player. The source-level entry test and authenticated browser
+proof must cover the manager path; no second feedback table is allowed.

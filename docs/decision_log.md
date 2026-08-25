@@ -741,3 +741,12 @@ call. Revision `e99e0e6caf0854eae85b99b5e614711a2cdda343` was then verified in
 the authenticated production reader: Moose Caboose rendered 24 event rows,
 while the private edition still identified Lulu’s Potatoe’s as the active
 roster.
+
+## 2026-08-25 - Reuse recommendation learning from manager dossiers
+
+A manager dossier could expose a supported trade fit without letting the
+manager record whether that hypothesis held up. The direct fit cards now use
+the existing recommendation outcome lane with a stable
+`manager-fit:<roster_id>:<player_id>` key and retain the fit's evidence, risk,
+and confidence in the interaction payload. This keeps main Trade Desk and
+manager-entry learning comparable and does not imply that a trade happened.

@@ -51,6 +51,9 @@ state, not canonical Sleeper data. Article usefulness/outcome signals use
 `artifact_type=article` and `interaction_type=outcome`. Actionable target,
 sell, and trade theses use `artifact_type=recommendation` and
 `interaction_type=decision_outcome`, keyed to the thesis and bundle revision.
+Manager dossier trade-fit hypotheses use the same recommendation lane with a
+`manager-fit:<roster_id>:<player_id>` artifact key, so the direct manager page
+does not create a second learning ledger.
 The ledger records what the manager later reports happened; it does not infer
 an outcome from a page view, execute a trade, or rewrite deterministic facts.
 Open, confirmed, missed, and unclear remain separate states, and article

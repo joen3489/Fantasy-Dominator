@@ -288,3 +288,13 @@ roster-scoped transaction timeline and the browser renders the event details
 with an explicit evidence and motive boundary. The reusable rule is to promote
 the exact evidence grain needed for a decision into the dossier object before
 adding more interpretation or more cards.
+
+## 2026-08-25 direct dossiers must share the decision ledger
+
+The main Trade Desk already recorded outcomes for target, sell, and trade
+recommendations, but a reader arriving through a manager dossier saw the same
+fit hypothesis without a way to evaluate it. Direct entity pages must reuse
+the canonical recommendation interaction with a stable, scoped key; adding a
+second manager-only feedback lane would split learning and invite
+contradictory rates. The manager-fit control records an explicit human report,
+never a completed trade inferred from the page.
