@@ -141,6 +141,12 @@ Before adding a feature or “cleaning up” an old artifact:
     old, trigger an additive migration before serving it; do not stamp or trust
     a healthy bundle merely because its source SHA matches.
 
+16. **A stale private bundle must not mask a current fallback.** Bundle
+    selection must apply freshness and contract checks before preferring a
+    user-scoped root over a legacy migration root. Identity correctness alone
+    is not enough if the selected shell or payload is older than the current
+    reader contract.
+
 ## Current open boundary
 
 The durable-bundle migration gate was closed on 2026-08-25 after a clean

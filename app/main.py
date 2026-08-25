@@ -763,7 +763,11 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
     # truthful recovery response. An incomplete private root must not hide a
     # usable migration fallback.
     for candidate in (private, legacy):
-        if browser_bundle_is_complete(candidate.site_dir) and _bundle_matches_identity(candidate, league):
+        if (
+            browser_bundle_is_complete(candidate.site_dir)
+            and _bundle_matches_identity(candidate, league)
+            and not _bundle_needs_source_rebuild(candidate.site_dir)
+        ):
             return candidate
     for candidate in (private, legacy):
         if (candidate.site_dir / "index.html").is_file() and (candidate is private or _bundle_matches_identity(candidate, league)):

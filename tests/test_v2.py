@@ -1338,6 +1338,42 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Legacy edition", response.text)
 
+    def test_stale_private_bundle_cannot_mask_current_legacy_bundle(self) -> None:
+        """Encodes the identity and stale-shell rule at the bundle-selection seam."""
+        token = self._token("user_stale_private")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_private")
+        league = {"league_id": "private-stale", "season": "2026", "league_type": "dynasty", "roster_id": 7}
+        db.upsert_user_league(user_id, {**league, "name": "Private Stale"})
+        private_site = self.tmp_path / "users" / str(user_id) / "leagues" / "private-stale" / "site"
+        legacy_site = self.leagues_root / "private-stale" / "site"
+        _write_complete_bundle(private_site, "<h1>Stale private shell</h1>")
+        _write_complete_bundle(legacy_site, '<script>Cross-season valuation lanes trade_fit_evaluation</script>')
+        receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        for site in (private_site, legacy_site):
+            (site / "data" / "manifest.json").write_text(
+                json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": receipts}),
+                encoding="utf-8",
+            )
+            (site / "data" / "app_bundle.json").write_text(
+                json.dumps({
+                    "myRosterId": 7,
+                    "identityReceipt": {"roster_id": 7},
+                    "articleReceipts": receipts,
+                }),
+                encoding="utf-8",
+            )
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-current"}, clear=False):
+            selected = app_main._paths_for_user_league({"id": user_id}, league)
+
+        self.assertEqual(selected.root, self.leagues_root / "private-stale")
+
     def test_link_leagues_upserts_and_returns_discovered_entries(self) -> None:
         # Design source: AGENTS.md identity boundary; relinking must resolve
         # Sleeper ownership from source data rather than stale cache labels.

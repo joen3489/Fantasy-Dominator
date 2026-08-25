@@ -599,3 +599,11 @@ field is absent. A current SHA is therefore no longer treated as proof that
 the reader payload is current. The same guard now checks the generated HTML
 shell for its current entry-path markers, because a current payload and SHA
 can still be presented through a stale interface.
+
+## 2026-08-25 - Do not let a stale private root mask a current bundle
+
+Bundle selection previously preferred a complete private root before applying
+the source and shell contract checks. That allowed an older user-scoped shell
+to win over a current legacy migration bundle. Selection now prefers a bundle
+only after identity and freshness/schema checks pass; stale roots remain
+eligible only as recovery candidates for the migration path.
