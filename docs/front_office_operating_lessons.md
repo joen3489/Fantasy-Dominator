@@ -149,15 +149,16 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-The durable-bundle migration gate is now closed for deployment
-`acd8c3ab3b1bf69581cd8fa95b8c7c9f45994683`. The first signed-in navigation
-after rollout still surfaced the prior `99b39f6` manifest until the browser
-performed a fresh reload; the subsequent clean entry and repeat entry both
-served the current private bundle. The authenticated reader receipt reported
-`current · private`, the current source revision, exact `roster_id=2` for
-Lulu’s Potatoe’s, and the dossier’s rendered “Cross-season valuation lanes
-(6)” section. This closes the specific stale-reader incident while keeping
-browser freshness as an explicit deployment precondition.
+The durable-bundle migration and semantic-reader gates are closed for the
+current deployment `ad08ef1f8b2b001fc71f8349651bd9028112273b`. A fresh,
+authenticated direct entry served the current private bundle for exact
+`roster_id=2` / Lulu’s Potatoe’s, rendered the Data Room's “Historical
+identity receipt,” and reported 3,101 history rows, 3,101 resolved joins, zero
+unresolved rows, and balanced acquired/sold trade direction. The reader receipt
+reported `current · private`; public smoke independently verified the expected
+deployment revision. Browser freshness remains an explicit verification
+precondition because an already-open tab can retain an older shell until it is
+reloaded.
 
 The protected Luna publication is a separate open boundary: deterministic
 fallback remains the honest reader state until the operator-authorized run
