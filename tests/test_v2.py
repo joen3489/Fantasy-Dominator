@@ -1655,6 +1655,17 @@ class FastAPIClerkAppTests(unittest.TestCase):
             writer_mode="automatic_llm",
             model="gpt-5.6-luna",
         )
+        reporter_summary = self.client.get(
+            "/api/leagues/feedback-league/learning-summary",
+            cookies={"__session": token},
+        )
+        self.assertEqual(reporter_summary.status_code, 200)
+        breakdown = reporter_summary.json()["reporter_breakdown"]
+        self.assertEqual(len(breakdown), 1)
+        self.assertEqual(breakdown[0]["reporter_id"], "trade_desk_talia")
+        self.assertEqual(breakdown[0]["artifact_count"], 1)
+        self.assertEqual(breakdown[0]["interaction_count"], 2)
+        self.assertEqual(breakdown[0]["confirmed_rate"], 1.0)
         changes = self.client.get(
             "/api/leagues/feedback-league/edition-changes",
             cookies={"__session": token},

@@ -628,6 +628,21 @@ claim a predicted response, a trade recommendation, or a complete market of
 counterparties when the evidence does not support one; the empty alternative
 counterparty state is shown honestly.
 
+## 2026-08-25 reporter learning breakdown checkpoint
+
+The authenticated learning summary now joins deliberate feedback and recorded
+article outcomes back to the current scoped publication receipts. The Data
+Room can show which reporter has received useful, not-useful, evidence-opened,
+or resolved-outcome signals, along with article receipt coverage and a
+confirmed rate only when confirmed or missed calls exist. Missing or stale
+receipt joins remain explicitly unattributed; the system does not infer
+usefulness from reading or treat an open call as a prediction result.
+
+This is the first measurement seam for the newsroom lineup. It does not yet
+claim statistically meaningful reporter evaluation; the sample size and
+unresolved-call state remain visible so future content decisions have a clean
+ledger to build on.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

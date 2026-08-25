@@ -92,6 +92,12 @@ The three product layers have distinct jobs:
    only on one route, the product still feels shallow. Reuse one renderer and
    show unsupported alternatives as an honest empty state.
 
+10. **A newsroom needs a deliberate learning ledger.** Join feedback to the
+    current article receipt and reporter identity before evaluating a voice.
+    Count only explicit signals, keep open calls separate from resolved calls,
+    and show small samples honestly. Attention is not usefulness, and a
+    confirmed rate is not meaningful until there are resolved calls.
+
 ## Anti-recursive change protocol
 
 Before adding a feature or “cleaning up” an old artifact:

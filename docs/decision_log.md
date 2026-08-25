@@ -56,6 +56,15 @@ both paths read-only and shows an explicit empty state when the evidence does
 not support an alternate counterparty. This is a presentation contract over
 the deterministic thesis fields, not a new recommendation engine.
 
+## 2026-08-25 - Measure the newsroom by explicit signals, not attention
+
+The learning summary now joins scoped article receipts to deliberate feedback
+and recorded outcomes, then groups the result by reporter and writer mode. A
+page view remains silent, an open call remains unresolved, and a confirmed
+rate is shown only for confirmed versus missed calls. This makes the writer
+lineup measurable without turning a small personal ledger into a false claim
+of model or reporter accuracy.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

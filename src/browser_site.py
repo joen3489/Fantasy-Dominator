@@ -2548,7 +2548,20 @@ def _page(
         ? 'Not enough resolved calls for a rate.'
         : `${{Math.round(Number(summary.confirmed_rate) * 100)}}% of resolved calls confirmed useful`;
       const latest = summary.latest_recorded_at ? `Last recorded ${{summary.latest_recorded_at}}.` : 'No explicit signals recorded yet.';
-      node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p>`;
+      const reporterNames = new Map((manifest.reporterLineup || []).map(row => [String(row.persona_id || ''), String(row.name || '')]));
+      const reporterRows = Array.isArray(summary.reporter_breakdown) ? summary.reporter_breakdown : [];
+      const breakdown = reporterRows.length
+        ? `<div class="learning-breakdown"><h4>Which desks are earning trust?</h4><div class="brief-list">${{reporterRows.map(row => {{
+            const reporterId = String(row.reporter_id || 'unassigned');
+            const reporterName = reporterNames.get(reporterId) || label(reporterId);
+            const resolvedCount = Number(row.resolved_outcomes || 0);
+            const outcomeLabel = resolvedCount ? `${{Math.round(Number(row.confirmed_rate || 0) * 100)}}% confirmed across ${{resolvedCount}} resolved call${{resolvedCount === 1 ? '' : 's'}}` : 'No resolved calls yet';
+            const signalLabel = `${{Number(row.interaction_count || 0)}} deliberate signal${{Number(row.interaction_count || 0) === 1 ? '' : 's'}} · ${{Number(row.artifact_count || 0)}} article receipt${{Number(row.artifact_count || 0) === 1 ? '' : 's'}}`;
+            const usefulness = `${{Number(row.useful || 0)}} useful · ${{Number(row.not_useful || 0)}} needs work · ${{Number(row.evidence_opened || 0)}} evidence opened`;
+            return `<article class="brief-card"><div class="brief-card-body"><div class="brief-card-title">${{escapeHtml(reporterName)}} <span class="tag">${{escapeHtml(row.writer_mode ? label(row.writer_mode) : 'Receipt not linked')}}</span></div><div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(signalLabel)}}</span><span class="brief-chip">${{escapeHtml(outcomeLabel)}}</span></div><div class="brief-card-evidence">${{escapeHtml(usefulness)}}${{row.article_keys?.length ? ` · keys: ${{row.article_keys.join(', ')}}` : ''}}</div></div></article>`;
+          }}).join('')}}</div></div>`
+        : '';
+      node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p>${{breakdown}}`;
     }}
 
     async function hydrateLearningLedger() {{

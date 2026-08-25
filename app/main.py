@@ -432,8 +432,12 @@ def create_app() -> FastAPI:
         league = _owned_league(user, league_id)
         roster_id = league.get("roster_id")
         if roster_id in (None, ""):
-            return db.content_learning_summary(int(user["id"]), league_id)
-        return db.content_learning_summary(int(user["id"]), league_id, int(roster_id))
+            return db.content_learning_summary(
+                int(user["id"]), league_id, season=str(league.get("season") or "")
+            )
+        return db.content_learning_summary(
+            int(user["id"]), league_id, int(roster_id), season=str(league.get("season") or "")
+        )
 
     @app.get("/api/leagues/{league_id}/edition-changes")
     def edition_changes(

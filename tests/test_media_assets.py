@@ -148,6 +148,8 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn("explicit_article_outcome", html)
             self.assertIn("Decision ledger", html)
             self.assertIn("learning-summary", html)
+            self.assertIn("Which desks are earning trust?", html)
+            self.assertIn("reporter_breakdown", html)
             self.assertIn("Since the last edition", html)
             self.assertIn("edition-changes", html)
             self.assertIn("Evidence IDs:", html)

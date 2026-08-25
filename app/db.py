@@ -1193,16 +1193,59 @@ def content_learning_summary(
     user_id: int,
     league_id: str,
     roster_id: int | None = None,
+    season: str = "",
 ) -> dict[str, Any]:
     """Summarize deliberate feedback for one authenticated league scope."""
 
     rows = list_content_interactions(user_id, league_id, roster_id)
+    artifact_rows = (
+        list_content_artifact_changes(user_id, league_id, str(season), roster_id)
+        if str(season or "").strip()
+        else []
+    )
     feedback_types = {"useful", "not_useful", "evidence_opened", "saved", "pursued"}
     outcome_types = {"open", "confirmed", "missed", "unclear"}
     feedback = {name: 0 for name in sorted(feedback_types)}
     outcomes = {name: 0 for name in sorted(outcome_types)}
     artifacts: set[tuple[str, str]] = set()
     latest_recorded_at = ""
+
+    artifact_by_key = {
+        (str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")): row
+        for row in artifact_rows
+    }
+    reporter_groups: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def reporter_group(reporter_id: str, writer_mode: str) -> dict[str, Any]:
+        key = (str(reporter_id or "unassigned"), str(writer_mode or ""))
+        if key not in reporter_groups:
+            reporter_groups[key] = {
+                "reporter_id": key[0] or "unassigned",
+                "writer_mode": key[1],
+                "article_keys": [],
+                "artifact_count": 0,
+                "interaction_count": 0,
+                "useful": 0,
+                "not_useful": 0,
+                "evidence_opened": 0,
+                "saved": 0,
+                "pursued": 0,
+                "open": 0,
+                "confirmed": 0,
+                "missed": 0,
+                "unclear": 0,
+            }
+        return reporter_groups[key]
+
+    for artifact in artifact_rows:
+        group = reporter_group(
+            str(artifact.get("reporter_id") or "unassigned"),
+            str(artifact.get("writer_mode") or ""),
+        )
+        group["artifact_count"] += 1
+        key = str(artifact.get("artifact_key") or "")
+        if key and key not in group["article_keys"]:
+            group["article_keys"].append(key)
 
     for row in rows:
         interaction_type = str(row.get("interaction_type") or "")
@@ -1212,10 +1255,32 @@ def content_learning_summary(
             outcome = str((row.get("payload") or {}).get("outcome") or "").strip().lower()
             if outcome in outcomes:
                 outcomes[outcome] += 1
+        artifact = artifact_by_key.get(
+            (str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")),
+            {},
+        )
+        group = reporter_group(
+            str(artifact.get("reporter_id") or "unassigned"),
+            str(artifact.get("writer_mode") or ""),
+        )
+        group["interaction_count"] += 1
+        if interaction_type in feedback:
+            group[interaction_type] += 1
+        elif interaction_type == "outcome":
+            outcome = str((row.get("payload") or {}).get("outcome") or "").strip().lower()
+            if outcome in outcomes:
+                group[outcome] += 1
         artifacts.add((str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")))
         latest_recorded_at = max(latest_recorded_at, str(row.get("created_at") or ""))
 
     resolved = outcomes["confirmed"] + outcomes["missed"]
+    reporter_breakdown = []
+    for group in reporter_groups.values():
+        group_resolved = group["confirmed"] + group["missed"]
+        group["resolved_outcomes"] = group_resolved
+        group["confirmed_rate"] = round(group["confirmed"] / group_resolved, 3) if group_resolved else None
+        reporter_breakdown.append(group)
+    reporter_breakdown.sort(key=lambda item: (str(item.get("reporter_id")), str(item.get("writer_mode"))))
     return {
         "league_id": str(league_id),
         "roster_id": int(roster_id) if roster_id is not None else None,
@@ -1226,6 +1291,7 @@ def content_learning_summary(
         "resolved_outcomes": resolved,
         "confirmed_rate": round(outcomes["confirmed"] / resolved, 3) if resolved else None,
         "latest_recorded_at": latest_recorded_at,
+        "reporter_breakdown": reporter_breakdown,
     }
 
 

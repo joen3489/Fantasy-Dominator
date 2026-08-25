@@ -147,7 +147,8 @@ promises:
 - expand the question-led data room without adding unmotivated charts;
 - expand reporter-specific and article-specific media only where it improves
   recognition or comprehension;
-- use recorded outcomes to evaluate usefulness and prediction quality.
+- use the new reporter learning ledger to accumulate enough recorded outcomes
+  for useful, honest evaluation of content and prediction quality.
 
 When this status changes, amend this section and the decision log in the same
 change. Do not leave a historical success claim looking current after the
