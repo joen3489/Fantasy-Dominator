@@ -421,6 +421,11 @@ def create_app() -> FastAPI:
 
     @app.get("/league/{league_id}/")
     def league_index(request: Request, league_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        # A direct edition visit is also a deliberate league selection. Persist
+        # it at the owned-route boundary so bookmarks, home links, and a later
+        # login all converge on the same most-recently-used edition.
+        _owned_enabled_league(user, league_id)
+        db.set_selected_league_id(int(user["id"]), str(league_id))
         return _serve_league_file(request, user, league_id, "")
 
     @app.get("/league/{league_id}/{path:path}")

@@ -931,6 +931,24 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Beta focus headline", fallback.text)
         self.assertIn("In focus: <strong>Beta League</strong>", fallback.text)
 
+    def test_direct_edition_visit_updates_the_remembered_league(self) -> None:
+        """Encodes AGENTS.md identity continuity: an owned route is a league selection."""
+        token = self._token("user_direct_league_focus")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_direct_league_focus")
+        for league_id, name in (("alpha", "Alpha League"), ("beta", "Beta League")):
+            db.upsert_user_league(
+                user_id,
+                {"league_id": league_id, "season": "2026", "league_type": "dynasty", "name": name, "roster_id": 1},
+            )
+            _write_complete_bundle(self.leagues_root / league_id / "site", f"<h1>{name}</h1>")
+
+        self.client.get("/?league_id=alpha", cookies={"__session": token})
+        direct = self.client.get("/league/beta/", cookies={"__session": token})
+        self.assertEqual(direct.status_code, 200)
+        remembered = self.client.get("/", cookies={"__session": token})
+        self.assertIn("In focus: <strong>Beta League</strong>", remembered.text)
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})
