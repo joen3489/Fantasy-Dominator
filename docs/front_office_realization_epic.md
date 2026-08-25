@@ -995,3 +995,15 @@ value 835.54. The construction receipt showed 30/30 market rows, four
 internal proxy values, 30 projection rows, 30 action rows, and the exact
 `team_asset_inventory` source trace. Lulu’s Potatoe’s remained the private
 edition identity at the root.
+
+## 2026-08-25 player market provenance entry-path checkpoint
+
+The adjacent player entity route exposed the same join defect in smaller form:
+Jimmy Horn's player dossier showed market value 0 even though the exact roster
+asset ledger carried an internal proxy value of 43. Player pages now resolve a
+rostered player's market value by exact `owner roster_id + asset_id` from
+`team_asset_inventory`, label the value as external or internal proxy, and
+fail closed to unavailable when the scoped asset row is missing. Unrostered
+players may still use their profile market value because no owned asset row
+exists. The entry-path test protects the inventory join and unavailable label;
+the production amendment will follow the deployed browser check.

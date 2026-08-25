@@ -332,3 +332,13 @@ roster-4 Team construction route showed 835.54 in both construction and the
 manager dossier, `market_rows=30`, `market_proxy_rows=4`, and the canonical
 `team_asset_inventory` trace. This is stronger evidence than a marker-only
 entry check because it tests the disputed value across both consumers.
+
+## 2026-08-25 - Player dossiers must share economic provenance
+
+The same parallel-join pattern appeared at player grain: Jimmy Horn's entity
+page used a profile row and showed market 0 while the exact roster asset ledger
+held 43 as an internal proxy. The player entry path now joins the scoped
+inventory row by `roster_id + asset_id`, shows the ledger/proxy descriptor, and
+fails closed for an owned player when the row is missing. A profile fallback is
+reserved for unrostered players. This extends the reconciliation check from
+team totals to the individual decision object.

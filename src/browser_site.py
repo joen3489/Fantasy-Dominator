@@ -3742,19 +3742,27 @@ def _page(
       const position = dossier.position || signal.position || rosterRow.position || '';
       const ownerName = dossier.team_name || signal.team_name || rosterRow.team_name || '';
       const ownerId = num(dossier.roster_id || signal.roster_id || rosterRow.roster_id);
+      const inventoryAsset = (tables.team_asset_inventory || []).find(row => Number(row.roster_id) === ownerId && String(row.asset_type || '').toLowerCase() === 'player' && String(row.asset_id || '') === id) || {{}};
+      const inventoryMarketAvailable = inventoryAsset.market_value !== undefined && inventoryAsset.market_value !== '';
       const tags = topTags('player', id, 6);
       const newsRows = (tables.league_news_impact || []).filter(row => String(row.player_id ?? '') === id).slice(0, 6);
       const insight = insightFor('player', id);
-      const marketValue = dossier.market_value ?? signal.market_value ?? '';
+      const profileMarketValue = dossier.market_value ?? signal.market_value ?? '';
+      const marketValue = inventoryMarketAvailable ? inventoryAsset.market_value : (ownerId ? '' : profileMarketValue);
+      const marketTrace = inventoryMarketAvailable ? (inventoryAsset.source_trace || 'team_asset_inventory') : (ownerId ? 'team_asset_inventory' : (dossier.source_trace || signal.source_trace));
+      const marketDescriptor = inventoryMarketAvailable
+        ? (String(inventoryAsset.source_trace || '') === 'internal_proxy_player_value' ? 'internal proxy value' : 'asset ledger value')
+        : (ownerId ? 'asset ledger value unavailable' : 'profile market value');
       const historyName = dossier.player_name || signal.player_name || rosterRow.player_name || '';
       const normalizedHistoryName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const history = (tables.player_transaction_history || []).filter(row => String(row.player_id || '') === id || (!String(row.player_id || '') && normalizedHistoryName(row.player_name) === normalizedHistoryName(historyName))).slice(0, 20);
       const compactTrace = value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean).map(item => item.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')).filter(Boolean).slice(0, 3).join(' · ');
-      const fullTraces = [...new Set([dossier.source_trace, signal.source_trace, opp.source_trace, ...newsRows.map(row => row.source_trace)].flatMap(value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean)))];
+      const fullTraces = [...new Set([marketTrace, dossier.source_trace, signal.source_trace, opp.source_trace, ...newsRows.map(row => row.source_trace)].flatMap(value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean)))];
       const ownerScope = ownerId && Number(app.myRosterId) === ownerId ? 'Your roster' : ownerId ? 'Opponent roster' : 'Unrostered';
       const playerEvidence = [
         {{ label: 'Roster context', value: `${{ownerScope}}${{ownerName ? ` · ${{ownerName}}` : ''}}`, trace: 'verified_roster_scope' }},
-        {{ label: 'Market', value: marketValue !== '' ? `value ${{marketValue}}` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
+        {{ label: 'Market', value: marketValue !== '' ? `value ${{marketValue}} (${{marketDescriptor}})` : '', trace: compactTrace(marketTrace) }},
+        {{ label: 'Market source', value: inventoryMarketAvailable ? marketDescriptor : 'profile market value unavailable', trace: compactTrace(marketTrace) }},
         {{ label: 'Projection', value: (dossier.projected_ppg ?? signal.projected_ppg) !== undefined && (dossier.projected_ppg ?? signal.projected_ppg) !== '' ? `${{dossier.projected_ppg ?? signal.projected_ppg}} projected PPG (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}})` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
         {{ label: 'Opportunity', value: opp.opportunity_score !== undefined && opp.opportunity_score !== '' ? `score ${{opp.opportunity_score}} vs production ${{opp.production_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},
         {{ label: 'Role trend', value: opp.role_trend_score !== undefined && opp.role_trend_score !== '' ? `score ${{opp.role_trend_score}}; fragility ${{opp.fragility_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},

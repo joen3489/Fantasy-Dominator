@@ -348,3 +348,12 @@ Production proof at `eb9b68d96f40cffa0afec6131547be178d8f1395` confirmed the
 repair in Chrome: Moose Caboose's Team construction and Manager dossier both
 showed 835.54, while the construction evidence showed 30/30 market rows and
 four internal proxy values.
+
+## 2026-08-25 player dossiers need the same market provenance
+
+The team-total repair revealed a second-order version of the same problem:
+player pages can be wrong even when the team total is right if they read a
+profile join instead of the exact owned asset. For rostered players, join
+`team_asset_inventory` by `roster_id + asset_id`, label proxy values, and show
+unavailable when the owned asset row is missing. Keep profile market values
+only for unrostered player-pool pages.

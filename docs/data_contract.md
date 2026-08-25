@@ -152,6 +152,13 @@ The market total shown in the construction panel must therefore reconcile to
 the manager dossier's inventory total, while missing inventory rows remain
 unavailable rather than falling back to a different roster or table.
 
+Player entity pages follow the same boundary: for a rostered player, market
+value is joined by exact `owner roster_id + asset_id` from
+`team_asset_inventory`. The page labels the ledger/proxy source and fails to
+an unavailable market value when that scoped asset row is missing. A profile
+market value may be shown only for an unrostered player, where no owned asset
+ledger row exists.
+
 ## Presentation Artifacts
 
 `app_bundle.json.dataRoomDelta` is a deterministic reader receipt, not a

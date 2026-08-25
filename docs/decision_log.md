@@ -845,3 +845,13 @@ Production revision
 in authenticated Chrome. The two dossier surfaces now agree at 835.54; the
 team construction receipt reports 30/30 market rows and four internal proxy
 values, with the canonical inventory source visible.
+
+## 2026-08-25 - Reuse market provenance on player dossiers
+
+Jimmy Horn's live player entity page showed market value 0 while the exact
+Moose Caboose asset ledger held an internal proxy value of 43. This was the
+same parallel-join defect as the team total, but at player grain. Rostered
+players now resolve market value through `team_asset_inventory` using exact
+`roster_id` and `asset_id`, expose the proxy/external descriptor, and fail to
+an unavailable value if the scoped asset row is absent. Profile market values
+remain valid only for unrostered players.
