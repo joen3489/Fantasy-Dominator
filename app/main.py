@@ -63,6 +63,13 @@ class ManagerTradeProfileBody(BaseModel):
     editor_note: str = ""
 
 
+class ContentInteractionBody(BaseModel):
+    artifact_type: str = "article"
+    artifact_key: str
+    interaction_type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -166,8 +173,21 @@ def create_app() -> FastAPI:
         user_id = int(user["id"])
         leagues = [_league_view(row, user_id) for row in db.list_user_leagues(user_id)]
         enabled_leagues = [league for league in leagues if league.get("enabled")]
+        requested_league_id = str(league_id or "").strip()
+        remembered_league_id = db.get_selected_league_id(user_id)
+        eligible_ids = {str(league.get("league_id") or "") for league in enabled_leagues}
+        selected_id = next(
+            (
+                candidate
+                for candidate in (requested_league_id, remembered_league_id)
+                if candidate and candidate in eligible_ids
+            ),
+            str((enabled_leagues[0] if enabled_leagues else {}).get("league_id") or ""),
+        )
+        if selected_id and selected_id != remembered_league_id:
+            db.set_selected_league_id(user_id, selected_id)
         featured_league = next(
-            (league for league in enabled_leagues if str(league.get("league_id")) == str(league_id)),
+            (league for league in enabled_leagues if str(league.get("league_id")) == selected_id),
             enabled_leagues[0] if enabled_leagues else None,
         )
         attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
@@ -354,6 +374,49 @@ def create_app() -> FastAPI:
     def league_readiness(league_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         league = _owned_enabled_league(user, league_id)
         return _edition_readiness(int(user["id"]), league)
+
+    @app.post("/api/leagues/{league_id}/content-interactions")
+    def content_interaction(
+        league_id: str,
+        body: ContentInteractionBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Record explicit, scoped feedback without tracking ordinary reading."""
+
+        league = _owned_league(user, league_id)
+        allowed_types = {"useful", "not_useful", "evidence_opened", "saved", "pursued", "outcome"}
+        if body.interaction_type not in allowed_types:
+            raise HTTPException(status_code=422, detail="Unsupported content interaction type.")
+        artifact_key = str(body.artifact_key or "").strip()
+        if not artifact_key or len(artifact_key) > 120:
+            raise HTTPException(status_code=422, detail="artifact_key is required and must be short.")
+        roster_id = league.get("roster_id")
+        if roster_id in (None, ""):
+            raise HTTPException(status_code=409, detail="This league does not have a verified roster scope.")
+        return db.record_content_interaction(
+            int(user["id"]),
+            league_id,
+            int(roster_id),
+            body.artifact_type,
+            artifact_key,
+            body.interaction_type,
+            body.payload,
+        )
+
+    @app.get("/api/leagues/{league_id}/content-interactions")
+    def content_interactions(
+        league_id: str,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        roster_id = league.get("roster_id")
+        if roster_id in (None, ""):
+            return {"league_id": league_id, "roster_id": None, "interactions": []}
+        return {
+            "league_id": league_id,
+            "roster_id": int(roster_id),
+            "interactions": db.list_content_interactions(int(user["id"]), league_id, int(roster_id)),
+        }
 
 
     @app.get("/league/{league_id}/")
@@ -719,6 +782,13 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
                 league_id=str(league.get("league_id") or ""),
                 config=config,
             )
+            manifest = load_json(paths.site_dir / "data" / "manifest.json")
+            db.stamp_content_artifact_bundle(
+                int(user["id"]),
+                str(league.get("league_id") or ""),
+                str(context.season or league.get("season") or load_config().get("current_season") or ""),
+                str((manifest or {}).get("bundleRevision") or ""),
+            )
             return
         except Exception:  # noqa: BLE001 - the recovery page must remain available.
             continue
@@ -865,6 +935,18 @@ def _rebuild_browser_job(
         league_id=str(league.get("league_id") or ""),
         config=scoped_config(load_config(), context),
     )
+    try:
+        manifest = load_json(paths.site_dir / "data" / "manifest.json")
+        db.stamp_content_artifact_bundle(
+            user_id,
+            str(league.get("league_id") or ""),
+            str(context.season or league.get("season") or load_config().get("current_season") or ""),
+            str((manifest or {}).get("bundleRevision") or ""),
+        )
+    except (OSError, ValueError, TypeError):
+        # The bundle itself is still useful; readiness will expose a missing
+        # revision rather than turning a successful rebuild into a 500.
+        pass
     return {"state": "complete", "message": "Browser bundle rebuilt.", "site_path": str(path.as_posix())}
 
 
@@ -986,6 +1068,8 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
     view["source_receipt"] = _source_receipt_view(view["editorial"])
+    publication_receipt = _load_publication_receipt(user_id, view) if user_id is not None else {}
+    view["publication_receipt"] = publication_receipt
     view["writer_preview"] = (
         _load_writer_preview(user_id, view)
         if user_id is not None
@@ -996,6 +1080,10 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
             user_id,
             str(row.get("league_id") or ""),
             str(row.get("season") or load_config().get("current_season") or ""),
+            current_receipts=publication_receipt.get("article_receipts")
+            if publication_receipt.get("manifest_present")
+            else None,
+            current_bundle_revision=str(publication_receipt.get("bundle_revision") or ""),
         )
         if user_id is not None
         else {}
@@ -1015,6 +1103,27 @@ def _load_editorial_issue(user_id: int, league: dict[str, Any]) -> dict[str, Any
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _load_publication_receipt(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Read the private bundle's publication receipt for truthful status labels."""
+
+    path = _private_paths(user_id, str(league.get("league_id") or "")).site_dir / "data" / "manifest.json"
+    if not path.is_file():
+        return {"manifest_present": False, "verified": False, "article_receipts": {}, "bundle_revision": ""}
+    try:
+        payload = load_json(path)
+    except (OSError, ValueError, TypeError):
+        return {"manifest_present": True, "verified": False, "article_receipts": {}, "bundle_revision": ""}
+    if not isinstance(payload, dict):
+        return {"manifest_present": True, "verified": False, "article_receipts": {}, "bundle_revision": ""}
+    receipts = payload.get("articleReceipts")
+    return {
+        "manifest_present": True,
+        "verified": isinstance(receipts, dict),
+        "article_receipts": receipts if isinstance(receipts, dict) else {},
+        "bundle_revision": str(payload.get("bundleRevision") or ""),
+    }
 
 
 def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
@@ -1289,9 +1398,21 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         status = _safe_operator_status(
             front_operator.status(_private_paths(user_id, str(league["league_id"])))
         )
+        publication_receipt = _load_publication_receipt(user_id, league)
+        content_status = db.content_artifact_status(
+            user_id,
+            str(league["league_id"]),
+            str(league.get("season") or load_config().get("current_season") or ""),
+            current_receipts=publication_receipt.get("article_receipts")
+            if publication_receipt.get("manifest_present")
+            else None,
+            current_bundle_revision=str(publication_receipt.get("bundle_revision") or ""),
+        )
         return status | {
             "league_id": str(league["league_id"]),
             "league_name": league.get("name", ""),
+            "publication_receipt": publication_receipt,
+            "content_status": content_status,
         }
 
     statuses = []

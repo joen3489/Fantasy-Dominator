@@ -92,6 +92,21 @@ class LocalDataValidationTests(unittest.TestCase):
         self.assertTrue(any("no source traces" in error for error in audit["errors"]))
         self.assertTrue(any("invalid analysis" in error for error in audit["errors"]))
 
+    def test_freshness_margin_warns_before_the_gate_fails(self) -> None:
+        # Design source: docs/data_contract.md, source freshness contract; a
+        # passing gate must still expose proximity to stale data.
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            audit = audit_local_data(
+                processed,
+                analysis,
+                now=datetime(2026, 8, 23, 22, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertTrue(audit["ok"])
+        self.assertEqual(audit["freshness_margin_hours"], 2.0)
+        self.assertTrue(any("freshness margin" in warning for warning in audit["warnings"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,7 +16,7 @@ The app should help a dynasty manager understand:
 - which news items create trade windows
 - what the analyst layer thinks, with evidence and confidence
 
-## Current implementation note (2026-08-23)
+## Current implementation note (2026-08-24)
 
 The writing layer is now provider-neutral through `src/llm.py`. OpenAI
 `gpt-5.6-luna` is the default production writer, with reasoning effort set
@@ -35,7 +35,9 @@ Core invariants:
 - No trade execution, message sending, or Sleeper mutation.
 - Browser is the primary workflow surface.
 - CSV, SQLite, JSON, markdown, and raw files are audit artifacts.
-- Every meaningful output must be scoped to any selected `roster_id`, not only Melkor.
+- Every meaningful output must be scoped to any selected `roster_id`; team names
+  such as the historical Melkor label are mutable presentation labels, not
+  identity keys.
 
 ## V-Model Master Map
 
@@ -873,6 +875,36 @@ Goal (per user interview): "run all my fantasy football teams in different leagu
 Verified locally end-to-end before cutover: real multi-league refresh of both dynasty leagues (including one never processed before), 13-item cross-league queue spot-checked against real Sleeper state, authenticated home + drill-downs rendered at 390px in Chrome via a locally-generated-JWKS simulated session (no real secrets), 77 tests green.
 
 Non-goals (deliberate): self-serve signup/billing (Clerk invite-only covers "others someday"); scheduled LLM article generation; redraft/best-ball article scoping beyond the CSS gate (no such league is linked yet).
+
+### Epic 22: Realize the Personal Front Office
+
+The full product-realization plan now lives in
+[`docs/front_office_realization_epic.md`](front_office_realization_epic.md).
+It supersedes adding isolated presentation features as the next default move.
+
+The ordered vertical slices are:
+
+1. truthful publication receipts and production verification;
+2. canonical, fingerprinted evidence packets;
+3. structured daily publication driven by generated articles;
+4. exact multi-league and roster identity continuity;
+5. historical manager dossiers;
+6. read-only, counterparty-specific Trade Desk packets;
+7. question-led Data Room and entity presentation;
+8. versioned responsive media assets;
+9. recommendation and editorial outcome feedback.
+
+The first slice is a release gate, not a cosmetic enhancement. Do not run an
+expensive content generation cycle until the current bundle can prove which
+article artifact it is displaying, whether that artifact is current for its
+evidence fingerprint, and whether the selected league and roster are correct.
+
+2026-08-25 checkpoint: the local implementation now has article fingerprints,
+content hashes, bundle revisions, generated-article publication cards, reuse
+gates, structured manager dossiers, read-only Trade Desk packets, question-led
+edition prompts, and a versioned media manifest. Release 1 remains open until
+the authenticated Railway browser check proves the production revision and
+selected roster path.
 
 ## Source And Ownership Contracts
 

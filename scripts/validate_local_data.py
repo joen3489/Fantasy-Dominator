@@ -64,12 +64,20 @@ def audit_local_data(
     metadata = (tables.get("refresh_metadata") or [{}])[0]
     generated_at = str(metadata.get("generated_at") or "")
     age_hours = _age_hours(generated_at, now=now)
+    freshness_margin_hours = None
     if not generated_at:
         errors.append("refresh_metadata.csv has no generated_at timestamp")
     elif age_hours is None:
         errors.append(f"refresh_metadata.generated_at is not parseable: {generated_at}")
-    elif age_hours > max_age_hours:
-        errors.append(f"processed data is {age_hours:.1f} hours old; maximum is {max_age_hours:g} hours")
+    else:
+        freshness_margin_hours = max_age_hours - age_hours
+        if freshness_margin_hours < 0:
+            errors.append(f"processed data is {age_hours:.1f} hours old; maximum is {max_age_hours:g} hours")
+        elif freshness_margin_hours < max_age_hours * 0.25:
+            warnings.append(
+                f"processed data freshness margin is only {freshness_margin_hours:.1f} hours; "
+                f"warning floor is {max_age_hours * 0.25:.1f} hours"
+            )
 
     if str(metadata.get("analysis_artifacts_status") or "").lower() not in {"generated", "complete"}:
         errors.append("refresh metadata does not report generated analysis artifacts")
@@ -142,6 +150,10 @@ def audit_local_data(
         "analysis_dir": str(analysis_dir),
         "generated_at": generated_at,
         "age_hours": round(age_hours, 2) if age_hours is not None else None,
+        "freshness_margin_hours": round(freshness_margin_hours, 2)
+        if freshness_margin_hours is not None
+        else None,
+        "freshness_warning_floor_hours": round(max_age_hours * 0.25, 2),
         "table_counts": table_counts,
         "news_event_count": len(news_rows),
         "source_summary": source_summary,
@@ -179,7 +191,9 @@ def _age_hours(value: str, *, now: datetime | None = None) -> float | None:
 def _format_report(audit: dict[str, Any]) -> str:
     lines = [
         f"Local data audit: {'PASS' if audit['ok'] else 'FAIL'}",
-        f"Refresh: {audit.get('generated_at') or 'not recorded'} ({audit.get('age_hours') if audit.get('age_hours') is not None else 'unknown'} hours old)",
+        f"Refresh: {audit.get('generated_at') or 'not recorded'} "
+        f"({audit.get('age_hours') if audit.get('age_hours') is not None else 'unknown'} hours old; "
+        f"margin {audit.get('freshness_margin_hours') if audit.get('freshness_margin_hours') is not None else 'unknown'} hours)",
         f"News rows: {audit.get('news_event_count', 0)}",
         f"Analysis: {'valid' if audit.get('analysis', {}).get('valid') else 'invalid or missing'}",
     ]

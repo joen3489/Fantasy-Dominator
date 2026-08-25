@@ -127,7 +127,17 @@ def _call_anthropic(
     for block in body.get("content", []):
         if block.get("type") == "tool_use" and block.get("name") == tool["name"]:
             payload = block.get("input", {})
-            return payload if isinstance(payload, dict) else {}
+            if not isinstance(payload, dict):
+                return {}
+            if tool.get("name") != "emit_article":
+                return payload
+            return payload | {
+                "_provider_receipt": {
+                    "provider": config.provider,
+                    "model": config.model,
+                    "usage": body.get("usage") if isinstance(body.get("usage"), dict) else {},
+                }
+            }
     raise ValueError(f"Anthropic response did not include a {tool['name']} tool call.")
 
 
@@ -175,7 +185,18 @@ def _call_openai(
                 payload = json.loads(item.get("arguments") or "{}")
             except (TypeError, json.JSONDecodeError) as exc:
                 raise ValueError("OpenAI function-call arguments were not valid JSON.") from exc
-            return payload if isinstance(payload, dict) else {}
+            if not isinstance(payload, dict):
+                return {}
+            if tool.get("name") != "emit_article":
+                return payload
+            return payload | {
+                "_provider_receipt": {
+                    "provider": config.provider,
+                    "model": config.model,
+                    "reasoning_effort": config.reasoning_effort,
+                    "usage": body.get("usage") if isinstance(body.get("usage"), dict) else {},
+                }
+            }
     raise ValueError(f"OpenAI response did not include a {tool['name']} function call.")
 
 

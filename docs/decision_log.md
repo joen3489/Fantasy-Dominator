@@ -4,6 +4,40 @@ This is a short memory of decisions and failure modes that materially affect
 the product. Add an entry when a future implementation changes one of these
 boundaries.
 
+## 2026-08-25 - Adopt the Front Office realization epic
+
+The project is now treated as a personal front-office publication backed by a
+deep data room, not as a dashboard with optional AI prose. The durable plan is
+in `docs/front_office_realization_epic.md`.
+
+The first implementation gate is the truthful-publication seam: the current
+browser bundle, article artifacts, evidence fingerprint, reporter identity,
+generation mode, and operator status must agree. No content run should spend
+LLM cost until unchanged inputs can be skipped and the reader-facing issue is
+proven to consume the generated artifact.
+
+The product will use structured content objects for articles, evidence, and
+media. Generated imagery is an editorial asset with scope, prompt/model
+metadata, content hash, responsive variants, alt text, and publication status;
+it is never a source of fantasy facts. Text writers remain evidence-grounded
+lenses, and the human manager remains the decision-maker.
+
+The work is sequenced as vertical slices: truthful publication, canonical
+evidence packets, daily read, identity continuity, manager dossiers, read-only
+Trade Desk, question-led Data Room, controlled media assets, and a learning
+loop. This sequencing is intentional: more writers, charts, or imagery cannot
+repair a broken seam between data, generated content, and the publication.
+
+## 2026-08-24 - Apply the anti-recursive development rubric
+
+The supplied anti-recursive-development delta is now represented by the
+repo-local audit in `docs/anti_recursive_dev_audit.md`. It adds six checks to
+the normal workflow: loyal tests, unreachable capabilities, mislabeled cargo,
+compensated violations, knife-edge gates, and claim freshness. The immediate
+changes were league-forced identity discovery, freshness-margin reporting, and
+dated correction of the historical Melkor label. The rubric is a review
+practice; it is not permission to import another project's code or claims.
+
 ## 2026-08-23 — Preserve the doctrine in the repository
 
 The project has accumulated useful decisions across code, deployment debugging,
@@ -71,3 +105,78 @@ remain part of the next production check.
 - no automatic recurring LLM generation without an explicit cost/control
   boundary;
 - no “production is working” claim based only on local tests or `/healthz`.
+
+## 2026-08-25 — Publication receipts are the seam between data and media
+
+Article files are not published merely because they exist on disk. A current
+publication must carry its reporter, writer mode, model, evidence fingerprint,
+content hash, and fallback reason; the private browser bundle must expose the
+same article receipt and bundle revision. The reader may show deterministic
+fallback content, but it must label it as fallback and never count it as an
+LLM-written article.
+
+The generation workflow reuses an unchanged article only when the scoped
+evidence fingerprint, reporter, model, writer mode, output hash, and user/
+league context all match. The browser facade consumes the actual article body
+and structured manager/trade packets; it does not rebuild a second story from
+unrelated rows and call that publication.
+
+Generated imagery has a separate manifest with prompt/content hashes, scope,
+alt text, provenance, and publication status. It is decorative and optional:
+an image failure must never block the evidence-led text edition, and images
+must not contain factual stats or claims.
+
+The first controlled asset is the repository-scoped decorative masthead
+`assets/media/front-office-masthead-v1.png`. It is copied into generated league
+sites with a site-relative path and content hash; the browser applies it only
+when the manifest marks it available or published. This is an atmosphere layer,
+not evidence, and it does not yet satisfy the full responsive-media workstream.
+
+## 2026-08-25 - Make evidence and article contracts explicit
+
+The publication seam now carries explicit article ID, section, roster scope,
+source receipt, generation metadata, reporter, model, evidence fingerprint,
+content hash, fallback reason, and bundle revision fields. The writer tool also
+returns a structured editorial object (headline, dek, lede, thesis, change,
+counter-signal, action, risk, confidence, related entities, and optional art
+direction) alongside markdown. Legacy deterministic fixtures may omit those
+fields and receive honest defaults; production writer calls are still asked for
+the full contract.
+
+Evidence packets are normalized before they reach a writer. A packet labels
+single-source and unattributed evidence explicitly, carries freshness and
+source IDs, states the deterministic calculation boundary, and names what the
+writer is not allowed to infer. This is the guardrail against burning model
+tokens to turn loosely assembled rows into authoritative-sounding prose.
+
+## 2026-08-25 - Learning signals must be explicit
+
+The first feedback loop records only deliberate manager actions: useful, needs
+work, evidence reviewed, saved, pursued, or outcome. Each row is scoped to the
+authenticated user, league, exact Sleeper roster, article, and bundle revision.
+Ordinary page views are not treated as approval, and feedback has no path to
+Sleeper or manager messaging. This keeps future learning grounded in decisions
+and outcomes rather than shallow engagement counts.
+
+## 2026-08-25 - Remember the league, never the name
+
+The authenticated user record now stores the last selected owned league. A
+valid `league_id` query updates that preference, and a later home visit uses it
+before the legacy first-league fallback. This improves return visits and
+logout/login continuity without weakening the identity boundary: ownership is
+checked first, and the current team is resolved by the linked Sleeper user and
+exact `roster_id`. Mutable display names such as `Moose Caboose`, `Melkor Lord
+of Light`, or `Lulu's Potatoes` must never be used as identity keys.
+
+## 2026-08-25 - Verify the current label at the source boundary
+
+An authenticated production browser check and a direct Sleeper read agree on
+the identity boundary for `Joanie Loves Dynasty Football`: the signed-in
+manager owns `roster_id=2`, while `Moose Caboose` is `roster_id=4`. Sleeper's
+current trimmed team label is `Lulu’s Potatoe’s` (including that spelling), so
+the application must render the current source label and not silently replace
+it with a remembered or hand-edited name. If the desired Sleeper label is
+`Lulu’s Potatoes`, it must first be changed and observed at Sleeper; the app
+should then pick it up on refresh. This check also found that Railway was still
+serving the older bundle without the local question-led Data Room marker, so a
+signed-in page alone is not proof that the intended revision is live.

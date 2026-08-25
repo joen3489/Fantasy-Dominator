@@ -885,6 +885,55 @@ class VModelTests(unittest.TestCase):
             self.assertFalse((analysis / "team_report.md").exists())
             self.assertIn("model_mode: automatic_llm", (analysis / "market_watch.md").read_text(encoding="utf-8"))
 
+    def test_generate_articles_reuses_current_receipts_without_another_llm_call(self) -> None:
+        from app import db
+        from src.context import FantasyContext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            database_path = root / "app.db"
+            narrative = (
+                "## Cornerstones\nCore report.\n\n## Shop Candidates\nNames.\n\n"
+                "## Buy-Low Targets\nBuys.\n\n## Sell-High Windows\nSells.\n\n"
+                "## Best Fits\nFits.\n\n## Steer Clear\nFades.\n\n"
+                "## Contenders\nContenders.\n\n## Rebuilders\nRebuilders.\n\n"
+                "## Target Theses\nTargets.\n\n## Sell Windows\nWindows.\n\n## Manager Angles\nAngles."
+            )
+            calls = []
+
+            def fake_article(system_prompt, evidence, api_key, model):
+                calls.append(system_prompt)
+                return {"narrative_markdown": narrative, "cited_evidence_ids": [evidence[0]["evidence_id"]]}
+
+            with patch.object(db, "DB_PATH", database_path), patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                operator, "generate_article_via_llm", side_effect=fake_article
+            ):
+                db.init_db()
+                user_id = int(db.get_or_create_user("receipt-reuse")["id"])
+                context = FantasyContext(
+                    user_id=str(user_id),
+                    league_id="receipt-league",
+                    season="2026",
+                    roster_id=2,
+                    team_name="Receipt Team",
+                )
+                first = operator.generate_articles_workflow(context=context)
+                first_call_count = len(calls)
+                second = operator.generate_articles_workflow(context=context)
+
+            self.assertEqual(first["state"], "complete")
+            self.assertEqual(second["state"], "complete")
+            self.assertEqual(first_call_count, len(calls))
+            self.assertTrue(all(item["state"] == "unchanged" for item in second["articles"].values()))
+
     def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dirs = self._operator_dirs(Path(tmp))
@@ -1281,6 +1330,7 @@ class VModelTests(unittest.TestCase):
             manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
             editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
+            media_manifest = json.loads((site / "data" / "media_manifest.json").read_text(encoding="utf-8"))
             players_audit_exists = (site / "data" / "audit" / "players.json").exists()
             draft_room_exists = (site / "data" / "draft_room.json").exists()
 
@@ -1396,6 +1446,8 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(manifest["appName"], "The Front Office")
         self.assertEqual(manifest["editorialPath"], "data/editorial_issue.json")
         self.assertEqual(manifest["draftRoomPath"], "data/draft_room.json")
+        self.assertEqual(manifest["mediaPath"], "data/media_manifest.json")
+        self.assertEqual(media_manifest["schema_version"], "media_manifest_v1")
         self.assertEqual(editorial["schema_version"], "issue_v1")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")
         self.assertIn("players", manifest["auditTables"])
@@ -2666,6 +2718,9 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("Clapper Player", by_manager["Moose Caboose"]["assets_to_discuss"])
         # A manager with no matched opportunity gets a tendency-based angle, never someone else's player.
         self.assertNotIn("Player", by_manager["Quiet Team"]["assets_to_discuss"])
+        self.assertIn("plausible_offer_range", by_manager["The Clapper"])
+        self.assertIn("historical_evidence", by_manager["The Clapper"])
+        self.assertIn("do_not_chase_conditions", by_manager["The Clapper"])
 
     def test_dynasty_cycles_differentiate_by_future_pick_capital(self) -> None:
         # 11/12 managers classified "rebuild" in production because all-time pick counts tripped

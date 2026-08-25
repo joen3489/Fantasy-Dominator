@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from html import escape
 from pathlib import Path
@@ -9,6 +10,7 @@ import pandas as pd
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
+from .media_assets import build_media_manifest, materialize_media_assets, media_manifest_json
 from .personas import reporter_lineup
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
@@ -114,6 +116,7 @@ def browser_bundle_missing(site_dir: Path) -> list[str]:
         "data/app_bundle.json",
         "data/editorial_issue.json",
         "data/draft_room.json",
+        "data/media_manifest.json",
     ):
         if not (site_dir / relative).is_file():
             missing.append(relative)
@@ -192,6 +195,7 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "managerIntelMode": _front_matter_field(analysis_dir / "manager_intel.md", "model_mode"),
         "insightCards": _json_items(analysis_dir / "validated_insight_cards.json"),
         "insightValidation": _json_items(analysis_dir / "insight_card_validation.json"),
+        "articleReceipts": _article_receipts(analysis_dir),
     }
 
 
@@ -201,6 +205,59 @@ def _front_matter_field(path: Path, key: str) -> str:
         if line.startswith(f"{key}:"):
             return line.split(":", 1)[1].strip()
     return ""
+
+
+def _front_matter_json(path: Path, key: str) -> dict[str, Any]:
+    raw = _front_matter_field(path, key)
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
+    files = {
+        "daily_brief": "daily_gm_brief.md",
+        "team_report": "team_report.md",
+        "market_watch": "market_watch.md",
+        "trade_desk": "trade_desk.md",
+        "manager_intel": "manager_intel.md",
+    }
+    receipts: dict[str, dict[str, Any]] = {}
+    for key, filename in files.items():
+        path = analysis_dir / filename
+        if not path.is_file():
+            continue
+        try:
+            content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            content_hash = ""
+        receipts[key] = {
+            "mode": _front_matter_field(path, "model_mode") or "deterministic_template",
+            "model": _front_matter_field(path, "model"),
+            "reporter_id": _front_matter_field(path, "reporter_persona"),
+            "reporter_name": _front_matter_field(path, "reporter_name"),
+            "generated_at": _front_matter_field(path, "generated_at"),
+            "evidence_fingerprint": _front_matter_field(path, "evidence_fingerprint"),
+            "content_hash": content_hash,
+            "structured": _front_matter_json(path, "article_payload_json"),
+            "path": filename,
+        }
+    return receipts
+
+
+def _bundle_revision(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
 
 
 def _json_items(path: Path) -> list[dict[str, Any]]:
@@ -292,6 +349,15 @@ def _write_data_chunks(
         my_roster_id=my_roster_id,
         my_team_name=my_team_name,
     )
+    materialized_assets = materialize_media_assets(
+        data_dir.parent,
+        config.get("media_assets") or [],
+    )
+    media_manifest = build_media_manifest(
+        materialized_assets,
+        user_id=context.get("user_id"),
+        league_id=str(league_id or ""),
+    )
     app_payload = {
         "tables": app_tables,
         "editorial": editorial,
@@ -310,13 +376,24 @@ def _write_data_chunks(
         "leagueId": str(league_id or ""),
         "analysis": analysis,
         "tableCounts": table_counts,
+        "mediaManifest": media_manifest,
     }
+    bundle_revision = _bundle_revision(app_payload)
+    editorial["bundle_revision"] = bundle_revision
+    app_payload["bundleRevision"] = bundle_revision
+    app_payload["mediaManifest"]["bundle_revision"] = bundle_revision
+    for asset in app_payload["mediaManifest"].get("assets", []):
+        asset["bundle_revision"] = bundle_revision
     (data_dir / "app_bundle.json").write_text(
         json.dumps(app_payload, ensure_ascii=False).replace("</", "<\\/"),
         encoding="utf-8",
     )
     (data_dir / "editorial_issue.json").write_text(
         json.dumps(editorial, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
+    (data_dir / "media_manifest.json").write_text(
+        media_manifest_json(app_payload["mediaManifest"]),
         encoding="utf-8",
     )
     (data_dir / "draft_room.json").write_text(
@@ -337,6 +414,7 @@ def _write_data_chunks(
         "bundlePath": "data/app_bundle.json",
         "editorialPath": "data/editorial_issue.json",
         "draftRoomPath": "data/draft_room.json",
+        "mediaPath": "data/media_manifest.json",
         "auditTables": {name: f"data/audit/{name}.json" for name in sorted(audit_only_tables)},
         "tableCounts": table_counts,
         "initialTables": sorted(app_tables),
@@ -346,6 +424,9 @@ def _write_data_chunks(
         "reporterPersona": editorial.get("reporter_persona") or {},
         "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
         "identityReceipt": identity_receipt,
+        "bundleRevision": bundle_revision,
+        "articleReceipts": analysis.get("articleReceipts") or {},
+        "mediaManifest": app_payload["mediaManifest"],
     }
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
@@ -1090,6 +1171,27 @@ def _page(
     </section>
 
     <section id="view-data-room">
+    <div id="question-led-data-room" class="view-block">
+      <div class="data-room-intro question-led-intro">
+        <div>
+          <span class="section-kicker">Question-led data room</span>
+          <h2>Ask the room a useful question.</h2>
+          <p class="note">These summaries answer one decision question at a time, then leave the underlying tables and source receipts one click away.</p>
+        </div>
+        <span class="tag">Sleeper facts first</span>
+      </div>
+      <div class="data-room-question-grid" role="tablist" aria-label="Data Room questions">
+        <button type="button" class="data-room-question active" data-data-question="changed">What changed?</button>
+        <button type="button" class="data-room-question" data-data-question="matters">Why does it matter to my team?</button>
+        <button type="button" class="data-room-question" data-data-question="mispriced">Which players are mispriced?</button>
+        <button type="button" class="data-room-question" data-data-question="traders">Who is most likely to trade?</button>
+        <button type="button" class="data-room-question" data-data-question="disagree">Which signals disagree?</button>
+        <button type="button" class="data-room-question" data-data-question="weak">What evidence is weak or stale?</button>
+        <button type="button" class="data-room-question" data-data-question="next">What should I investigate next?</button>
+      </div>
+      <div id="data-room-answer" class="question-answer" role="status"></div>
+      <div id="data-room-visuals" class="decision-visual-grid"></div>
+    </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>
       <h3>Operator Mode</h3>
@@ -1160,6 +1262,7 @@ def _page(
       signalConfidence: 'ALL',
       analysisScope: 'team',
       analysisConfidence: 'ALL',
+      dataQuestion: 'changed',
       lensPreset: 'Balanced Market',
       lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }},
       operatorToken: '',
@@ -1488,6 +1591,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.data-room-question').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.dataQuestion = button.dataset.dataQuestion || 'changed';
+          setActive('.data-room-question', button);
+          renderDataRoomQuestions();
+        }});
+      }});
       document.querySelectorAll('.lens-preset').forEach(button => {{
         button.addEventListener('click', () => {{
           state.lensPreset = button.dataset.preset;
@@ -1506,6 +1616,10 @@ def _page(
       }});
       document.getElementById('operator-token').addEventListener('input', event => {{
         state.operatorToken = event.target.value.trim();
+      }});
+      document.addEventListener('click', event => {{
+        const button = event.target.closest('[data-content-interaction]');
+        if (button) recordContentInteraction(button);
       }});
       document.getElementById('operator-refresh').addEventListener('click', () => runOperatorAction('/api/operator/refresh'));
       document.getElementById('operator-build-packet').addEventListener('click', () => runOperatorAction('/api/operator/build-packet'));
@@ -1531,6 +1645,33 @@ def _page(
         document.getElementById('entity-search-results').innerHTML = '';
         entitySearch.value = '';
       }});
+    }}
+
+    async function recordContentInteraction(button) {{
+      const interactionType = button.dataset.contentInteraction;
+      const artifactKey = button.dataset.artifactKey;
+      if (!interactionType || !artifactKey || !manifest.leagueId) return;
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Saving...';
+      try {{
+        const response = await fetch(`/api/leagues/${{encodeURIComponent(manifest.leagueId)}}/content-interactions`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{
+            artifact_type: 'article',
+            artifact_key: artifactKey,
+            interaction_type: interactionType,
+            payload: {{ bundle_revision: manifest.bundleRevision || '', mode: 'explicit_reader_feedback' }}
+          }})
+        }});
+        if (!response.ok) throw new Error(`${{response.status}}`);
+        button.textContent = 'Saved';
+      }} catch (error) {{
+        button.textContent = original;
+        button.disabled = false;
+        console.warn('Could not save article feedback', error);
+      }}
     }}
 
     function managerGridCards() {{
@@ -1728,6 +1869,7 @@ def _page(
       document.getElementById('trade-table').innerHTML = table(filteredTrades(), tradeColumns);
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
+      renderDataRoomQuestions();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
       renderDraftRoom();
@@ -1871,7 +2013,9 @@ def _page(
         {{ item: 'Updated at', value: status.updated_at || status.generated_at || '' }},
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
         {{ item: 'League', value: status.league_name || manifest.leagueId || 'Current league' }},
-        {{ item: 'Evidence count', value: status.evidence_count || '' }}
+        {{ item: 'Evidence count', value: status.evidence_count || '' }},
+        {{ item: 'Publication', value: (status.content_status || {{}}).label || 'No publication receipt' }},
+        {{ item: 'Bundle revision', value: (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }}
       ];
       const validation = status.validation || {{}};
       const errors = validation.errors || status.errors || [];
@@ -2063,6 +2207,117 @@ def _page(
       ]);
     }}
 
+    function renderDataRoomQuestions() {{
+      const answerNode = document.getElementById('data-room-answer');
+      const visualsNode = document.getElementById('data-room-visuals');
+      if (!answerNode || !visualsNode) return;
+      const result = dataRoomQuestionResult(state.dataQuestion || 'changed');
+      answerNode.innerHTML = `<strong>${{escapeHtml(result.title)}}</strong><br>${{escapeHtml(result.answer)}}`;
+      visualsNode.innerHTML = (result.visuals || []).join('');
+    }}
+
+    function dataRoomQuestionResult(question) {{
+      const roster = currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId);
+      const team = currentSeasonTeams().find(row => Number(row.roster_id) === state.teamId) || {{}};
+      const latestNews = sortRows((tables.league_news_impact || []).slice(), ['published_at']).reverse()[0] || {{}};
+      const latestTrade = sortRows((tables.trades || []).slice(), ['created_datetime']).reverse()[0] || {{}};
+      const latestWaiver = sortRows((tables.waivers || []).slice(), ['created_datetime', 'week']).reverse()[0] || {{}};
+      if (question === 'matters') {{
+        const composition = {{}};
+        roster.forEach(row => {{ composition[row.position || 'Unknown'] = (composition[row.position || 'Unknown'] || 0) + 1; }});
+        const rows = Object.entries(composition).map(([labelText, value]) => ({{ label: labelText, value, display: `${{value}} players` }}));
+        return {{
+          title: 'Why it matters to my team',
+          answer: `${{team.team_name || app.myTeamName || 'Your team'}} has ${{roster.length}} rostered players in the confirmed current-season scope. Composition is a starting point for fit; it is not a lineup recommendation by itself.`,
+          visuals: [decisionVisual('Roster composition', rows, 'Counted from the exact Sleeper roster scope.'), decisionListVisual('Open next', ['Open My Team for player-level projections and role signals.', 'Open Trade Desk for two-sided counterparty fit.', 'Check the strategy profile before treating a gap as actionable.'])]
+        }};
+      }}
+      if (question === 'mispriced') {{
+        const rows = filteredSignalGaps().slice(0, 6).map(row => ({{
+          label: row.player_name || 'Unknown player',
+          value: Math.abs(Number(row.gap_score) || 0),
+          display: `${{row.gap_score || 0}} gap`,
+          playerId: row.player_id
+        }}));
+        return {{
+          title: 'Which players are mispriced?',
+          answer: rows.length ? 'These are the largest current model gaps in the selected scope. A gap is a prompt for price discovery, not proof that the market is wrong.' : 'No scored market gaps are available in the current evidence bundle.',
+          visuals: [decisionVisual('Largest modeled gaps', rows, 'Bars show gap magnitude; inspect projection confidence and risk before acting.')]
+        }};
+      }}
+      if (question === 'traders') {{
+        const rows = (tables.manager_behavior_signals || []).filter(row => Number(row.roster_id) !== state.teamId).sort((a, b) => Number(b.trade_activity_score || 0) - Number(a.trade_activity_score || 0)).slice(0, 6).map(row => ({{
+          label: row.team_name || `Roster ${{row.roster_id}}`,
+          value: Number(row.trade_activity_score) || 0,
+          display: `${{row.trade_activity_score || 0}} activity`,
+          entityHash: `team-${{row.roster_id}}`
+        }}));
+        return {{
+          title: 'Who is most likely to trade?',
+          answer: rows.length ? 'This ranking describes observed transaction activity, not willingness or intent. Use the manager dossier to see sample size and historical posture.' : 'No manager activity rows are available yet.',
+          visuals: [decisionVisual('Observed activity', rows, 'Deterministic activity score; not a prediction of a completed trade.'), decisionListVisual('Guardrail', ['Manager tendencies are estimates from recorded behavior.', 'Private editor notes are hypotheses, not source evidence.', 'No offer is sent or implied by this surface.'])]
+        }};
+      }}
+      if (question === 'disagree') {{
+        const rows = (tables.player_opportunity_scores || []).slice().sort((a, b) => Number(b.xfp_regression_score || 0) - Number(a.xfp_regression_score || 0)).slice(0, 6).map(row => ({{
+          label: row.player_name || 'Unknown player',
+          value: Number(row.xfp_regression_score) || 0,
+          display: `${{row.xfp_regression_score || 0}} usage/output`,
+          playerId: row.player_id
+        }}));
+        return {{
+          title: 'Which signals disagree?',
+          answer: rows.length ? 'Usage-versus-output disagreement is the clearest current contradiction surfaced by the model. It can reveal a buy-low or risk flag, but it still needs role, news, and projection context.' : 'No usage-versus-output comparison is available in the current bundle.',
+          visuals: [decisionVisual('Opportunity versus production', rows, 'Higher bars mean more modeled opportunity outrunning box-score production.')]
+        }};
+      }}
+      if (question === 'weak') {{
+        const sourceRows = [...(tables.source_freshness || []), ...(tables.news_source_freshness || []), ...(tables.projection_source_freshness || [])].map(row => ({{
+          label: row.source || row.dataset || 'Source',
+          value: ['cached', 'refreshed', 'complete', 'available'].includes(String(row.status || '').toLowerCase()) ? 100 : 35,
+          display: row.status || 'unknown'
+        }}));
+        return {{
+          title: 'What evidence is weak or stale?',
+          answer: sourceRows.some(row => row.value < 100) ? 'At least one source is limited, stale, disabled, or unavailable. The edition remains readable, but confidence should fall with the source receipt.' : 'The recorded source receipts are current in this bundle; still inspect timestamps before relying on a high-stakes edge.',
+          visuals: [decisionVisual('Source receipt', sourceRows, '100 means the source is marked current; limited rows remain visible rather than hidden.'), decisionListVisual('Data-room rule', ['A single source is labeled as single-source evidence.', 'A missing optional provider does not become invented consensus.', 'Open Diagnostics for the raw freshness tables and checked-at timestamps.'])]
+        }};
+      }}
+      if (question === 'next') {{
+        const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) !== state.teamId) || {{}};
+        const questions = dossier.questions_to_ask || [];
+        const theses = (analysis.tradeTheses || []).filter(row => Number(row.target_manager_roster_id) !== state.teamId).slice(0, 4);
+        return {{
+          title: 'What should I investigate next?',
+          answer: questions.length ? 'The next investigation is a manager-specific question grounded in the dossier, not a generic content prompt.' : theses.length ? 'Start with the highest-confidence Trade Desk packet, then open the underlying manager history before deciding whether the fit is real.' : 'No next investigation is supported by the current evidence bundle.',
+          visuals: [decisionListVisual('Questions to carry into the room', questions.length ? questions : ['Which evidence row would change this recommendation?', 'What would make the estimated fit invalid?', 'Which source needs a refresh before I act?']), decisionVisual('Trade packets available', theses.map(row => ({{ label: row.target_manager_name || 'Manager', value: row.confidence === 'high' ? 100 : row.confidence === 'medium' ? 65 : 35, display: row.confidence || 'low' }})), 'Confidence is evidence quality, not certainty of a deal.')]
+        }};
+      }}
+      return {{
+        title: 'What changed?',
+        answer: `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The latest recorded news is ${{latestNews.player_name || 'not available'}}; the latest mapped trade is ${{latestTrade.created_datetime || 'not available'}}.`,
+        visuals: [decisionVisual('Current event volume', [
+          {{ label: 'News signals', value: (tables.league_news_impact || []).length, display: String((tables.league_news_impact || []).length) }},
+          {{ label: 'Trades', value: (tables.trades || []).length, display: String((tables.trades || []).length) }},
+          {{ label: 'Waivers', value: (tables.waivers || []).length, display: String((tables.waivers || []).length) }}
+        ], 'Counts are the current evidence snapshot, not a claim that every row is newly created.'), decisionListVisual('Latest receipts', [
+          `News: ${{latestNews.published_at || 'not recorded'}}`,
+          `Trade: ${{latestTrade.created_datetime || 'not recorded'}}`,
+          `Waiver: ${{latestWaiver.week || 'not recorded'}}`
+        ])]
+      }};
+    }}
+
+    function decisionVisual(title, rows, note) {{
+      if (!rows || !rows.length) return `<div class="decision-visual"><h3>${{escapeHtml(title)}}</h3><p class="note">No rows available.</p></div>`;
+      const max = Math.max(...rows.map(row => Math.abs(Number(row.value) || 0)), 1);
+      return `<div class="decision-visual"><h3>${{escapeHtml(title)}}</h3>${{rows.map(row => `<div class="decision-bar-row"><span>${{escapeHtml(row.label || 'Unknown')}}</span><span class="decision-bar-track"><span class="decision-bar-fill" style="width:${{Math.max(5, Math.min(100, (Math.abs(Number(row.value) || 0) / max) * 100))}}%"></span></span><span class="decision-bar-value">${{escapeHtml(String(row.display ?? row.value ?? ''))}}</span></div>`).join('')}}${{note ? `<p class="note">${{escapeHtml(note)}}</p>` : ''}}</div>`;
+    }}
+
+    function decisionListVisual(title, rows) {{
+      return `<div class="decision-visual"><h3>${{escapeHtml(title)}}</h3><ul class="decision-list">${{(rows || []).map(row => `<li>${{escapeHtml(String(row))}}</li>`).join('')}}</ul></div>`;
+    }}
+
     function diagnostics() {{
       const metadata = (tables.refresh_metadata || [])[0] || {{}};
       const leagueIds = metadata.configured_league_ids || Object.values(app.configuredLeagues || {{}}).filter(Boolean).join(';');
@@ -2247,19 +2502,25 @@ def _page(
     function thesisCards(rows, mode) {{
       if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
       const bucket = categoryFor('mode', mode);
-      return `<div class="brief-list">${{rows.map(row => briefCard({{
+      return `<div class="brief-list">${{rows.map(row => {{
+        const packet = mode === 'trade'
+          ? `Pursue: ${{(row.assets_to_pursue || []).map(asset => asset.player_name).filter(Boolean).join(', ') || row.assets_to_discuss || 'no named asset'}}. Offer band: ${{row.plausible_offer_range?.low || 'n/a'}}-${{row.plausible_offer_range?.high || 'n/a'}} estimated market value. Minimum return: ${{row.minimum_acceptable_return?.value || 'n/a'}}. We can offer: ${{(row.assets_we_can_offer || []).join(', ') || 'not established'}}. Why this manager may care: ${{row.why_manager_might_care || 'not established'}}. Risk of waiting: ${{row.risk_of_waiting || 'not established'}}. Risk of acting: ${{row.risk_of_acting || row.risk || 'review evidence'}}.`
+          : '';
+        return briefCard({{
         title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',
         category: categoryFor('signal_label', row.signal_label) !== 'info' ? categoryFor('signal_label', row.signal_label) : bucket,
         playerId: row.player_id,
         chips: [
           mode,
+          row.target_manager_name,
           row.position,
           row.signal_label || row.approach_type,
           row.confidence ? `confidence ${{row.confidence}}` : '',
           row.risk ? `risk ${{row.risk}}` : ''
         ],
-        evidence: `${{row.analysis_text || ''}} Evidence: ${{row.evidence || ''}} Source: ${{row.source_trace || ''}}`
-      }})).join('')}}</div>`;
+        evidence: `${{row.analysis_text || ''}} ${{packet}} Evidence: ${{row.evidence || ''}} Source: ${{row.source_trace || ''}}`
+      }});
+      }}).join('')}}</div>`;
     }}
 
     function markdownBrief(text) {{
@@ -2636,6 +2897,9 @@ def _page(
       const picks = (tables.pick_ownership || []).filter(row => Number(row.current_owner_roster_id) === rid && String(row.round) === '1');
       const thesis = (analysis.tradeTheses || []).find(row => Number(row.target_manager_roster_id) === rid) || {{}};
       const edges = (tables.counterparty_trade_edges || []).filter(row => Number(row.target_roster_id) === rid).slice(0, 5);
+      const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) === rid) || {{}};
+      const dossierHistory = dossier.season_history || [];
+      const dossierQuestions = dossier.questions_to_ask || [];
       document.getElementById('team-page-body').innerHTML = `
         ${{backLink()}}
         <div class="entity-header">
@@ -2658,6 +2922,7 @@ def _page(
           ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
           ${{entityTile('Future 1sts Owned', picks.length)}}
         </div>
+        ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence">${{escapeHtml(String(row.season))}} · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} observed trades</p>`).join('')}}</div></details>` : ''}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
         ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
         ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{
           title: `${{row.player_name || 'Unknown'}}`,

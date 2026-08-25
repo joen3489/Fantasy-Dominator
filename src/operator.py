@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -576,10 +577,21 @@ def generate_insights_automatically(paths: LeaguePaths | None = None) -> dict[st
 
 ARTICLE_TOOL = {
     "name": "emit_article",
-    "description": "Emit one section article as markdown prose grounded in the provided evidence.",
+    "description": "Emit one structured section article and its markdown prose grounded in the provided evidence.",
     "input_schema": {
         "type": "object",
         "properties": {
+            "headline": {"type": "string", "description": "A clear publication headline."},
+            "dek": {"type": "string", "description": "One-sentence setup that explains why the reader should care."},
+            "lede": {"type": "string", "description": "The opening read in one or two sentences."},
+            "thesis": {"type": "string", "description": "The core evidence-backed point of view."},
+            "what_changed": {"type": "string", "description": "What changed in the selected league snapshot."},
+            "counter_evidence": {"type": "string", "description": "The strongest caveat, counter-signal, or missing evidence."},
+            "action": {"type": "string", "description": "A read-only decision question or next step for the manager."},
+            "risk": {"type": "string", "description": "The main risk of acting or waiting."},
+            "confidence": {"type": "string", "enum": ["low", "medium", "high"], "description": "Confidence in the interpretation, not certainty about an outcome."},
+            "related_entities": {"type": "array", "items": {"type": "string"}, "description": "Evidence-backed player, team, manager, or pick identifiers/names."},
+            "visual_brief": {"type": "string", "description": "Optional non-factual art direction; never put stats or claims in an image."},
             "narrative_markdown": {
                 "type": "string",
                 "description": "The full article as markdown prose under the requested section headers.",
@@ -590,7 +602,11 @@ ARTICLE_TOOL = {
                 "description": "Every evidence_id referenced by a factual claim in narrative_markdown.",
             },
         },
-        "required": ["narrative_markdown", "cited_evidence_ids"],
+        "required": [
+            "headline", "dek", "lede", "thesis", "what_changed", "counter_evidence",
+            "action", "risk", "confidence", "related_entities", "visual_brief",
+            "narrative_markdown", "cited_evidence_ids"
+        ],
     },
 }
 
@@ -664,11 +680,17 @@ def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]],
     )
 
 
-def validate_article_output(output: dict[str, Any], evidence_ids: set[str], headers: tuple[str, ...]) -> dict[str, Any]:
+def validate_article_output(
+    output: dict[str, Any],
+    evidence_ids: set[str],
+    headers: tuple[str, ...],
+    evidence_packets: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Independent per-article validation: required headers (if any), the shared phrase-proximity
     forbidden-language scan, and lenient citation (reject only if NONE of the cited IDs are real,
     since a synthesized article can plausibly drop one citation among several correct ones)."""
     narrative = str(output.get("narrative_markdown", "")) if isinstance(output, dict) else ""
+    structured = _structured_article_payload(output, headers)
     cited = {str(value) for value in output.get("cited_evidence_ids", [])} if isinstance(output, dict) else set()
     valid_citations = cited & evidence_ids
     unknown_citations = cited - evidence_ids
@@ -677,6 +699,9 @@ def validate_article_output(output: dict[str, Any], evidence_ids: set[str], head
 
     if not narrative.strip():
         errors.append("Article narrative_markdown is empty.")
+    raw_confidence = str(output.get("confidence") or "").lower() if isinstance(output, dict) else ""
+    if raw_confidence and raw_confidence not in {"low", "medium", "high"}:
+        errors.append(f"Article confidence must be low, medium, or high: {raw_confidence}")
     missing_headers = [header for header in headers if header not in narrative]
     if missing_headers:
         errors.append(f"Article is missing required section headers: {','.join(missing_headers)}")
@@ -690,7 +715,39 @@ def validate_article_output(output: dict[str, Any], evidence_ids: set[str], head
     elif unknown_citations:
         warnings.append(f"Article cited some unknown evidence IDs (kept): {','.join(sorted(unknown_citations))}")
 
-    return {"valid": not errors, "errors": errors, "warnings": warnings, "narrative": narrative, "word_count": len(narrative.split())}
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "narrative": narrative,
+        "structured": structured,
+        "source_ids": sorted({
+            str(source_id)
+            for packet in (evidence_packets or [])
+            for source_id in (packet.get("source_ids") or [])
+            if str(source_id).strip()
+        }),
+        "word_count": len(narrative.split()),
+    }
+
+
+def _structured_article_payload(output: dict[str, Any] | None, headers: tuple[str, ...]) -> dict[str, Any]:
+    """Normalize the durable article contract while keeping old mock/fallback output valid."""
+
+    output = output if isinstance(output, dict) else {}
+    return {
+        "headline": str(output.get("headline") or (headers[0].lstrip("# ") if headers else "Desk report")),
+        "dek": str(output.get("dek") or "Evidence-backed read; open the receipt before acting."),
+        "lede": str(output.get("lede") or ""),
+        "thesis": str(output.get("thesis") or ""),
+        "what_changed": str(output.get("what_changed") or ""),
+        "counter_evidence": str(output.get("counter_evidence") or "Evidence is limited to the supplied packet."),
+        "action": str(output.get("action") or "Open the evidence and make the final decision yourself."),
+        "risk": str(output.get("risk") or "Review what could make this read wrong."),
+        "confidence": str(output.get("confidence") or "medium").lower(),
+        "related_entities": [str(item) for item in (output.get("related_entities") or []) if str(item).strip()],
+        "visual_brief": str(output.get("visual_brief") or ""),
+    }
 
 
 def _render_article_markdown(
@@ -700,6 +757,9 @@ def _render_article_markdown(
     output_path: Path,
     writer_preferences: dict[str, Any] | None = None,
     article_key: str | None = None,
+    evidence_fingerprint: str = "",
+    model: str = "",
+    structured: dict[str, Any] | None = None,
 ) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
@@ -707,15 +767,19 @@ def _render_article_markdown(
         f"artifact_type: {article.key}",
         f"generated_at: {generated_at}",
         "model_mode: automatic_llm",
+        f"model: {model}",
+        f"evidence_fingerprint: {evidence_fingerprint}",
         f"reporter_persona: {persona_metadata(writer_preferences, article_key)['persona_id']}",
         f"reporter_name: {persona_metadata(writer_preferences, article_key)['name']}",
+        "article_payload_json: " + json.dumps(structured or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
     ]
     for key in ("roster_id", "team_name"):
         value = _front_matter_value(existing, key)
         if value:
             front_lines.append(f"{key}: {value}")
     front_lines.append("---")
-    return "\n".join(front_lines) + f"\n\n# {article.title}\n\n{narrative.strip()}\n"
+    headline = str((structured or {}).get("headline") or article.title)
+    return "\n".join(front_lines) + f"\n\n# {headline}\n\n{narrative.strip()}\n"
 
 
 def generate_articles_workflow(
@@ -757,6 +821,9 @@ def generate_articles_workflow(
     results: dict[str, Any] = {}
 
     for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
+        output_path = ANALYSIS_DIR / article.output_filename
+        reporter = persona_metadata(ctx.writer_preferences, article.key)
+        evidence_fingerprint = ""
         try:
             evidence = article.scope(ctx)
             if not article.is_summary:
@@ -766,16 +833,29 @@ def generate_articles_workflow(
             if not evidence:
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
                 continue
-            output = generate_article_via_llm(
-                _article_system_prompt(article, ctx.writer_preferences, context),
-                evidence,
-                api_key,
-                model,
-            )
+
+            system_prompt = _article_system_prompt(article, ctx.writer_preferences, context)
+            evidence_fingerprint = _article_evidence_fingerprint(article, evidence, system_prompt, context)
+            previous = _previous_article_artifact(context, article.key)
+            if _can_reuse_article(previous, output_path, evidence_fingerprint, reporter, model):
+                narrative = _article_narrative_from_file(output_path)
+                if not narrative:
+                    raise ValueError("Existing article receipt matched but its narrative is empty.")
+                if not article.is_summary:
+                    ctx.section_outputs[article.key] = narrative
+                results[article.key] = {
+                    "state": "unchanged",
+                    "message": f"{article.title} unchanged; evidence and article receipt still match.",
+                    "reporter": reporter,
+                    "evidence_fingerprint": evidence_fingerprint,
+                    "content_hash": _content_hash(output_path),
+                }
+                continue
+
+            output = generate_article_via_llm(system_prompt, evidence, api_key, model)
             evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
-            validation = validate_article_output(output, evidence_ids, article.headers)
+            validation = validate_article_output(output, evidence_ids, article.headers, evidence)
             if validation["valid"]:
-                output_path = ANALYSIS_DIR / article.output_filename
                 output_path.write_text(
                     _render_article_markdown(
                         article,
@@ -784,25 +864,74 @@ def generate_articles_workflow(
                         output_path,
                         ctx.writer_preferences,
                         article.key,
+                        evidence_fingerprint,
+                        model,
+                        validation["structured"] | {
+                            "source_ids": validation.get("source_ids") or [],
+                            "source_count": len(validation.get("source_ids") or []),
+                            "source_quality": (
+                                "multi_source" if len(validation.get("source_ids") or []) > 1
+                                else "single_source" if validation.get("source_ids")
+                                else "unattributed"
+                            ),
+                        },
                     ),
                     encoding="utf-8",
                 )
-                _record_article_artifact(context, article, output_path, validation)
+                content_hash = _content_hash(output_path)
+                _record_article_artifact(
+                    context,
+                    article,
+                    output_path,
+                    validation,
+                    evidence_fingerprint=evidence_fingerprint,
+                    content_hash=content_hash,
+                    reporter=reporter,
+                    model=model,
+                    generation_metadata=output.get("_provider_receipt") if isinstance(output, dict) else None,
+                    status="generated",
+                )
                 if not article.is_summary:
                     ctx.section_outputs[article.key] = validation["narrative"]
                 results[article.key] = {
                     "state": "complete",
                     "message": f"{article.title} written.",
                     "warnings": validation["warnings"],
-                    "reporter": persona_metadata(ctx.writer_preferences, article.key),
+                    "reporter": reporter,
+                    "evidence_fingerprint": evidence_fingerprint,
+                    "content_hash": content_hash,
                 }
             else:
+                _record_article_artifact(
+                    context,
+                    article,
+                    output_path,
+                    validation,
+                    evidence_fingerprint=evidence_fingerprint,
+                    content_hash=_content_hash(output_path) if output_path.exists() else "",
+                    reporter=reporter,
+                    model=model,
+                    status="failed",
+                    fallback_reason="; ".join(validation["errors"]),
+                )
                 results[article.key] = {"state": "failed", "message": f"{article.title} failed validation.", "errors": validation["errors"]}
         except Exception as exc:  # noqa: BLE001 - one article failing must not sink the rest.
+            _record_article_artifact(
+                context,
+                article,
+                output_path,
+                {"valid": False, "errors": [str(exc)]},
+                evidence_fingerprint=evidence_fingerprint,
+                content_hash=_content_hash(output_path) if output_path.exists() else "",
+                reporter=reporter,
+                model=model,
+                status="failed",
+                fallback_reason=str(exc),
+            )
             results[article.key] = {"state": "failed", "message": f"{article.title} generation failed: {exc}"}
 
     attempted = [state for state in results.values() if state["state"] != "skipped"]
-    completed = [state for state in attempted if state["state"] == "complete"]
+    completed = [state for state in attempted if state["state"] in {"complete", "unchanged"}]
     if attempted and len(completed) == len(attempted):
         state = "complete"
     elif completed:
@@ -811,7 +940,7 @@ def generate_articles_workflow(
         state = "failed"
     return {
         "state": state,
-        "message": f"Articles generated: {len(completed)} complete, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
+        "message": f"Articles published: {len(completed)} current, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
         "generated_at": generated_at,
         "provider": llm.provider,
         "model": model,
@@ -826,12 +955,21 @@ def _record_article_artifact(
     article: articles.Article,
     output_path: Path,
     validation: dict[str, Any],
+    *,
+    evidence_fingerprint: str = "",
+    content_hash: str = "",
+    reporter: dict[str, Any] | None = None,
+    model: str = "",
+    status: str = "generated",
+    fallback_reason: str = "",
+    generation_metadata: dict[str, Any] | None = None,
 ) -> None:
     if context is None or context.user_id is None:
         return
     try:
         from app import db as app_db
 
+        reporter = reporter or persona_metadata(context.writer_preferences, article.key)
         app_db.record_content_artifact(
             int(context.user_id),
             context.league_id,
@@ -846,10 +984,104 @@ def _record_article_artifact(
                 "reporter_persona": persona_metadata(context.writer_preferences, article.key),
                 "llm": writer_api_configuration(),
             },
+            article_id=f"article:{context.league_id}:{context.season}:{article.key}",
+            section=article.section,
+            roster_id=context.roster_id,
+            source_receipt={
+                "scope": "selected_league_validated_evidence",
+                "evidence_fingerprint": evidence_fingerprint,
+                "source_count": len(validation.get("source_ids") or []),
+                "source_ids": validation.get("source_ids") or [],
+            },
+            generation_metadata=generation_metadata or {
+                "provider": writer_api_configuration().get("provider"),
+                "model": model,
+                "reasoning_effort": writer_api_configuration().get("reasoning_effort"),
+                "cost_known": False,
+            },
+            status=status,
+            evidence_fingerprint=evidence_fingerprint,
+            content_hash=content_hash,
+            reporter_id=str(reporter.get("persona_id") or ""),
+            writer_mode="automatic_llm",
+            fallback_reason=fallback_reason,
+            model=model,
         )
     except (TypeError, ValueError, OSError):
         # Artifact indexing must not erase a successfully written article.
         return
+
+
+def _article_evidence_fingerprint(
+    article: articles.Article,
+    evidence: list[dict[str, Any]],
+    system_prompt: str,
+    context: FantasyContext | None,
+) -> str:
+    """Stable receipt for the exact evidence and editorial contract used by an article."""
+    payload = {
+        "article": article.key,
+        "reporter": persona_metadata(context.writer_preferences if context else {}, article.key),
+        "league_id": context.league_id if context else "",
+        "season": context.season if context else "",
+        "roster_id": context.roster_id if context else "",
+        "team_name": context.team_name if context else "",
+        "system_prompt": system_prompt,
+        "evidence": evidence,
+    }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _content_hash(path: Path) -> str:
+    if not path.exists():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 64), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _previous_article_artifact(context: FantasyContext | None, article_key: str) -> dict[str, Any] | None:
+    if context is None or context.user_id is None:
+        return None
+    try:
+        from app import db as app_db
+
+        return app_db.get_content_artifact(
+            int(context.user_id), context.league_id, context.season, article_key, artifact_type="article"
+        )
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _can_reuse_article(
+    previous: dict[str, Any] | None,
+    output_path: Path,
+    evidence_fingerprint: str,
+    reporter: dict[str, Any],
+    model: str,
+) -> bool:
+    if not previous or previous.get("status") != "generated" or not output_path.exists():
+        return False
+    if previous.get("evidence_fingerprint") != evidence_fingerprint:
+        return False
+    if previous.get("content_hash") != _content_hash(output_path):
+        return False
+    if previous.get("reporter_id") != str(reporter.get("persona_id") or ""):
+        return False
+    return previous.get("model") == model and previous.get("writer_mode") == "automatic_llm"
+
+
+def _article_narrative_from_file(path: Path) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        _, _, text = text.partition("\n---")
+    lines = [line for line in text.splitlines() if not line.startswith("# ")]
+    return "\n".join(lines).strip()
 
 
 def build_chat_context_markdown(paths: LeaguePaths | None = None) -> dict[str, Any]:

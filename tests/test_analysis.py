@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -136,6 +137,11 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertEqual(first["manager_dossier_receipt"]["new_count"], 1)
         self.assertEqual(second["manager_dossier_receipt"]["unchanged_count"], 1)
         self.assertNotEqual(first_payload, second_payload)  # generated_at remains an honest refresh receipt.
+        item = json.loads(first_payload)["items"][0]
+        self.assertIn("roster_construction", item)
+        self.assertIn("season_history", item)
+        self.assertIn("questions_to_ask", item)
+        self.assertTrue(any("Manager intent is not observed" in value for value in item["unknowns"]))
 
 
 if __name__ == "__main__":

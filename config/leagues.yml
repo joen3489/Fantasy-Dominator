@@ -45,7 +45,26 @@ market_model:
 current_team:
   roster_id: 2
   display_name: joe3489
-  team_name: Melkor Lord of Light
+  # Legacy/default seed label; Sleeper remains authoritative for authenticated
+  # work and currently reports this roster as Lulu’s Potatoe’s.
+  team_name: Lulu’s Potatoe’s
+media_assets:
+  - asset_id: front-office-masthead-v1
+    asset_type: masthead
+    purpose: Personal Front Office editorial identity
+    path: assets/media/front-office-masthead-v1.png
+    prompt: >-
+      Abstract football war room masthead with no readable text, no logos, and
+      no statistics; forest green, cream, walnut, and brass editorial texture.
+    model: gpt-image-2
+    quality: high
+    size: 1536x1024
+    format: png
+    generated_at: 2026-08-25T00:00:00Z
+    alt_text: Decorative illustration of a football war room with scouting papers and a desk lamp.
+    credit: AI-generated editorial artwork
+    moderation_status: not_run
+    status: published
 strategy_profile:
   name: Melkor rebuild
   team_direction: deep_rebuild

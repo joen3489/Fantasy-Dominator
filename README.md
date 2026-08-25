@@ -12,7 +12,9 @@ Sleeper remains the league source of truth, while open/legal external sources su
 - Current league ID: `1313490073630547968`
 - League: `Joanie Loves Dynasty Football`
 - My Sleeper display name: `joe3489`
-- My team name: `Melkor Lord of Light`
+- Current managed roster: `2`
+- Current Sleeper team label (observed 2026-08-24): `Lulu’s Potatoe’s`
+- Historical legacy seed label: `Melkor Lord of Light`
 - Format: 12-team dynasty superflex, 0.5 PPR, TE reception bonus
 
 ## Ownership model

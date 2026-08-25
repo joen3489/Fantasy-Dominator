@@ -13,6 +13,12 @@ Start here when returning to the project:
 - [Decision log](decision_log.md) — lessons from identity, freshness, content,
   and deployment regressions.
 - [Sprint plan](sprint_plan.md) — ordered roadmap and future acceptance tests.
+- [Front Office realization epic](front_office_realization_epic.md) — staged
+  plan for connecting trustworthy data, analyst publication, dossiers, trade
+  intelligence, and generated media into the promised personal product.
+
+- [Anti-recursive development audit](anti_recursive_dev_audit.md) - dated
+  failure-class findings and guardrails for future changes.
 
 The root [AGENTS.md](../AGENTS.md) is the short operating guide for future
 coding sessions.

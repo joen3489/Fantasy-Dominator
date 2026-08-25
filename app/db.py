@@ -18,6 +18,7 @@ REQUIRED_TABLES = {
     "team_profiles",
     "manager_trade_profiles",
     "content_artifacts",
+    "content_interactions",
     "refresh_runs",
 }
 
@@ -32,6 +33,7 @@ def init_db(path: Path | None = None) -> None:
                 clerk_user_id TEXT UNIQUE NOT NULL,
                 sleeper_username TEXT,
                 sleeper_user_id TEXT,
+                selected_league_id TEXT,
                 created_at TEXT
             );
 
@@ -85,11 +87,23 @@ def init_db(path: Path | None = None) -> None:
                 season TEXT NOT NULL,
                 artifact_type TEXT NOT NULL,
                 artifact_key TEXT NOT NULL,
+                article_id TEXT NOT NULL DEFAULT '',
+                section TEXT NOT NULL DEFAULT '',
+                roster_id INTEGER,
                 path TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'generated',
                 source_json TEXT NOT NULL DEFAULT '{}',
+                source_receipt_json TEXT NOT NULL DEFAULT '{}',
+                generation_metadata_json TEXT NOT NULL DEFAULT '{}',
                 generated_at TEXT,
                 updated_at TEXT,
+                evidence_fingerprint TEXT NOT NULL DEFAULT '',
+                bundle_revision TEXT NOT NULL DEFAULT '',
+                content_hash TEXT NOT NULL DEFAULT '',
+                reporter_id TEXT NOT NULL DEFAULT '',
+                writer_mode TEXT NOT NULL DEFAULT '',
+                fallback_reason TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(user_id, league_id, season, artifact_type, artifact_key),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
@@ -105,11 +119,40 @@ def init_db(path: Path | None = None) -> None:
                 error TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS content_interactions (
+                user_id INTEGER NOT NULL,
+                league_id TEXT NOT NULL,
+                roster_id INTEGER NOT NULL,
+                artifact_type TEXT NOT NULL,
+                artifact_key TEXT NOT NULL,
+                interaction_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, league_id, roster_id, artifact_type, artifact_key, interaction_type),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
             """
         )
         _ensure_column(conn, "users", "sleeper_user_id", "TEXT")
+        _ensure_column(conn, "users", "selected_league_id", "TEXT")
         _ensure_column(conn, "user_leagues", "identity_status", "TEXT NOT NULL DEFAULT 'unverified'")
         _ensure_column(conn, "user_leagues", "identity_checked_at", "TEXT")
+        for column, definition in (
+            ("article_id", "TEXT NOT NULL DEFAULT ''"),
+            ("section", "TEXT NOT NULL DEFAULT ''"),
+            ("roster_id", "INTEGER"),
+            ("source_receipt_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("evidence_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ("bundle_revision", "TEXT NOT NULL DEFAULT ''"),
+            ("content_hash", "TEXT NOT NULL DEFAULT ''"),
+            ("reporter_id", "TEXT NOT NULL DEFAULT ''"),
+            ("writer_mode", "TEXT NOT NULL DEFAULT ''"),
+            ("fallback_reason", "TEXT NOT NULL DEFAULT ''"),
+            ("model", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            _ensure_column(conn, "content_artifacts", column, definition)
         conn.commit()
     finally:
         conn.close()
@@ -125,7 +168,7 @@ def get_or_create_user(clerk_user_id: str) -> dict[str, Any]:
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, clerk_user_id, sleeper_username, sleeper_user_id, created_at FROM users WHERE clerk_user_id = ?",
+            "SELECT id, clerk_user_id, sleeper_username, sleeper_user_id, selected_league_id, created_at FROM users WHERE clerk_user_id = ?",
             (clerk_user_id,),
         ).fetchone()
         if row is None:
@@ -211,6 +254,30 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
             (user_id,),
         ).fetchall()
         return [_row(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_selected_league_id(user_id: int) -> str:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT selected_league_id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return str(row[0] or "") if row is not None else ""
+
+
+def set_selected_league_id(user_id: int, league_id: str | None) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE users SET selected_league_id = ? WHERE id = ?",
+            (str(league_id or ""), user_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 
@@ -655,7 +722,19 @@ def record_content_artifact(
     artifact_key: str,
     path: str,
     source: dict[str, Any] | None = None,
+    article_id: str = "",
+    section: str = "",
+    roster_id: int | str | None = None,
+    source_receipt: dict[str, Any] | None = None,
+    generation_metadata: dict[str, Any] | None = None,
     status: str = "generated",
+    evidence_fingerprint: str = "",
+    bundle_revision: str = "",
+    content_hash: str = "",
+    reporter_id: str = "",
+    writer_mode: str = "",
+    fallback_reason: str = "",
+    model: str = "",
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn = _connect()
@@ -663,15 +742,29 @@ def record_content_artifact(
         conn.execute(
             """
             INSERT INTO content_artifacts(
-                user_id, league_id, season, artifact_type, artifact_key, path,
-                status, source_json, generated_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                user_id, league_id, season, artifact_type, artifact_key, article_id,
+                section, roster_id, path, status, source_json, source_receipt_json,
+                generation_metadata_json, generated_at, updated_at, evidence_fingerprint,
+                bundle_revision, content_hash, reporter_id, writer_mode, fallback_reason, model
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, league_id, season, artifact_type, artifact_key) DO UPDATE SET
+                article_id = excluded.article_id,
+                section = excluded.section,
+                roster_id = excluded.roster_id,
                 path = excluded.path,
                 status = excluded.status,
                 source_json = excluded.source_json,
+                source_receipt_json = excluded.source_receipt_json,
+                generation_metadata_json = excluded.generation_metadata_json,
                 generated_at = excluded.generated_at,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                evidence_fingerprint = excluded.evidence_fingerprint,
+                bundle_revision = excluded.bundle_revision,
+                content_hash = excluded.content_hash,
+                reporter_id = excluded.reporter_id,
+                writer_mode = excluded.writer_mode,
+                fallback_reason = excluded.fallback_reason,
+                model = excluded.model
             """,
             (
                 user_id,
@@ -679,11 +772,104 @@ def record_content_artifact(
                 str(season),
                 str(artifact_type),
                 str(artifact_key),
+                str(article_id or f"{artifact_type}:{artifact_key}:{season}"),
+                str(section or artifact_key),
+                int(roster_id) if str(roster_id or "").strip().isdigit() else None,
                 str(path),
                 str(status),
                 json.dumps(source or {}, sort_keys=True),
+                json.dumps(source_receipt or {}, sort_keys=True),
+                json.dumps(generation_metadata or {}, sort_keys=True),
                 now,
                 now,
+                str(evidence_fingerprint or ""),
+                str(bundle_revision or ""),
+                str(content_hash or ""),
+                str(reporter_id or ""),
+                str(writer_mode or ""),
+                str(fallback_reason or ""),
+                str(model or ""),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_content_artifact(
+    user_id: int,
+    league_id: str,
+    season: str,
+    artifact_key: str,
+    artifact_type: str = "article",
+) -> dict[str, Any] | None:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT artifact_key, article_id, section, roster_id, path, status, source_json,
+                   source_receipt_json, generation_metadata_json, generated_at, updated_at,
+                   evidence_fingerprint, bundle_revision, content_hash, reporter_id,
+                   writer_mode, fallback_reason, model
+            FROM content_artifacts
+            WHERE user_id = ? AND league_id = ? AND season = ?
+              AND artifact_type = ? AND artifact_key = ?
+            """,
+            (user_id, str(league_id), str(season), str(artifact_type), str(artifact_key)),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    try:
+        source = json.loads(row[6] or "{}")
+    except (TypeError, json.JSONDecodeError):
+        source = {}
+    return {
+        "artifact_key": str(row[0] or ""),
+        "article_id": str(row[1] or ""),
+        "section": str(row[2] or ""),
+        "roster_id": row[3],
+        "path": str(row[4] or ""),
+        "status": str(row[5] or ""),
+        "source": source if isinstance(source, dict) else {},
+        "source_receipt": _decode_json(row[7]),
+        "generation_metadata": _decode_json(row[8]),
+        "generated_at": str(row[9] or ""),
+        "updated_at": str(row[10] or ""),
+        "evidence_fingerprint": str(row[11] or ""),
+        "bundle_revision": str(row[12] or ""),
+        "content_hash": str(row[13] or ""),
+        "reporter_id": str(row[14] or ""),
+        "writer_mode": str(row[15] or ""),
+        "fallback_reason": str(row[16] or ""),
+        "model": str(row[17] or ""),
+    }
+
+
+def stamp_content_artifact_bundle(
+    user_id: int,
+    league_id: str,
+    season: str,
+    bundle_revision: str,
+    artifact_type: str = "article",
+) -> None:
+    """Bind persisted article receipts to the exact browser bundle that published them."""
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            UPDATE content_artifacts
+            SET bundle_revision = ?, updated_at = ?
+            WHERE user_id = ? AND league_id = ? AND season = ? AND artifact_type = ?
+            """,
+            (
+                str(bundle_revision or ""),
+                datetime.now(timezone.utc).isoformat(),
+                user_id,
+                str(league_id),
+                str(season),
+                str(artifact_type),
             ),
         )
         conn.commit()
@@ -696,6 +882,8 @@ def content_artifact_status(
     league_id: str,
     season: str,
     artifact_type: str = "article",
+    current_receipts: dict[str, dict[str, Any]] | None = None,
+    current_bundle_revision: str = "",
 ) -> dict[str, Any]:
     """Return a safe, user-scoped receipt for generated writer output.
 
@@ -709,7 +897,8 @@ def content_artifact_status(
     try:
         rows = conn.execute(
             """
-            SELECT artifact_key, status, generated_at, updated_at
+            SELECT artifact_key, status, generated_at, updated_at, content_hash,
+                   reporter_id, writer_mode, evidence_fingerprint, bundle_revision
             FROM content_artifacts
             WHERE user_id = ? AND league_id = ? AND season = ? AND artifact_type = ?
             """,
@@ -718,15 +907,31 @@ def content_artifact_status(
     finally:
         conn.close()
 
+    def is_current_generated(row: tuple[Any, ...]) -> bool:
+        if str(row[1] or "").lower() != "generated":
+            return False
+        if current_receipts is None:
+            return True
+        receipt = current_receipts.get(str(row[0])) or {}
+        return (
+            str(receipt.get("mode") or "").lower() == "automatic_llm"
+            and str(row[4] or "")
+            and str(row[4] or "") == str(receipt.get("content_hash") or "")
+            and (
+                not current_bundle_revision
+                or str(row[8] or "") == str(current_bundle_revision)
+            )
+        )
+
     generated_keys = {
         str(row[0])
         for row in rows
-        if str(row[0]) in expected_keys and str(row[1] or "").lower() == "generated"
+        if str(row[0]) in expected_keys and is_current_generated(row)
     }
     timestamps = [
         str(row[2] or row[3] or "")
         for row in rows
-        if str(row[2] or row[3] or "")
+        if str(row[2] or row[3] or "") and is_current_generated(row)
     ]
     generated_count = len(generated_keys)
     expected_count = len(expected_keys)
@@ -746,7 +951,95 @@ def content_artifact_status(
         "expected_count": expected_count,
         "generated_keys": sorted(generated_keys),
         "last_generated_at": max(timestamps, default=""),
+        "bundle_revision": str(current_bundle_revision or ""),
+        "receipt_verified": current_receipts is not None,
     }
+
+
+def record_content_interaction(
+    user_id: int,
+    league_id: str,
+    roster_id: int,
+    artifact_type: str,
+    artifact_key: str,
+    interaction_type: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Store an explicit manager feedback signal for one scoped artifact."""
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO content_interactions(
+                user_id, league_id, roster_id, artifact_type, artifact_key,
+                interaction_type, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, league_id, roster_id, artifact_type, artifact_key, interaction_type)
+            DO UPDATE SET payload_json = excluded.payload_json, created_at = excluded.created_at
+            """,
+            (
+                user_id,
+                str(league_id),
+                int(roster_id),
+                str(artifact_type),
+                str(artifact_key),
+                str(interaction_type),
+                json.dumps(payload or {}, sort_keys=True),
+                created_at,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "user_id": user_id,
+        "league_id": str(league_id),
+        "roster_id": int(roster_id),
+        "artifact_type": str(artifact_type),
+        "artifact_key": str(artifact_key),
+        "interaction_type": str(interaction_type),
+        "payload": payload or {},
+        "created_at": created_at,
+    }
+
+
+def list_content_interactions(
+    user_id: int,
+    league_id: str,
+    roster_id: int | None = None,
+) -> list[dict[str, Any]]:
+    conn = _connect()
+    try:
+        query = """
+            SELECT league_id, roster_id, artifact_type, artifact_key,
+                   interaction_type, payload_json, created_at
+            FROM content_interactions
+            WHERE user_id = ? AND league_id = ?
+        """
+        params: list[Any] = [user_id, str(league_id)]
+        if roster_id is not None:
+            query += " AND roster_id = ?"
+            params.append(int(roster_id))
+        query += " ORDER BY created_at DESC"
+        rows = conn.execute(query, tuple(params)).fetchall()
+    finally:
+        conn.close()
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        output.append(
+            {
+                "league_id": str(row[0] or ""),
+                "roster_id": row[1],
+                "artifact_type": str(row[2] or ""),
+                "artifact_key": str(row[3] or ""),
+                "interaction_type": str(row[4] or ""),
+                "payload": _decode_json(row[5]),
+                "created_at": str(row[6] or ""),
+            }
+        )
+    return output
 
 
 def start_refresh_run(user_id: int, league_id: str, season: str) -> int:

@@ -227,6 +227,10 @@ def build_trade_theses(
 ) -> list[dict[str, Any]]:
     behavior = dataframes.get("manager_behavior_signals", pd.DataFrame())
     opportunities = dataframes.get("opportunity_board", pd.DataFrame())
+    edges = dataframes.get("counterparty_trade_edges", pd.DataFrame())
+    inventory = dataframes.get("team_asset_inventory", pd.DataFrame())
+    profiles = dataframes.get("manager_profiles", pd.DataFrame())
+    needs = dataframes.get("team_needs_matrix", pd.DataFrame())
     # Opportunities keyed by the manager they actually target -- opportunity_board.target_team is
     # the real linkage (each asset_in genuinely belongs to that team). The old round-robin pairing
     # here attributed players to managers who don't roster them, which read as wrong data.
@@ -235,12 +239,48 @@ def build_trade_theses(
         opportunities_by_team.setdefault(str(opportunity.get("target_team", "")), []).append(opportunity)
     theses: list[dict[str, Any]] = []
     managers = [row for row in _rows(behavior) if _int(row.get("roster_id")) != active_roster_id]
+    edge_rows = _rows(edges)
+    inventory_rows = [row for row in _rows(inventory) if _int(row.get("roster_id")) == _int(active_roster_id)]
+    current_assets = sorted(inventory_rows, key=lambda row: _num(row.get("market_value")), reverse=True)[:8]
+    profile_by_roster = {_int(row.get("roster_id")): row for row in _rows(profiles)}
+    need_by_roster = {_int(row.get("roster_id")): row for row in _rows(needs)}
     for index, manager in enumerate(managers[:10], start=1):
         manager_name = manager.get("team_name", "Unknown manager")
+        target_roster_id = _int(manager.get("roster_id"))
         manager_signal = manager.get("plain_language_label", "")
         matched = opportunities_by_team.get(str(manager_name), [])
         assets = "; ".join(dict.fromkeys(str(opportunity.get("asset_in", "")) for opportunity in matched[:3] if opportunity.get("asset_in")))
         top = matched[0] if matched else {}
+        target_edges = sorted(
+            [row for row in edge_rows if _int(row.get("target_roster_id")) == target_roster_id],
+            key=lambda row: _num(row.get("trade_edge_score")),
+            reverse=True,
+        )[:5]
+        if not assets and target_edges:
+            assets = "; ".join(str(row.get("player_name", "")) for row in target_edges[:3] if row.get("player_name"))
+        target_profile = profile_by_roster.get(target_roster_id, {})
+        target_need = need_by_roster.get(target_roster_id, {})
+        top_edge = target_edges[0] if target_edges else {}
+        market_value = _num(top_edge.get("market_consensus_value"))
+        estimated_owner_value = _num(top_edge.get("estimated_owner_value_score"))
+        starting_low = round(max(0.0, market_value * 0.9), 2) if market_value else 0
+        starting_high = round(max(starting_low, market_value * 1.1), 2) if market_value else 0
+        minimum_return = round(max(0.0, market_value * 0.85), 2) if market_value else 0
+        preferred_ours = [
+            row.get("asset_name", "")
+            for row in current_assets
+            if row.get("asset_name") and str(row.get("asset_type")) == "player"
+        ][:3]
+        alternate_counterparties = [
+            str(row.get("target_team", ""))
+            for row in edge_rows
+            if _int(row.get("target_roster_id")) not in {target_roster_id, _int(active_roster_id)}
+            and str(row.get("player_id")) == str(top_edge.get("player_id"))
+            and row.get("target_team")
+        ][:3]
+        edge_confidence = top_edge.get("confidence") or (top.get("confidence") if matched else "low")
+        fit_evidence = top_edge.get("evidence") or top.get("evidence") or manager.get("evidence", "")
+        target_label = target_profile.get("contender_rebuilder_indicator") or target_need.get("team_shape") or manager_signal or "unclassified roster"
         if assets:
             analysis_text = (
                 f"{manager_name} profiles as {manager_signal or 'unclear'}. "
@@ -260,11 +300,52 @@ def build_trade_theses(
                 "target_manager_name": manager_name,
                 "approach_type": _approach_type(manager_signal),
                 "assets_to_discuss": assets or "tendency-based approach; no named asset",
+                "assets_to_pursue": [
+                    {
+                        "player_name": row.get("player_name", ""),
+                        "player_id": row.get("player_id", ""),
+                        "position": row.get("position", ""),
+                        "edge_type": row.get("edge_type", ""),
+                        "market_value": row.get("market_consensus_value", ""),
+                        "confidence": row.get("confidence", ""),
+                    }
+                    for row in target_edges[:3]
+                ],
+                "assets_we_can_offer": preferred_ours,
+                "plausible_offer_range": {
+                    "low": starting_low,
+                    "high": starting_high,
+                    "basis": "estimated market consensus band; not a suggested executed offer",
+                },
+                "minimum_acceptable_return": {
+                    "value": minimum_return,
+                    "basis": "estimated 85% of the target asset market value; review roster context before acting",
+                },
+                "why_manager_might_care": (
+                    f"Observed roster label: {target_label}. Their recorded needs are {target_need.get('team_shape', 'not available')}; "
+                    f"their transaction history shows {target_profile.get('total_trades', manager.get('trade_activity_score', 0))} observed trades."
+                ),
+                "historical_evidence": {
+                    "manager_profile": target_profile.get("most_common_transaction_partners", ""),
+                    "behavior_signal": manager.get("evidence", ""),
+                    "edge_signal": fit_evidence,
+                },
+                "risk_of_waiting": (
+                    "The current market gap may close before the next review."
+                    if target_edges and _num(top_edge.get("trade_edge_score")) > 20
+                    else "No elevated timing risk is supported by the current evidence."
+                ),
+                "risk_of_acting": str(top_edge.get("risk") or top.get("risk") or "Do not force a deal on a low-confidence fit."),
+                "alternative_counterparties": alternate_counterparties,
+                "do_not_chase_conditions": [
+                    "Do not treat the estimated owner value as a quote or motive.",
+                    "Do not proceed if the live market or roster context invalidates the evidence packet.",
+                ],
                 "manager_signal": manager_signal,
-                "evidence": top.get("evidence") or manager.get("evidence", ""),
-                "risk": top.get("risk", "medium"),
-                "confidence": top.get("confidence", "medium") if matched else "low",
-                "source_trace": top.get("source_trace") or "manager_behavior_signals;opportunity_board",
+                "evidence": fit_evidence,
+                "risk": top_edge.get("risk") or top.get("risk", "medium"),
+                "confidence": edge_confidence if target_edges else (top.get("confidence", "medium") if matched else "low"),
+                "source_trace": top_edge.get("source_trace") or top.get("source_trace") or "manager_behavior_signals;opportunity_board;counterparty_trade_edges",
                 "analysis_text": analysis_text,
                 "generated_at": generated_at,
             }
@@ -493,9 +574,17 @@ def build_manager_dossier_items(
 ) -> list[dict[str, Any]]:
     cycles = _rows(dataframes.get("manager_cycle_profiles", pd.DataFrame()))
     tags = _rows(dataframes.get("manager_profile_tags", pd.DataFrame()))
+    profiles = _rows(dataframes.get("manager_profiles", pd.DataFrame()))
+    events = _rows(dataframes.get("manager_event_log", pd.DataFrame()))
+    inventory = _rows(dataframes.get("team_asset_inventory", pd.DataFrame()))
+    needs = _rows(dataframes.get("team_needs_matrix", pd.DataFrame()))
+    valuation_profiles = _rows(dataframes.get("manager_valuation_profiles", pd.DataFrame()))
+    counterparty_edges = _rows(dataframes.get("counterparty_trade_edges", pd.DataFrame()))
     tags_by_id: dict[str, list[dict[str, Any]]] = {}
     for tag in tags:
         tags_by_id.setdefault(str(tag.get("entity_id", "")), []).append(tag)
+    profile_by_id = {str(row.get("roster_id")): row for row in profiles if row.get("roster_id") not in (None, "")}
+    needs_by_id = {str(row.get("roster_id")): row for row in needs if row.get("roster_id") not in (None, "")}
     items: list[dict[str, Any]] = []
     previous_by_roster = {
         str(item.get("roster_id")): item
@@ -504,14 +593,76 @@ def build_manager_dossier_items(
     }
     for index, cycle in enumerate(cycles, start=1):
         roster_id = str(cycle.get("roster_id", ""))
+        profile = profile_by_id.get(roster_id, {})
         selected_tags = tags_by_id.get(roster_id, [])[:6]
         tag_text = ", ".join(str(tag.get("tag", "")) for tag in selected_tags if tag.get("tag"))
         evidence = str(cycle.get("evidence", ""))
-        fingerprint = _fingerprint({"cycle": cycle, "tags": selected_tags})
+        manager_events = [row for row in events if str(row.get("roster_id")) == roster_id]
+        manager_assets = [row for row in inventory if str(row.get("roster_id")) == roster_id]
+        manager_needs = needs_by_id.get(roster_id, {})
+        manager_preferences = [row for row in valuation_profiles if str(row.get("roster_id")) == roster_id]
+        manager_edges = [row for row in counterparty_edges if str(row.get("target_roster_id")) == roster_id]
+        fingerprint = _fingerprint(
+            {
+                "cycle": cycle,
+                "profile": profile,
+                "tags": selected_tags,
+                "events": manager_events,
+                "assets": manager_assets,
+                "needs": manager_needs,
+                "preferences": manager_preferences,
+                "edges": manager_edges,
+            }
+        )
         previous = previous_by_roster.get(roster_id) or {}
         previous_fingerprint = str(previous.get("evidence_fingerprint") or "")
         update_status = "new" if not previous else ("unchanged" if previous_fingerprint == fingerprint else "updated")
         risk = "medium: manager cycle is an estimated tendency, not intent"
+        sample_size = {
+            "seasons": len(_split_values(profile.get("seasons_covered"))),
+            "trades": _int(profile.get("total_trades")),
+            "waiver_claims": _int(profile.get("number_of_waiver_claims")),
+            "observed_events": len(manager_events),
+        }
+        roster_construction = {
+            "team_shape": manager_needs.get("team_shape", ""),
+            "qb_count": _int(profile.get("qb_count")),
+            "rb_count": _int(profile.get("rb_count")),
+            "pass_catcher_count": _int(profile.get("pass_catcher_count")),
+            "future_firsts_owned": _int(manager_needs.get("future_firsts_owned")),
+            "asset_count": len(manager_assets),
+            "market_value_total": round(sum(_num(row.get("market_value")) for row in manager_assets), 2),
+        }
+        historical_aliases = _season_history(profile)
+        repeated_behavior = {
+            "players_acquired": _split_values(profile.get("players_acquired"), 12),
+            "players_sold": _split_values(profile.get("players_sold"), 12),
+            "trade_partners": _counted_values(profile.get("most_common_transaction_partners"), 8),
+            "pick_posture": cycle.get("pick_posture", ""),
+            "waiver_posture": cycle.get("waiver_posture", ""),
+        }
+        behavior_observations = [
+            {"label": "Trade activity", "value": cycle.get("trade_temperature", ""), "evidence": f"total_trades={profile.get('total_trades', 0)}"},
+            {"label": "Pick behavior", "value": cycle.get("pick_posture", ""), "evidence": f"future_1sts_acquired={profile.get('future_1sts_acquired', 0)}; future_1sts_sold={profile.get('future_1sts_sold', 0)}"},
+            {"label": "Waiver behavior", "value": cycle.get("waiver_posture", ""), "evidence": f"claims={profile.get('number_of_waiver_claims', 0)}; faab={profile.get('faab_spent_on_waivers', 0)}"},
+        ]
+        trade_fits = [
+            {
+                "player_id": row.get("player_id", ""),
+                "player_name": row.get("player_name", ""),
+                "position": row.get("position", ""),
+                "edge_type": row.get("edge_type", ""),
+                "trade_edge_score": row.get("trade_edge_score", ""),
+                "market_consensus_value": row.get("market_consensus_value", ""),
+                "estimated_owner_value_score": row.get("estimated_owner_value_score", ""),
+                "evidence": row.get("evidence", ""),
+                "risk": row.get("risk", ""),
+                "confidence": row.get("confidence", ""),
+                "source_trace": row.get("source_trace", ""),
+            }
+            for row in sorted(manager_edges, key=lambda value: _num(value.get("trade_edge_score")), reverse=True)[:6]
+        ]
+        questions = _manager_questions(cycle, profile, manager_needs, trade_fits)
         items.append(
             {
                 "dossier_id": f"manager-{index:03d}",
@@ -523,9 +674,22 @@ def build_manager_dossier_items(
                 "risk": risk,
                 "confidence": cycle.get("confidence", "low"),
                 "source_trace": "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log",
+                "sample_size": sample_size,
+                "roster_construction": roster_construction,
+                "historical_aliases": historical_aliases,
+                "season_history": historical_aliases,
+                "repeated_behavior": repeated_behavior,
+                "behavior_observations": behavior_observations,
+                "trade_fits": trade_fits,
+                "questions_to_ask": questions,
+                "unknowns": [
+                    "Manager intent is not observed in Sleeper data.",
+                    "A trade fit is a model-supported conversation hypothesis, not a predicted response.",
+                ],
                 "analysis_text": (
                     f"{cycle.get('team_name', 'This manager')} profiles as {cycle.get('dynasty_cycle', 'unclear')} "
                     f"with {cycle.get('trade_temperature', 'unknown trade activity')} and {cycle.get('pick_posture', 'unclear pick posture')}. "
+                    f"The profile covers {sample_size['seasons']} seasons and {sample_size['trades']} observed trades. "
                     f"Tags: {tag_text or 'none'}. Evidence: {evidence}."
                 ),
                 "evidence_fingerprint": fingerprint,
@@ -535,6 +699,53 @@ def build_manager_dossier_items(
             }
         )
     return items
+
+
+def _split_values(value: Any, limit: int | None = None) -> list[str]:
+    text = _clean(value)
+    if not text:
+        return []
+    values = [part.strip() for part in text.split(";") if part.strip()]
+    return values[:limit] if limit else values
+
+
+def _counted_values(value: Any, limit: int = 8) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for value_part in _split_values(value, limit):
+        if ":" not in value_part:
+            output.append({"name": value_part, "count": 0})
+            continue
+        name, count = value_part.rsplit(":", 1)
+        output.append({"name": name.strip(), "count": _int(count)})
+    return output
+
+
+def _season_history(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    names = {part.split(":", 1)[0]: part.split(":", 1)[1] for part in _split_values(profile.get("team_names_by_season")) if ":" in part}
+    rosters = {part.split(":", 1)[0]: part.split(":", 1)[1] for part in _split_values(profile.get("roster_ids_by_season")) if ":" in part}
+    trades = {part.split(":", 1)[0]: _int(part.split(":", 1)[1]) for part in _split_values(profile.get("trades_by_season")) if ":" in part}
+    seasons = _split_values(profile.get("seasons_covered"))
+    return [
+        {"season": season, "team_name": names.get(season, ""), "roster_id": rosters.get(season, ""), "trades": trades.get(season, 0)}
+        for season in seasons
+    ]
+
+
+def _manager_questions(
+    cycle: dict[str, Any],
+    profile: dict[str, Any],
+    needs: dict[str, Any],
+    trade_fits: list[dict[str, Any]],
+) -> list[str]:
+    questions = [
+        f"Which of their recorded needs ({needs.get('team_shape', 'current roster shape')}) is actually urgent this season?",
+        f"Would a conversation around their observed {cycle.get('pick_posture', 'pick')} posture create more value than a player-for-player offer?",
+    ]
+    if trade_fits:
+        questions.append(f"Is {trade_fits[0].get('player_name', 'the top fit')} worth pursuing at the estimated market/owner-value gap shown here?")
+    if _int(profile.get("number_of_waiver_claims")):
+        questions.append("Does their waiver history suggest a depth need we can satisfy without weakening our core?")
+    return questions[:4]
 
 
 def build_player_dossier_items(dataframes: dict[str, pd.DataFrame], generated_at: str) -> list[dict[str, Any]]:
@@ -883,9 +1094,17 @@ def _trade_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any
         evidence = _clean(row.get("evidence"), "no evidence string")
         risk = _clean(row.get("risk"), "verify before acting")
         confidence = _clean(row.get("confidence"), "unknown")
+        offer_range = row.get("plausible_offer_range") if isinstance(row.get("plausible_offer_range"), dict) else {}
+        minimum_return = row.get("minimum_acceptable_return") if isinstance(row.get("minimum_acceptable_return"), dict) else {}
+        packet = (
+            f"Estimated range {offer_range.get('low', 'n/a')}-{offer_range.get('high', 'n/a')}; "
+            f"estimated minimum return {minimum_return.get('value', 'n/a')}; "
+            f"risk of waiting: {_clean(row.get('risk_of_waiting'), 'not established')}; "
+            f"risk of acting: {_clean(row.get('risk_of_acting'), risk)}."
+        )
         bullets.append(
             f"- **{manager}** — Approach: {approach}. Observed signal: {signal}. Named lane: {assets}. "
-            f"Evidence: {evidence}. Confidence: {confidence}. Guardrail: {risk}. "
+            f"{packet} Evidence: {evidence}. Confidence: {confidence}. Guardrail: {risk}. "
             f"{_persona_read('Keep this as a conversation hypothesis, not a claim about intent.', writer_preferences)}"
         )
     return bullets

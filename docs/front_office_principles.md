@@ -1,6 +1,6 @@
 # Fantasy Dominator front-office principles
 
-Last reviewed: 2026-08-23
+Last reviewed: 2026-08-25
 
 ## North star
 
@@ -100,6 +100,27 @@ The interface should make it obvious when the edition is current, when a source
 is unavailable, which team is selected, who wrote a section, and whether an
 identity or storage check is incomplete. A clear limitation is more valuable
 than a confident empty shell.
+
+### 11. Questions organize the data room
+
+The data room should begin with decisions and questions—what changed, what
+matters, where signals disagree, and what deserves investigation—then open
+into the raw rows and receipts. A chart or interaction earns its place by
+advancing the question; decorative density is not analytical depth.
+
+### 12. Structure content before styling it
+
+Articles, evidence packets, dossiers, media assets, ownership, readiness,
+history, and dependencies are durable objects with explicit contracts. The
+interface may feel like a publication, but the content must remain queryable,
+versioned, attributable, and independently verifiable.
+
+### 13. Generated media is atmosphere, not evidence
+
+Illustration can create a memorable newsroom identity, but it must never carry
+statistics, factual text, team identity, or unsupported claims. Generated media
+is versioned, scoped, accessible, responsive, and optional; a missing asset
+must not block the truthful text and data experience.
 
 ## Product quality bar
 

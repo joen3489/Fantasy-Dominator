@@ -23,6 +23,11 @@ EDITORIAL_STYLE = r"""
         radial-gradient(circle at 88% 20%, rgba(196, 155, 68, .22), transparent 32%),
         linear-gradient(135deg, #202722 0%, #173f35 100%);
     }
+    .issue-hero.has-masthead {
+      background-position: center;
+      background-size: cover;
+      background-blend-mode: multiply;
+    }
     .issue-kicker-row, .issue-byline, .story-kicker-row, .story-meta {
       display: flex;
       flex-wrap: wrap;
@@ -181,6 +186,25 @@ EDITORIAL_STYLE = r"""
     .editorial-story-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 18px 18px; }
     .editorial-story-grid .editorial-story { padding: 15px; }
     .editorial-story-grid .story-action { margin-top: 12px; }
+    .publication-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 0 18px 20px; }
+    .publication-card { background: #fffdf7; border: 1px solid var(--line); border-radius: 16px; padding: 18px; box-shadow: 0 8px 22px rgba(19, 35, 27, .05); }
+    .publication-card h3 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 24px; }
+    .publication-card .publication-meta { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+    .publication-card .publication-receipt { margin-top: 14px; color: var(--muted); font-size: 12px; }
+    .publication-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+    .publication-actions button { border: 1px solid var(--line); border-radius: 999px; background: #f7f8f3; color: var(--accent); padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; }
+    .publication-actions button:hover { background: #e4efe9; }
+    .publication-actions button:disabled { opacity: .65; cursor: default; }
+    .publication-card .article-body { color: var(--ink); }
+    .publication-card .article-p { line-height: 1.6; }
+    .publication-summary { margin: 0 0 14px; padding: 12px 13px; border-left: 3px solid var(--gold); background: #f4f0df; border-radius: 8px; }
+    .publication-summary p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
+    .publication-summary strong { color: var(--ink); }
+    .question-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
+    .question-card { display: block; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 13px; }
+    .question-card strong { display: block; margin-bottom: 5px; font-size: 13px; }
+    .question-card span { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    @media (max-width: 720px) { .publication-grid { grid-template-columns: 1fr; padding-left: 12px; padding-right: 12px; } }
     .issue-data-drawer { margin: 0 18px 12px; }
     .issue-data-drawer:last-child { margin-bottom: 18px; }
     .issue-data-drawer summary { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 3px 0; color: var(--ink); font-size: 14px; }
@@ -189,6 +213,22 @@ EDITORIAL_STYLE = r"""
     .issue-data-drawer .article-panel { border: 0; padding: 0; }
     .data-room-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: #eef2eb; }
     .data-room-intro p { margin: 0; }
+    .question-led-intro { margin-bottom: 10px; }
+    .question-led-intro h2 { margin: 4px 0 6px; font-family: Georgia, "Times New Roman", serif; font-size: 25px; }
+    .section-kicker { color: var(--accent); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .data-room-question-grid { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
+    .data-room-question { border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); padding: 8px 11px; font-size: 12px; font-weight: 800; cursor: pointer; }
+    .data-room-question:hover, .data-room-question.active { border-color: var(--accent); background: var(--buy-bg); color: var(--accent); }
+    .question-answer { margin: 0 0 12px; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 8px; background: #fffdf7; line-height: 1.5; }
+    .question-answer strong { color: var(--ink); }
+    .decision-visual-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .decision-visual { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    .decision-visual h3 { margin: 0 0 9px; font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
+    .decision-bar-row { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(80px, 2fr) auto; gap: 8px; align-items: center; margin: 8px 0; font-size: 12px; }
+    .decision-bar-track { height: 8px; overflow: hidden; border-radius: 999px; background: #e8ece5; }
+    .decision-bar-fill { height: 100%; border-radius: inherit; background: var(--accent); }
+    .decision-bar-value { color: var(--muted); font-weight: 800; }
+    .decision-list { margin: 0; padding-left: 17px; color: var(--muted); font-size: 13px; line-height: 1.5; }
     @media (max-width: 900px) {
       .editorial-layout { grid-template-columns: 1fr; }
       .editorial-story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -197,17 +237,19 @@ EDITORIAL_STYLE = r"""
       .issue-title-row { display: grid; align-items: start; }
       .issue-date { margin-left: 0; }
       .editorial-story-grid { grid-template-columns: 1fr; }
+      .question-grid { grid-template-columns: 1fr; padding-left: 12px; padding-right: 12px; }
       .issue-data-drawer { margin-left: 12px; margin-right: 12px; }
       .editorial-story-grid { padding-left: 12px; padding-right: 12px; }
       .editorial-divider { margin-left: 12px; margin-right: 12px; }
       .data-room-intro { grid-template-columns: 1fr; }
+      .decision-visual-grid { grid-template-columns: 1fr; }
     }
 """
 
 
 EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
       <div class="issue-shell" data-testid="editorial-issue">
-        <div class="issue-hero">
+        <div class="issue-hero" data-media-slot="masthead">
           <div class="issue-kicker-row">
             <span id="issue-kicker" class="issue-kicker">Personal league edition</span>
             <span id="issue-date" class="issue-date">Latest refresh</span>
@@ -224,6 +266,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
             <span id="issue-latest-news">Latest news is loading</span>
+            <span id="issue-publication">Publication receipt is loading</span>
           </div>
           <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
         </div>
@@ -238,6 +281,10 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
         </div>
         <div class="editorial-divider"><span>More from this edition</span></div>
         <div id="issue-stories" class="editorial-story-grid"></div>
+        <div class="editorial-divider"><span>Desk reports</span></div>
+        <div id="issue-publication" class="publication-grid"></div>
+        <div class="editorial-divider"><span>Read by question</span></div>
+        <div id="issue-questions" class="question-grid"></div>
         <details class="data-drawer issue-data-drawer">
           <summary><span>Today's Board</span><span class="summary-note">ranked signals</span></summary>
           <div id="today-priority-board"></div>
@@ -254,6 +301,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
 EDITORIAL_JS = r"""
     function renderEditorial() {
       const issue = editorial || {};
+      renderEditorialMedia();
       setText('issue-kicker', issue.kicker || 'Personal league edition');
       setText('issue-date', issue.edition_label || 'Latest refresh');
       setText('issue-headline', issue.headline || 'Your edition is waiting for a refresh');
@@ -263,6 +311,9 @@ EDITORIAL_JS = r"""
       setText('issue-freshness', issue.freshness_label || 'Freshness unavailable');
       setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
       setText('issue-latest-news', issue.latest_news_label ? `Latest news ${issue.latest_news_label}` : 'Latest news not recorded');
+      const manifestReceipts = manifest.articleReceipts || {};
+      const receiptCount = Object.keys(manifestReceipts).length;
+      setText('issue-publication', `${receiptCount} article receipts · bundle ${String(manifest.bundleRevision || 'unbound').slice(0, 12)}`);
       const freshness = issue.source_health_summary || {};
       const freshnessNode = document.getElementById('issue-freshness');
       if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';
@@ -270,8 +321,49 @@ EDITORIAL_JS = r"""
       document.getElementById('issue-stories').innerHTML = (issue.stories || []).length
         ? (issue.stories || []).map(story => editorialStoryMarkup(story, false)).join('')
         : '<p class="note">The edition has no secondary stories yet. That may be a quiet board, or a data problem worth opening below.</p>';
+      const publications = issue.publication_articles || [];
+      document.getElementById('issue-publication').innerHTML = publications.length
+        ? publications.map(publicationArticleMarkup).join('')
+        : '<p class="note">No generated desk reports are published for this edition yet. The evidence-led board remains available below.</p>';
+      const questions = issue.question_prompts || [];
+      document.getElementById('issue-questions').innerHTML = questions.length
+        ? questions.map(prompt => `<a class="question-card" href="${escapeHtml(prompt.route || '#view-data-room')}"><strong>${escapeHtml(prompt.question || 'Open the data room')}</strong><span>${escapeHtml(prompt.answer || '')}</span></a>`).join('')
+        : '<p class="note">Open the data room to choose a question.</p>';
       document.getElementById('issue-pulse-metrics').innerHTML = editorialPulse(issue.signal_summary || {});
       document.getElementById('issue-source-health').innerHTML = editorialHealth(issue.source_health || []);
+    }
+
+    function renderEditorialMedia() {
+      const hero = document.querySelector('[data-media-slot="masthead"]');
+      const assets = (app && app.mediaManifest && app.mediaManifest.assets) || [];
+      const asset = assets.find(item => ['available', 'published'].includes(String(item.status || '').toLowerCase()) && item.path);
+      if (!hero || !asset) return;
+      const path = String(asset.path || '').trim();
+      // The builder emits only a site-relative media path. Keep the browser
+      // guard here as a second seam check in case a hand-edited manifest leaks
+      // an external URL or traversal segment.
+      if (!path || path.includes('://') || path.startsWith('//') || path.includes('..')) return;
+      hero.style.backgroundImage = `linear-gradient(90deg, rgba(32,39,34,.96) 0%, rgba(23,63,53,.78) 48%, rgba(23,63,53,.28) 100%), url("${path.replace(/"/g, '')}")`;
+      hero.classList.add('has-masthead');
+      hero.dataset.mediaStatus = asset.status || 'available';
+    }
+
+    function publicationArticleMarkup(article) {
+      const mode = String(article.mode || 'deterministic_template');
+      const reporter = article.reporter_name || article.reporter_id || 'The Front Office';
+      const structured = article.structured || {};
+      const summary = [
+        structured.lede ? `<p>${escapeHtml(structured.lede)}</p>` : '',
+        structured.thesis ? `<p><strong>Thesis:</strong> ${escapeHtml(structured.thesis)}</p>` : '',
+        structured.what_changed ? `<p><strong>Changed:</strong> ${escapeHtml(structured.what_changed)}</p>` : '',
+        structured.action ? `<p><strong>Question:</strong> ${escapeHtml(structured.action)}</p>` : '',
+        structured.counter_evidence ? `<p><strong>Counter-signal:</strong> ${escapeHtml(structured.counter_evidence)}</p>` : ''
+      ].filter(Boolean).join('');
+      const receipt = article.evidence_fingerprint
+        ? `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. Evidence fingerprint: ${escapeHtml(String(article.evidence_fingerprint).slice(0, 16))}…${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).</p></details>`
+        : '';
+      const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
+      return `<article class="publication-card"><div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}</article>`;
     }
 
     function editorialStoryMarkup(story, isLead) {
@@ -284,7 +376,7 @@ EDITORIAL_JS = r"""
         : '';
       const confidence = String(story.confidence || 'medium').toLowerCase();
       const chips = [
-        story.team_name,
+        story.reporter_name || story.reporter || '',
         story.entity_type === 'manager' ? 'manager profile' : '',
         `confidence ${confidence}`
       ].filter(value => value !== undefined && value !== null && String(value) !== '');

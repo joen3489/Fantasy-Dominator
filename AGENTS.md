@@ -38,6 +38,8 @@ editorial written in distinct voices.
 - `docs/reporter_personas.md`: writer voices and article assignments.
 - `docs/production_runbook.md`: Railway, Clerk, durable storage, and smoke
   verification procedure.
+- `docs/anti_recursive_dev_audit.md`: dated audit rubric for development
+  failure classes and the current evidence-backed findings.
 - `docs/decision_log.md`: regression lessons and decisions that should not be
   rediscovered by future work.
 - `config/leagues.yml`: legacy/default seed and strategy configuration; it is
@@ -69,6 +71,29 @@ configuration in environment variables, keep structured output schemas strict,
 and pass only the selected league's validated context. Luna is the configured
 OpenAI model (`gpt-5.6-luna`); `reasoning.effort` is a separate tuning value,
 not part of the model name.
+
+## Anti-recursive development guardrails
+
+The project adopts the supplied anti-recursive-development rubric as a local
+practice, not as a copied foreign skill file. For contract-sensitive work:
+
+- behavioral tests should name the design source they encode; otherwise they
+  document current behavior but do not establish product law;
+- every designed capability needs an entry-path test from the user-facing
+  surface through its real wiring;
+- before deleting or retiring an artifact, enumerate its runtime consumers and
+  effects rather than trusting its label;
+- contracts must fail closed at the seam, even when today's caller filters or
+  compensates for them;
+- gates must report proximity to failure, not only PASS/FAIL; and
+- dated claims must be amended with the same change that makes them stale.
+
+Run gates as independent commands and inspect raw exit codes. A wrapper that
+prints a failed command's output while returning success is not verification.
+Browser and deployment verifiers must assert their preconditions (session,
+viewport, visible surface, expected revision, and fixture freshness) before
+trusting measurements; when those preconditions cannot be proven, report the
+check as not done.
 
 ## Verification gate
 

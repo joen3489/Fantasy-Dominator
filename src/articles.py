@@ -131,14 +131,75 @@ def _load_items(analysis_dir: Path, filename: str) -> list[dict[str, Any]]:
 
 
 def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str, **extra: Any) -> dict[str, Any]:
-    return {
+    """Build the canonical evidence packet passed to every writer.
+
+    The packet deliberately keeps the human-readable text, but also records
+    what the writer is allowed to interpret: source identity, freshness,
+    calculation boundaries, related entity scope, and an explicit quality
+    label when the claim rests on one source or no source receipt.
+    """
+
+    source_ids = _source_ids(
+        extra.get("source_ids")
+        or extra.get("source_trace")
+        or extra.get("source_id")
+        or extra.get("source")
+    )
+    source_count = extra.get("source_count")
+    try:
+        source_count = int(source_count) if source_count not in (None, "") else len(source_ids)
+    except (TypeError, ValueError):
+        source_count = len(source_ids)
+    freshness = str(
+        extra.get("freshness")
+        or extra.get("checked_at")
+        or extra.get("generated_at")
+        or "unknown"
+    )
+    confidence = str(extra.get("confidence") or "unknown")
+    quality = "multi_source" if source_count > 1 else ("single_source" if source_count == 1 else "unattributed")
+    packet = {
         "evidence_id": f"{entity_type}:{entity_id}:{index}",
         "entity_type": entity_type,
         "entity_id": str(entity_id),
         "name": name,
         "text": text,
-        **{key: value for key, value in extra.items() if value not in (None, "")},
+        "claim_candidates": [str(text)] if str(text).strip() else [],
+        "supporting_rows": [{
+            "row_id": f"{entity_type}:{entity_id}:{index}",
+            "entity_type": entity_type,
+            "entity_id": str(entity_id),
+            "name": name,
+        }],
+        "source_ids": source_ids,
+        "source_count": max(0, source_count),
+        "source_quality": quality,
+        "freshness": freshness,
+        "confidence_basis": f"{confidence}; {quality.replace('_', ' ')} evidence",
+        "calculation": str(extra.get("calculation") or "Deterministic source row or analysis artifact; no hidden calculation."),
+        "permitted_interpretation": [
+            "Describe the observed signal and its uncertainty.",
+            "Do not infer motive, completed action, or certain future performance.",
+        ],
+        **{key: value for key, value in extra.items() if value not in (None, "") and key not in {"source_id", "source_ids", "source_trace", "source", "source_count", "freshness", "checked_at", "generated_at"}},
     }
+    packet["source_receipt"] = {
+        "source_ids": source_ids,
+        "source_count": max(0, source_count),
+        "freshness": freshness,
+        "quality": quality,
+    }
+    return packet
+
+
+def _source_ids(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        values = value
+    else:
+        values = re.split(r"[;,|]", str(value))
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
 
 
 # --- scope functions --------------------------------------------------------------------
@@ -170,6 +231,8 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
                 market_value=player.get("market_value", ""),
                 projected_ppg=player.get("projected_ppg", ""),
                 signal_label=player.get("signal_label", ""),
+                source_trace=player.get("source_trace", ""),
+                checked_at=player.get("checked_at", ""),
             )
         )
     return rows
@@ -192,6 +255,8 @@ def _scope_market_watch(ctx: ArticleContext) -> list[dict[str, Any]]:
                     risk=item.get("risk", ""),
                     confidence=item.get("confidence", ""),
                     evidence=item.get("evidence", ""),
+                    source_trace=item.get("source_trace", ""),
+                    checked_at=item.get("checked_at", ""),
                 )
             )
             index += 1
@@ -217,6 +282,8 @@ def _scope_market_watch(ctx: ArticleContext) -> list[dict[str, Any]]:
                 opportunity_score=row.get("opportunity_score", ""),
                 production_score=row.get("production_score", ""),
                 xfp_regression_score=row.get("xfp_regression_score", ""),
+                source_trace=row.get("source_trace", ""),
+                checked_at=row.get("checked_at", ""),
             )
         )
         index += 1
@@ -235,10 +302,22 @@ def _scope_trade_desk(ctx: ArticleContext) -> list[dict[str, Any]]:
                 str(item.get("analysis_text", "")),
                 approach=item.get("approach_type", ""),
                 assets=item.get("assets_to_discuss", ""),
+                assets_to_pursue=item.get("assets_to_pursue", []),
+                assets_we_can_offer=item.get("assets_we_can_offer", []),
+                plausible_offer_range=item.get("plausible_offer_range", {}),
+                minimum_acceptable_return=item.get("minimum_acceptable_return", {}),
+                why_manager_might_care=item.get("why_manager_might_care", ""),
+                historical_evidence=item.get("historical_evidence", {}),
+                risk_of_waiting=item.get("risk_of_waiting", ""),
+                risk_of_acting=item.get("risk_of_acting", ""),
+                alternative_counterparties=item.get("alternative_counterparties", []),
+                do_not_chase_conditions=item.get("do_not_chase_conditions", []),
                 manager_signal=item.get("manager_signal", ""),
                 risk=item.get("risk", ""),
                 confidence=item.get("confidence", ""),
                 evidence=item.get("evidence", ""),
+                source_trace=item.get("source_trace", ""),
+                checked_at=item.get("checked_at", ""),
             )
         )
     return rows
@@ -255,8 +334,18 @@ def _scope_manager_intel(ctx: ArticleContext) -> list[dict[str, Any]]:
                 str(item.get("team_name", item.get("manager_name", ""))),
                 str(item.get("analysis_text", "")),
                 dynasty_cycle=item.get("dynasty_cycle", ""),
+                sample_size=item.get("sample_size", {}),
+                roster_construction=item.get("roster_construction", {}),
+                season_history=item.get("season_history", []),
+                repeated_behavior=item.get("repeated_behavior", {}),
+                behavior_observations=item.get("behavior_observations", []),
+                trade_fits=item.get("trade_fits", []),
+                questions_to_ask=item.get("questions_to_ask", []),
+                unknowns=item.get("unknowns", []),
                 confidence=item.get("confidence", ""),
                 evidence=item.get("evidence", ""),
+                source_trace=item.get("source_trace", ""),
+                checked_at=item.get("checked_at", ""),
             )
         )
     return rows
@@ -275,7 +364,17 @@ def _scope_daily_brief(ctx: ArticleContext) -> list[dict[str, Any]]:
             index = base + offset
             name = item.get("player_name") or item.get("target_manager_name") or ""
             entity_id = item.get("player_id") or item.get("target_manager_roster_id") or index
-            rows.append(_evidence(entity_type, entity_id, index, str(name), str(item.get("analysis_text", ""))))
+            rows.append(
+                _evidence(
+                    entity_type,
+                    entity_id,
+                    index,
+                    str(name),
+                    str(item.get("analysis_text", "")),
+                    source_trace=item.get("source_trace", ""),
+                    checked_at=item.get("checked_at", ""),
+                )
+            )
         base = len(rows)
     return rows
 

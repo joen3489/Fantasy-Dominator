@@ -66,6 +66,8 @@ class CachePolicyTests(unittest.TestCase):
             request.assert_not_called()
 
     def test_league_payload_caches_are_isolated_by_league_id(self) -> None:
+        # Design source: docs/data_contract.md, Layer 0; raw payloads are
+        # preserved and must remain scoped to the league source they describe.
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)
             responses = {

@@ -41,18 +41,22 @@ def build_editorial_issue(
     writer_preferences = config.get("writer_preferences") or (config.get("context") or {}).get("writer_preferences") or {}
     reporter = persona_metadata(writer_preferences, "daily_brief")
     persona_id = reporter["persona_id"]
-    lead = _priority_story(lead_row, is_lead=True, persona_id=persona_id) if lead_row else _quiet_story(my_team_name)
+    lead = (
+        _priority_story(lead_row, is_lead=True, persona_id=persona_id, writer_preferences=writer_preferences)
+        if lead_row
+        else _quiet_story(my_team_name, writer_preferences)
+    )
 
     stories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = {_story_key(lead)}
     for row in scoped_priority[1:]:
-        story = _priority_story(row, persona_id=persona_id)
+        story = _priority_story(row, persona_id=persona_id, writer_preferences=writer_preferences)
         if _append_unique(stories, seen, story, limit=2):
             continue
 
     news_rows = _sorted_news(tables, my_roster_id)
     if news_rows:
-        _append_unique(stories, seen, _news_story(news_rows[0]), limit=3)
+        _append_unique(stories, seen, _news_story(news_rows[0], writer_preferences), limit=3)
     league_news_rows = _rows(tables, "league_news_impact")
     latest_news_published_at = max(
         (_text(row.get("published_at")) for row in league_news_rows if _text(row.get("published_at"))),
@@ -62,7 +66,7 @@ def build_editorial_issue(
     manager_rows = _sorted_rows(tables, "manager_behavior_signals", "trade_activity_score")
     manager_row = _first_matching(manager_rows, my_roster_id) or (manager_rows[0] if manager_rows else None)
     if manager_row:
-        _append_unique(stories, seen, _manager_story(manager_row), limit=4)
+        _append_unique(stories, seen, _manager_story(manager_row, writer_preferences), limit=4)
     manager_trade_profiles = _manager_trade_profile_rows(config)
     custom_manager_profile = _select_manager_trade_profile(
         manager_trade_profiles,
@@ -70,7 +74,7 @@ def build_editorial_issue(
         my_roster_id,
     )
     if custom_manager_profile:
-        _append_unique(stories, seen, _manager_profile_story(custom_manager_profile), limit=5)
+        _append_unique(stories, seen, _manager_profile_story(custom_manager_profile, writer_preferences), limit=5)
 
     source_health = _source_health(tables)
     source_summary = _source_summary(source_health)
@@ -83,8 +87,31 @@ def build_editorial_issue(
         "source_count": len(source_health),
     }
     article_modes = _article_modes(analysis)
+    publication_articles = _publication_articles(analysis, writer_preferences)
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
+    question_prompts = [
+        {
+            "question": "What changed?",
+            "answer": f"{signal_summary['news_signals']} news signals and {signal_summary['priority_reads']} ranked reads are in this edition.",
+            "route": "#view-news",
+        },
+        {
+            "question": "Why does it matter to my team?",
+            "answer": f"The lead read is {lead.get('entity_name', 'the current board')} for {team_label}.",
+            "route": "#view-my-team",
+        },
+        {
+            "question": "Who should I study next?",
+            "answer": f"{signal_summary['manager_profiles']} manager profiles and {signal_summary['custom_manager_profiles']} private lenses are available.",
+            "route": "#view-league",
+        },
+        {
+            "question": "What evidence is weak or stale?",
+            "answer": source_summary["label"],
+            "route": "#view-data-room",
+        },
+    ]
 
     return {
         "schema_version": "issue_v1",
@@ -101,6 +128,13 @@ def build_editorial_issue(
         "dek": _issue_dek(team_label, lead, signal_summary, persona_id),
         "writer_mode": _writer_mode_label(article_modes),
         "article_modes": article_modes,
+        "publication_articles": publication_articles,
+        "publication_receipt": {
+            "current_count": sum(1 for article in publication_articles if article.get("mode") == "automatic_llm"),
+            "available_count": len(publication_articles),
+            "expected_count": len(article_modes),
+        },
+        "question_prompts": question_prompts,
         "reporter_persona": reporter,
         "reporter_lineup": reporter_lineup(writer_preferences),
         "freshness_label": source_summary["label"],
@@ -119,6 +153,7 @@ def _priority_story(
     *,
     is_lead: bool = False,
     persona_id: str = "front_office",
+    writer_preferences: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = row or {}
     action = _text(row.get("item_type") or row.get("action_label")).lower()
@@ -135,6 +170,7 @@ def _priority_story(
     confidence = _confidence(row.get("confidence"))
     claims = _claims_from_row(row)
     sources = _source_links(row.get("source_trace"))
+    reporter = _reporter_for_story(kind, writer_preferences)
     return {
         "story_id": f"priority:{entity_type}:{entity_id or entity_name}",
         "story_type": kind,
@@ -154,15 +190,19 @@ def _priority_story(
         "evidence": evidence or why,
         "sources": sources,
         "is_lead": is_lead,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
     }
 
 
-def _news_story(row: Mapping[str, Any]) -> dict[str, Any]:
+def _news_story(row: Mapping[str, Any], writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
     player_name = _text(row.get("player_name")) or "A league player"
     impact = _text(row.get("impact_type")) or "league signal"
     impact_label = _human_label(impact)
     confidence = _confidence(row.get("confidence"))
     evidence = _text(row.get("evidence")) or f"{player_name}: {impact_label}."
+    reporter = _reporter_for_story("news", writer_preferences)
     return {
         "story_id": f"news:{_text(row.get('event_id')) or player_name}",
         "story_type": "news",
@@ -185,10 +225,13 @@ def _news_story(row: Mapping[str, Any]) -> dict[str, Any]:
         "evidence": evidence,
         "sources": _source_links(row.get("source_trace")),
         "is_lead": False,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
     }
 
 
-def _manager_story(row: Mapping[str, Any]) -> dict[str, Any]:
+def _manager_story(row: Mapping[str, Any], writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
     team_name = _text(row.get("team_name")) or "A league manager"
     label = _text(row.get("plain_language_label")) or "observed market behavior"
     evidence = _text(row.get("evidence")) or "Observed transaction behavior is sparse."
@@ -197,6 +240,7 @@ def _manager_story(row: Mapping[str, Any]) -> dict[str, Any]:
         {"label": "Trade activity", "value": _number_or_text(row.get("trade_activity_score"))},
         {"label": "Pick posture", "value": _pick_posture(row)},
     ]
+    reporter = _reporter_for_story("manager", writer_preferences)
     return {
         "story_id": f"manager:{_text(row.get('roster_id')) or team_name}",
         "story_type": "manager",
@@ -216,11 +260,15 @@ def _manager_story(row: Mapping[str, Any]) -> dict[str, Any]:
         "evidence": evidence,
         "sources": [],
         "is_lead": False,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
     }
 
 
-def _quiet_story(team_name: str) -> dict[str, Any]:
+def _quiet_story(team_name: str, writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
     team_label = team_name or "Your team"
+    reporter = _reporter_for_story("quiet", writer_preferences)
     return {
         "story_id": "quiet:edition",
         "story_type": "quiet",
@@ -240,6 +288,9 @@ def _quiet_story(team_name: str) -> dict[str, Any]:
         "evidence": "No high-priority rows were available in the current snapshot.",
         "sources": [],
         "is_lead": True,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
     }
 
 
@@ -492,7 +543,10 @@ def _select_manager_trade_profile(
     return profiles[0]
 
 
-def _manager_profile_story(profile: Mapping[str, Any]) -> dict[str, Any]:
+def _manager_profile_story(
+    profile: Mapping[str, Any],
+    writer_preferences: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     roster_id = _text(profile.get("roster_id"))
     manager_name = _text(profile.get("manager_name")) or "A league manager"
     trade_style = _text(profile.get("trade_style")) or "an unclassified trade style"
@@ -500,6 +554,7 @@ def _manager_profile_story(profile: Mapping[str, Any]) -> dict[str, Any]:
     protected = _text(profile.get("protected_assets")) or "not specified"
     editor_note = _text(profile.get("editor_note"))
     note = editor_note or f"Working style: {trade_style}."
+    reporter = _reporter_for_story("manager", writer_preferences)
     return {
         "story_id": f"manager:note:{roster_id or manager_name}",
         "story_type": "manager",
@@ -523,7 +578,23 @@ def _manager_profile_story(profile: Mapping[str, Any]) -> dict[str, Any]:
         "evidence": f"Private editor context, not source evidence: {note}",
         "sources": [],
         "is_lead": False,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
     }
+
+
+def _reporter_for_story(story_type: str, writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Assign a visible desk identity to deterministic cards as well as LLM articles."""
+
+    key = {
+        "market": "market_watch",
+        "sell": "trade_desk",
+        "manager": "manager_intel",
+        "news": "team_report",
+        "quiet": "daily_brief",
+    }.get(story_type, "daily_brief")
+    return persona_metadata(dict(writer_preferences or {}), key)
 
 
 def _source_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -574,6 +645,49 @@ def _article_modes(analysis: Mapping[str, Any]) -> dict[str, str]:
         key: _text(analysis.get(field)) or "deterministic_template"
         for key, field in fields.items()
     }
+
+
+def _publication_articles(
+    analysis: Mapping[str, Any],
+    writer_preferences: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Expose the actual article bodies and receipts to the reader facade.
+
+    The deterministic issue remains the navigation layer, but generated prose is
+    now a first-class publication instead of an orphaned file counted by status.
+    """
+    specs = (
+        ("daily_brief", "Daily GM Brief", "dailyGmBrief", "dailyGmBriefMode"),
+        ("team_report", "Your Team Report", "teamReport", "teamReportMode"),
+        ("market_watch", "Market Watch", "marketWatch", "marketWatchMode"),
+        ("trade_desk", "Trade Desk", "tradeDeskRead", "tradeDeskReadMode"),
+        ("manager_intel", "Manager Intel", "managerIntel", "managerIntelMode"),
+    )
+    receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), Mapping) else {}
+    output: list[dict[str, Any]] = []
+    for key, title, body_field, mode_field in specs:
+        body = _text(analysis.get(body_field))
+        if not body:
+            continue
+        receipt = receipts.get(key) if isinstance(receipts.get(key), Mapping) else {}
+        default_reporter = persona_metadata(dict(writer_preferences or {}), key)
+        output.append(
+            {
+                "key": key,
+                "title": title,
+                "body": body,
+                "mode": _text(receipt.get("mode") or analysis.get(mode_field)) or "deterministic_template",
+                "reporter_id": _text(receipt.get("reporter_id")) or default_reporter["persona_id"],
+                "reporter_name": _text(receipt.get("reporter_name")) or default_reporter["name"],
+                "reporter_persona": default_reporter,
+                "generated_at": _text(receipt.get("generated_at")),
+                "evidence_fingerprint": _text(receipt.get("evidence_fingerprint")),
+                "content_hash": _text(receipt.get("content_hash")),
+                "model": _text(receipt.get("model")),
+                "structured": dict(receipt.get("structured") or {}) if isinstance(receipt.get("structured"), Mapping) else {},
+            }
+        )
+    return output
 
 
 def _writer_mode_label(article_modes: Mapping[str, str]) -> str:

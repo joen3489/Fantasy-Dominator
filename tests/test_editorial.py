@@ -100,6 +100,8 @@ class EditorialIssueTests(unittest.TestCase):
             ["Market · Values", "Picks · Pick values", "News · Rss", "Projection · Stats"],
         )
         self.assertEqual({story["story_type"] for story in issue["stories"]}, {"market", "news", "manager"})
+        self.assertTrue(all(story.get("reporter_id") and story.get("reporter_name") for story in issue["stories"]))
+        self.assertNotIn("My Team", {story.get("reporter_name") for story in issue["stories"]})
 
     def test_empty_issue_is_an_honest_quiet_edition(self) -> None:
         issue = build_editorial_issue(
@@ -171,6 +173,31 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertEqual(issue["article_modes"]["team_report"], "automatic_llm")
         self.assertEqual(issue["article_modes"]["daily_brief"], "deterministic_template")
 
+    def test_issue_publishes_article_body_with_receipt_instead_of_only_counting_it(self) -> None:
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "teamReport": "---\nmodel_mode: automatic_llm\n---\n# Your Team Report\n\n## Cornerstones\nA real report.",
+                "teamReportMode": "automatic_llm",
+                "articleReceipts": {
+                    "team_report": {
+                        "mode": "automatic_llm",
+                        "reporter_name": "Topline Tony",
+                        "evidence_fingerprint": "evidence-123",
+                        "content_hash": "content-123",
+                    }
+                },
+            },
+            league_id="publication-league",
+            my_roster_id=2,
+            my_team_name="Publication Team",
+        )
+
+        self.assertEqual(len(issue["publication_articles"]), 1)
+        self.assertIn("A real report", issue["publication_articles"][0]["body"])
+        self.assertEqual(issue["publication_articles"][0]["reporter_name"], "Topline Tony")
+        self.assertEqual(issue["publication_articles"][0]["evidence_fingerprint"], "evidence-123")
+
     def test_private_manager_profile_changes_evidence_led_edition(self) -> None:
         issue = build_editorial_issue(
             {
@@ -237,6 +264,9 @@ class EditorialUiTests(unittest.TestCase):
         self.assertIn("return rows.map(row =>", rendered)
         self.assertNotIn("rows.slice(0, 5)", rendered)
         self.assertIn("Today's Board", rendered)
+        self.assertIn("Desk reports", rendered)
+        self.assertIn("publicationArticleMarkup", rendered)
+        self.assertNotIn("        story.team_name,\n", rendered)
         self.assertIn("function priorityCards(rows)", rendered)
 
 

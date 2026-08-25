@@ -43,6 +43,7 @@ def _write_complete_bundle(site_dir: Path, html: str, editorial: dict | None = N
     (data_dir / "app_bundle.json").write_text("{}", encoding="utf-8")
     (data_dir / "editorial_issue.json").write_text(json.dumps(editorial or {}), encoding="utf-8")
     (data_dir / "draft_room.json").write_text("{}", encoding="utf-8")
+    (data_dir / "media_manifest.json").write_text(json.dumps({"schema_version": "media_manifest_v1", "assets": []}), encoding="utf-8")
     (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}}), encoding="utf-8")
 
 
@@ -555,7 +556,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
-                "database_table_count": 6,
+                "database_table_count": 7,
                 "writer_api_configured": False,
                 "writer_provider": "openai",
                 "writer_model": "gpt-5.6-luna",
@@ -919,13 +920,16 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('value="beta" selected', html)
         self.assertIn('href="/?league_id=alpha"', html)
 
+        remembered = self.client.get("/", cookies={"__session": token})
+        self.assertIn("In focus: <strong>Beta League</strong>", remembered.text)
+
         with patch("app.main.load_attention", return_value=[]):
             fallback = self.client.get("/?league_id=not-owned", cookies={"__session": token})
 
         self.assertEqual(fallback.status_code, 200)
         self.assertIn("Alpha focus headline", fallback.text)
         self.assertIn("Beta focus headline", fallback.text)
-        self.assertIn("In focus: <strong>Alpha League</strong>", fallback.text)
+        self.assertIn("In focus: <strong>Beta League</strong>", fallback.text)
 
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
@@ -1123,6 +1127,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Legacy edition", response.text)
 
     def test_link_leagues_upserts_and_returns_discovered_entries(self) -> None:
+        # Design source: AGENTS.md identity boundary; relinking must resolve
+        # Sleeper ownership from source data rather than stale cache labels.
         token = self._token("user_link")
         entries = [
             {"league_id": "l1", "name": "Linked", "season": "2026", "league_type": "dynasty", "roster_id": 3},
@@ -1137,6 +1143,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["leagues"][0]["league_id"], "l1")
         mocked_discover.assert_called_once()
+        self.assertTrue(mocked_discover.call_args.kwargs["force"])
         stored = db.list_user_leagues(self._user_id("user_link"))
         self.assertEqual(stored[0]["name"], "Linked")
 
@@ -1178,6 +1185,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         discover.assert_called_once()
         self.assertEqual(discover.call_args.args[1:], ("joe3489", "2026"))
+        self.assertTrue(discover.call_args.kwargs["force"])
         stored = db.get_user_league(user_id, "league-a")
         profile = db.get_team_profile(user_id, "league-a")
         self.assertEqual(stored["roster_id"], 2)
@@ -1356,12 +1364,72 @@ class FastAPIClerkAppTests(unittest.TestCase):
             "team_report",
             "team_report.md",
             source={"mode": "automatic_llm"},
+            evidence_fingerprint="evidence-1",
+            bundle_revision="bundle-current",
+            content_hash="content-1",
+            reporter_id="topline_tony",
+            writer_mode="automatic_llm",
+            model="gpt-5.6-luna",
         )
         partial = db.content_artifact_status(user_id, "content-league", "2026")
         self.assertEqual(partial["state"], "partial")
         self.assertEqual(partial["label"], "1/5 reporter articles")
         self.assertEqual(partial["generated_keys"], ["team_report"])
         self.assertTrue(partial["last_generated_at"])
+
+        stale_bundle = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            current_receipts={"team_report": {"mode": "automatic_llm", "content_hash": "wrong-content"}},
+            current_bundle_revision="bundle-stale",
+        )
+        self.assertEqual(stale_bundle["state"], "fallback")
+        self.assertTrue(stale_bundle["receipt_verified"])
+        self.assertEqual(stale_bundle["bundle_revision"], "bundle-stale")
+
+        current_bundle = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            current_receipts={"team_report": {"mode": "automatic_llm", "content_hash": "content-1"}},
+            current_bundle_revision="bundle-current",
+        )
+        self.assertEqual(current_bundle["generated_keys"], ["team_report"])
+
+    def test_content_feedback_is_explicit_and_scoped_to_the_verified_roster(self) -> None:
+        """Encodes docs/front_office_realization_epic.md Workstream 9 and AGENTS.md privacy rules."""
+        token = self._token("user_content_feedback")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_content_feedback")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "feedback-league", "season": "2026", "league_type": "dynasty", "name": "Feedback", "roster_id": 7},
+        )
+
+        saved = self.client.post(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+            json={
+                "artifact_key": "trade_desk",
+                "interaction_type": "useful",
+                "payload": {"bundle_revision": "rev-1"},
+            },
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["roster_id"], 7)
+
+        listed = self.client.get("/api/leagues/feedback-league/content-interactions", cookies={"__session": token})
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()["interactions"][0]["interaction_type"], "useful")
+        self.assertEqual(listed.json()["interactions"][0]["payload"]["bundle_revision"], "rev-1")
+
+        denied = self.client.post(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+            json={"artifact_key": "trade_desk", "interaction_type": "invented"},
+        )
+        self.assertEqual(denied.status_code, 422)
 
     def test_user_refresh_endpoint_is_not_operator_protected(self) -> None:
         token = self._token("user_refresh")
