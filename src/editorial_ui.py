@@ -266,7 +266,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
             <span id="issue-latest-news">Latest news is loading</span>
-            <span id="issue-publication">Publication receipt is loading</span>
+            <span id="issue-publication-receipt">Publication receipt is loading</span>
           </div>
           <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
         </div>
@@ -313,7 +313,7 @@ EDITORIAL_JS = r"""
       setText('issue-latest-news', issue.latest_news_label ? `Latest news ${issue.latest_news_label}` : 'Latest news not recorded');
       const manifestReceipts = manifest.articleReceipts || {};
       const receiptCount = Object.keys(manifestReceipts).length;
-      setText('issue-publication', `${receiptCount} article receipts · bundle ${String(manifest.bundleRevision || 'unbound').slice(0, 12)}`);
+      setText('issue-publication-receipt', `${receiptCount} article receipts · bundle ${String(manifest.bundleRevision || 'unbound').slice(0, 12)}`);
       const freshness = issue.source_health_summary || {};
       const freshnessNode = document.getElementById('issue-freshness');
       if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';

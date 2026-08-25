@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 from src.browser_site import build_browser_site
@@ -93,6 +94,10 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn('data-data-question="mispriced"', html)
             self.assertIn("renderDataRoomQuestions", html)
             self.assertIn("renderEditorialMedia", html)
+            self.assertEqual(html.count('id="issue-publication"'), 1)
+            self.assertIn('id="issue-publication-receipt"', html)
+            duplicate_ids = [key for key, count in Counter(re.findall(r'id="([^"]+)"', html)).items() if count > 1]
+            self.assertEqual(duplicate_ids, [], f"generated browser ids must be unique: {duplicate_ids}")
             script_path = Path(tmp) / "bundle.js"
             script_path.write_text("\n".join(scripts), encoding="utf-8")
             checked = subprocess.run([node, "--check", str(script_path)], capture_output=True, text=True)
