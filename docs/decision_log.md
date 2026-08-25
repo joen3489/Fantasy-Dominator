@@ -334,3 +334,19 @@ dataset identity, and use the normalized league-impact count for the displayed
 row total so overlapping provider rows cannot inflate the headline. This keeps
 the media facade aligned with the data room instead of presenting a plausible
 but false empty state.
+
+## 2026-08-25 - Reporter attribution must be coherent in fallback content
+
+The default newsroom lineup was already defined in `src/personas.py`, and LLM
+articles resolved it by article key. Deterministic fallback markdown and the
+publication facade still had a generic `front_office` seam, however: a fallback
+receipt could identify `front_office` while displaying Topline Tony or another
+named reporter. That made the multi-lens promise cosmetic and made receipts
+harder to trust.
+
+Fallback builders now resolve the reporter by article key, including their
+front matter and voice markers. The reader facade treats a generic legacy
+fallback ID as missing, then resolves the assigned newsroom persona; real LLM
+receipts retain the known reporter that actually generated the artifact. Tests
+assert both the markdown entry path and the publication receipt remain
+`reporter_id`, `reporter_name`, and `reporter_persona` coherent.

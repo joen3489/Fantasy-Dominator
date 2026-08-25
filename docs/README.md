@@ -3,7 +3,7 @@
 Start here when returning to the project:
 
 - [Front-office principles](front_office_principles.md) — product north star,
-  layer boundaries, editorial doctrine, and quality bar.
+  layer boundaries, editorial doctrine, recurring lessons, and quality bar.
 - [Data contract](data_contract.md) — source ownership, table schemas, traces,
   and V-model acceptance checks.
 - [Reporter personas](reporter_personas.md) — newsroom voices and article

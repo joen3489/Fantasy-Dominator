@@ -198,6 +198,41 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertEqual(issue["publication_articles"][0]["reporter_name"], "Topline Tony")
         self.assertEqual(issue["publication_articles"][0]["evidence_fingerprint"], "evidence-123")
 
+    def test_fallback_publication_receipts_use_the_assigned_newsroom_reporter(self) -> None:
+        """Encodes docs/front_office_principles.md's analyst-lens contract at the reader seam."""
+        analysis = {
+            "dailyGmBrief": "Daily fallback",
+            "teamReport": "Team fallback",
+            "marketWatch": "Market fallback",
+            "tradeDeskRead": "Trade fallback",
+            "managerIntel": "Manager fallback",
+            "articleReceipts": {
+                key: {"mode": "deterministic_template", "reporter_id": "front_office"}
+                for key in ("daily_brief", "team_report", "market_watch", "trade_desk", "manager_intel")
+            },
+        }
+
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            analysis,
+            league_id="reporter-contract-league",
+            my_roster_id=2,
+            my_team_name="Reporter Contract Team",
+        )
+
+        expected = {
+            "daily_brief": "look_ahead_lonnie",
+            "team_report": "topline_tony",
+            "market_watch": "waiver_wire_waverly",
+            "trade_desk": "trade_desk_talia",
+            "manager_intel": "dossier_dana",
+        }
+        for article in issue["publication_articles"]:
+            reporter_id = expected[article["key"]]
+            self.assertEqual(article["reporter_id"], reporter_id)
+            self.assertEqual(article["reporter_persona"]["persona_id"], reporter_id)
+            self.assertEqual(article["reporter_name"], article["reporter_persona"]["name"])
+
     def test_private_manager_profile_changes_evidence_led_edition(self) -> None:
         issue = build_editorial_issue(
             {

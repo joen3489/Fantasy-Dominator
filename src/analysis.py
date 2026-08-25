@@ -475,12 +475,12 @@ def build_daily_gm_brief(
                 "team_name": active_team_name,
                 "model_mode": GENERATION_MODE,
                 "source_tables": ", ".join(_source_tables()),
-                "reporter_persona": persona_metadata(writer_preferences)["persona_id"],
+                "reporter_persona": persona_metadata(writer_preferences, "daily_brief")["persona_id"],
             }
         ),
         f"# Daily GM Brief: {active_team_name}",
         "",
-        _brief_intro(active_team_name, writer_preferences),
+        _brief_intro(active_team_name, writer_preferences, "daily_brief"),
         "",
         "## Target Theses",
         *_bullets(top_targets, "player_name", "analysis_text"),
@@ -559,7 +559,7 @@ def _article_front_matter(
             "artifact_type": key,
             "generated_at": generated_at,
             "model_mode": GENERATION_MODE,
-            "reporter_persona": persona_metadata(writer_preferences)["persona_id"],
+            "reporter_persona": persona_metadata(writer_preferences, key)["persona_id"],
             **extra,
         }
     )
@@ -591,13 +591,13 @@ def build_team_report(
         ),
         f"# Your Team Report: {active_team_name}",
         "",
-        _team_report_intro(active_team_name, players, writer_preferences),
+        _team_report_intro(active_team_name, players, writer_preferences, "team_report"),
         "",
         "## Cornerstones",
-        *_player_bullets(cornerstones, "cornerstone", writer_preferences),
+        *_player_bullets(cornerstones, "cornerstone", writer_preferences, "team_report"),
         "",
         "## Shop Candidates",
-        *_player_bullets(shop, "shop", writer_preferences),
+        *_player_bullets(shop, "shop", writer_preferences, "team_report"),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -612,13 +612,13 @@ def build_market_watch(
         _article_front_matter("market_watch", generated_at, writer_preferences),
         "# Market Watch",
         "",
-        _market_watch_intro(writer_preferences),
+        _market_watch_intro(writer_preferences, "market_watch"),
         "",
         "## Buy-Low Targets",
-        *_thesis_bullets(targets[:5], "buy_low", writer_preferences),
+        *_thesis_bullets(targets[:5], "buy_low", writer_preferences, "market_watch"),
         "",
         "## Sell-High Windows",
-        *_thesis_bullets(sells[:5], "sell_high", writer_preferences),
+        *_thesis_bullets(sells[:5], "sell_high", writer_preferences, "market_watch"),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -634,10 +634,10 @@ def build_trade_desk(
         _article_front_matter("trade_desk", generated_at, writer_preferences, team_name=active_team_name),
         "# Trade Desk Read",
         "",
-        _trade_desk_intro(active_team_name, writer_preferences),
+        _trade_desk_intro(active_team_name, writer_preferences, "trade_desk"),
         "",
         "## Best Fits",
-        *_trade_bullets(best, writer_preferences),
+        *_trade_bullets(best, writer_preferences, "trade_desk"),
         "",
         "## Steer Clear",
         "- No steer-clear counterparties flagged from the current evidence. Treat every manager read as a tendency estimate, not intent.",
@@ -657,13 +657,13 @@ def build_manager_intel(
         _article_front_matter("manager_intel", generated_at, writer_preferences, manager_count=len(cycles)),
         "# Manager Intel",
         "",
-        _manager_intel_intro(len(cycles), writer_preferences),
+        _manager_intel_intro(len(cycles), writer_preferences, "manager_intel"),
         "",
         "## Contenders",
-        *_manager_bullets(contenders, writer_preferences),
+        *_manager_bullets(contenders, writer_preferences, "manager_intel"),
         "",
         "## Rebuilders",
-        *_manager_bullets(rebuilders, writer_preferences),
+        *_manager_bullets(rebuilders, writer_preferences, "manager_intel"),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -1029,8 +1029,8 @@ def _bullets(rows: list[dict[str, Any]], title_key: str, text_key: str) -> list[
     return [f"- {row.get(title_key, 'Unknown')}: {row.get(text_key, '')}" for row in rows]
 
 
-def _brief_intro(team_name: str, writer_preferences: dict[str, Any] | None) -> str:
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+def _brief_intro(team_name: str, writer_preferences: dict[str, Any] | None, article_key: str = "daily_brief") -> str:
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     intros = {
         "front_office": (
             f"The {team_name} edition: price, production, news, and manager behavior turned into a short list of decisions. "
@@ -1054,10 +1054,11 @@ def _team_report_intro(
     team_name: str,
     players: list[dict[str, Any]],
     writer_preferences: dict[str, Any] | None,
+    article_key: str = "team_report",
 ) -> str:
     projected = sum(1 for row in players if _num(row.get("projected_ppg")) > 0)
     valued = sum(1 for row in players if _has_value(row.get("market_value")))
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     if not players:
         return f"No roster rows are available for {team_name}; the report is waiting on a scoped refresh."
     if persona_id == "scout":
@@ -1071,8 +1072,8 @@ def _team_report_intro(
     return f"{lead} {len(players)} players are in scope; {valued} have market values and {projected} carry non-zero projections."
 
 
-def _market_watch_intro(writer_preferences: dict[str, Any] | None) -> str:
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+def _market_watch_intro(writer_preferences: dict[str, Any] | None, article_key: str = "market_watch") -> str:
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     if persona_id == "scout":
         return "These are price disagreements to investigate. A buy-low still needs a viable role, and a sell window still needs a credible market."
     if persona_id == "commissioner":
@@ -1082,8 +1083,8 @@ def _market_watch_intro(writer_preferences: dict[str, Any] | None) -> str:
     return "The useful market read is a disagreement, not a command: investigate the gap, then check role, price, and risk before acting."
 
 
-def _trade_desk_intro(team_name: str, writer_preferences: dict[str, Any] | None) -> str:
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+def _trade_desk_intro(team_name: str, writer_preferences: dict[str, Any] | None, article_key: str = "trade_desk") -> str:
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     if persona_id == "scout":
         return f"For {team_name}, counterparties are ranked by observed behavior and roster fit. Manager tendencies are estimates, not mind-reading."
     if persona_id == "commissioner":
@@ -1093,8 +1094,8 @@ def _trade_desk_intro(team_name: str, writer_preferences: dict[str, Any] | None)
     return f"The {team_name} desk is looking for conversations where the manager signal and the named asset point in the same direction."
 
 
-def _manager_intel_intro(count: int, writer_preferences: dict[str, Any] | None) -> str:
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+def _manager_intel_intro(count: int, writer_preferences: dict[str, Any] | None, article_key: str = "manager_intel") -> str:
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     if persona_id == "scout":
         return f"The league cycle board covers {count} teams. Cycle labels summarize roster shape and observed behavior; they do not establish intent."
     if persona_id == "commissioner":
@@ -1108,13 +1109,23 @@ def _player_bullets(
     rows: list[dict[str, Any]],
     section: str,
     writer_preferences: dict[str, Any] | None,
+    article_key: str = "team_report",
 ) -> list[str]:
     if not rows:
         return ["- No high-signal roster rows available for this section."]
-    return [f"- **{_clean(row.get('player_name'), 'Unknown player')}** — {_player_story(row, section, writer_preferences)}" for row in rows]
+    return [
+        f"- **{_clean(row.get('player_name'), 'Unknown player')}** — "
+        f"{_player_story(row, section, writer_preferences, article_key)}"
+        for row in rows
+    ]
 
 
-def _player_story(row: dict[str, Any], section: str, writer_preferences: dict[str, Any] | None) -> str:
+def _player_story(
+    row: dict[str, Any],
+    section: str,
+    writer_preferences: dict[str, Any] | None,
+    article_key: str = "team_report",
+) -> str:
     position = _clean(row.get("position"), "player")
     status = _clean(row.get("roster_status"), "roster")
     market = _metric(row.get("market_value"))
@@ -1132,7 +1143,7 @@ def _player_story(row: dict[str, Any], section: str, writer_preferences: dict[st
         read = _shop_read(row)
     else:
         read = _cornerstone_read(row)
-    return f"{evidence} {_persona_read(read, writer_preferences)}"
+    return f"{evidence} {_persona_read(read, writer_preferences, article_key)}"
 
 
 def _cornerstone_read(row: dict[str, Any]) -> str:
@@ -1155,8 +1166,8 @@ def _shop_read(row: dict[str, Any]) -> str:
     return f"The sell score is {sell_score}; this is a price-discovery candidate, not an automatic move."
 
 
-def _persona_read(read: str, writer_preferences: dict[str, Any] | None) -> str:
-    persona_id = persona_metadata(writer_preferences)["persona_id"]
+def _persona_read(read: str, writer_preferences: dict[str, Any] | None, article_key: str | None = None) -> str:
+    persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     labels = {
         "front_office": "Front-office read:",
         "scout": "Scout read:",
@@ -1170,6 +1181,7 @@ def _thesis_bullets(
     rows: list[dict[str, Any]],
     side: str,
     writer_preferences: dict[str, Any] | None,
+    article_key: str = "market_watch",
 ) -> list[str]:
     if not rows:
         return ["- No high-signal rows available; do not manufacture a market move."]
@@ -1178,12 +1190,16 @@ def _thesis_bullets(
         f"- **{_clean(row.get('player_name'), 'Unknown player')}** — {prefix}: "
         f"{_clean(row.get('analysis_text'), 'The model sees a decision point.')} "
         f"Confidence: {_clean(row.get('confidence'), 'unknown')}. Guardrail: {_clean(row.get('risk'), 'verify the market and role')}. "
-        f"{_persona_read('Use the evidence as a starting point, then verify the live market.', writer_preferences)}"
+        f"{_persona_read('Use the evidence as a starting point, then verify the live market.', writer_preferences, article_key)}"
         for row in rows
     ]
 
 
-def _trade_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any] | None) -> list[str]:
+def _trade_bullets(
+    rows: list[dict[str, Any]],
+    writer_preferences: dict[str, Any] | None,
+    article_key: str = "trade_desk",
+) -> list[str]:
     if not rows:
         return ["- No manager opportunity rows available; the desk is quiet until the next scoped refresh."]
     bullets: list[str] = []
@@ -1206,12 +1222,16 @@ def _trade_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any
         bullets.append(
             f"- **{manager}** — Approach: {approach}. Observed signal: {signal}. Named lane: {assets}. "
             f"{packet} Evidence: {evidence}. Confidence: {confidence}. Guardrail: {risk}. "
-            f"{_persona_read('Keep this as a conversation hypothesis, not a claim about intent.', writer_preferences)}"
+            f"{_persona_read('Keep this as a conversation hypothesis, not a claim about intent.', writer_preferences, article_key)}"
         )
     return bullets
 
 
-def _manager_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, Any] | None) -> list[str]:
+def _manager_bullets(
+    rows: list[dict[str, Any]],
+    writer_preferences: dict[str, Any] | None,
+    article_key: str = "manager_intel",
+) -> list[str]:
     if not rows:
         return ["- No managers in this cycle bucket from the current evidence."]
     bullets: list[str] = []
@@ -1227,7 +1247,7 @@ def _manager_bullets(rows: list[dict[str, Any]], writer_preferences: dict[str, A
         bullets.append(
             f"- **{team}** — Cycle: {cycle}. Likely need: {needs}. Possible sell lane: {sells}. "
             f"Observed behavior: {trade}; {picks}. Confidence: {confidence}. Evidence: {evidence}. "
-            f"{_persona_read('Use the profile to choose a question, never to infer motive.', writer_preferences)}"
+            f"{_persona_read('Use the profile to choose a question, never to infer motive.', writer_preferences, article_key)}"
         )
     return bullets
 

@@ -84,6 +84,23 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertIn("ranking blends", quant.lower())
         self.assertNotEqual(scout, quant)
 
+    def test_default_fallback_articles_use_distinct_newsroom_reporters(self) -> None:
+        """Encodes docs/reporter_personas.md and docs/front_office_principles.md's distinct-lens rule."""
+        expected = {
+            "daily_gm_brief.md": "look_ahead_lonnie",
+            "team_report.md": "topline_tony",
+            "market_watch.md": "waiver_wire_waverly",
+            "trade_desk.md": "trade_desk_talia",
+            "manager_intel.md": "dossier_dana",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            analysis_dir = Path(tmp)
+            build_analysis_artifacts(analysis_dir, {}, {}, 2)
+            for filename, reporter_id in expected.items():
+                text = (analysis_dir / filename).read_text(encoding="utf-8")
+                self.assertIn(f"reporter_persona: {reporter_id}", text)
+
     def test_manager_intel_exposes_profile_evidence(self) -> None:
         dataframes = {
             "manager_cycle_profiles": pd.DataFrame(

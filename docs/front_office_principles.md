@@ -122,6 +122,41 @@ statistics, factual text, team identity, or unsupported claims. Generated media
 is versioned, scoped, accessible, responsive, and optional; a missing asset
 must not block the truthful text and data experience.
 
+## Lessons to carry forward
+
+These are the recurring failure modes that should remain visible while the
+product grows. They are product rules, not just implementation notes.
+
+- A green server, a healthy API, or a matching Git SHA does not prove that the
+  authenticated reader is seeing the intended private bundle. Verify the
+  rendered revision, selected league, exact roster receipt, and visible entry
+  markers together.
+- Team names and display names are mutable labels. The durable identity path is
+  Clerk user -> Sleeper user -> league -> `roster_id` -> private team profile.
+  If that chain cannot be proven, fail closed or show the limitation instead
+  of guessing from a name.
+- A fallback article is still a product state. Preserve per-article mode,
+  reporter, evidence fingerprint, provider result, and failure reason so a
+  reader can distinguish generated analysis, deterministic interpretation, and
+  unavailable content.
+- The publication facade must be computed from the same normalized evidence as
+  the data room. Counts, freshness labels, and source badges must use stable
+  dataset identity rather than friendly display text that can drift.
+- Depth means a decision path, not more cards. A meaningful slice connects a
+  question to deterministic evidence, an uncertainty-aware interpretation, and
+  a next investigation or decision. Decorative UI without that path is not
+  progress.
+- LLM generation is a bounded editorial step. Send only the selected scope's
+  validated context, use the configured Luna model through `src/llm.py`, skip
+  unchanged work, and never let a writer invent facts or perform an action.
+- Generated artwork should strengthen recognition and mood while remaining
+  optional and clearly separate from evidence. It must not become a substitute
+  for missing data, analysis, or product structure.
+
+When a proposed feature conflicts with one of these lessons, update the
+decision log and the relevant contract in the same change. Do not rely on a
+future cleanup to reconcile contradictory doctrine.
+
 ## Product quality bar
 
 Before calling a slice complete, ask:

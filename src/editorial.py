@@ -671,15 +671,17 @@ def _publication_articles(
             continue
         receipt = receipts.get(key) if isinstance(receipts.get(key), Mapping) else {}
         default_reporter = persona_metadata(dict(writer_preferences or {}), key)
+        mode = _text(receipt.get("mode") or analysis.get(mode_field)) or "deterministic_template"
+        reporter = _publication_reporter(dict(writer_preferences or {}), key, receipt, mode, default_reporter)
         output.append(
             {
                 "key": key,
                 "title": title,
                 "body": body,
-                "mode": _text(receipt.get("mode") or analysis.get(mode_field)) or "deterministic_template",
-                "reporter_id": _text(receipt.get("reporter_id")) or default_reporter["persona_id"],
-                "reporter_name": _text(receipt.get("reporter_name")) or default_reporter["name"],
-                "reporter_persona": default_reporter,
+                "mode": mode,
+                "reporter_id": reporter["persona_id"],
+                "reporter_name": reporter["name"],
+                "reporter_persona": reporter,
                 "generated_at": _text(receipt.get("generated_at")),
                 "evidence_fingerprint": _text(receipt.get("evidence_fingerprint")),
                 "content_hash": _text(receipt.get("content_hash")),
@@ -688,6 +690,35 @@ def _publication_articles(
             }
         )
     return output
+
+
+def _publication_reporter(
+    writer_preferences: dict[str, Any],
+    article_key: str,
+    receipt: Mapping[str, Any],
+    mode: str,
+    default_reporter: dict[str, str],
+) -> dict[str, str]:
+    """Resolve one coherent reporter identity for a published article.
+
+    Older deterministic receipts may contain the generic ``front_office`` ID
+    while the article body was already assigned a newsroom reporter. Treat
+    that generic value as missing for fallback content. For a real generated
+    receipt, preserve the reporter that actually wrote the artifact, but only
+    when it resolves to a known persona.
+    """
+
+    receipt_id = _text(receipt.get("reporter_id")).lower()
+    if mode == "deterministic_template" and receipt_id in {"", "front_office"}:
+        return default_reporter
+    if not receipt_id:
+        return default_reporter
+    scoped = dict(writer_preferences)
+    overrides = dict(scoped.get("article_reporters") or {})
+    overrides[article_key] = receipt_id
+    scoped["article_reporters"] = overrides
+    candidate = persona_metadata(scoped, article_key)
+    return candidate if candidate["persona_id"] == receipt_id else default_reporter
 
 
 def _writer_mode_label(article_modes: Mapping[str, str]) -> str:
