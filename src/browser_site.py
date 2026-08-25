@@ -1867,13 +1867,19 @@ def _page(
           : '/api/operator/status';
         state.operatorStatus = await fetchJson(statusPath);
       }} catch (error) {{
-        state.operatorStatus = {{ state: 'unavailable', message: `Operator API unavailable: ${{error.message}}`, operator_enabled: false }};
+        overlayOperatorStatus({{ state: 'unavailable', message: `Operator API unavailable: ${{error.message}}`, operator_enabled: false }});
       }}
+    }}
+
+    function overlayOperatorStatus(patch) {{
+      // Keep the live writer/readiness receipt visible when an action is blocked
+      // or fails; a small status replacement must not erase provider evidence.
+      state.operatorStatus = {{ ...(state.operatorStatus || {{}}), ...patch }};
     }}
 
     async function runOperatorAction(path) {{
       if (!state.operatorToken) {{
-        state.operatorStatus = {{ state: 'blocked', message: 'Enter the operator token before running write actions.' }};
+        overlayOperatorStatus({{ state: 'blocked', message: 'Enter the operator token before running write actions.' }});
         render();
         return;
       }}
@@ -1889,7 +1895,7 @@ def _page(
         }});
         state.operatorStatus = await response.json();
       }} catch (error) {{
-        state.operatorStatus = {{ state: 'failed', message: `Operator action failed: ${{error.message}}` }};
+        overlayOperatorStatus({{ state: 'failed', message: `Operator action failed: ${{error.message}}` }});
       }}
       render();
       pollOperatorStatus();
@@ -1922,7 +1928,7 @@ def _page(
 
     async function runOperatorImport() {{
       if (!state.operatorToken) {{
-        state.operatorStatus = {{ state: 'blocked', message: 'Enter the operator token before importing insights.' }};
+        overlayOperatorStatus({{ state: 'blocked', message: 'Enter the operator token before importing insights.' }});
         render();
         return;
       }}
@@ -1930,7 +1936,7 @@ def _page(
       try {{
         payload = JSON.parse(document.getElementById('operator-insight-json').value || '{{}}');
       }} catch (error) {{
-        state.operatorStatus = {{ state: 'failed', message: `Insight JSON is invalid: ${{error.message}}` }};
+        overlayOperatorStatus({{ state: 'failed', message: `Insight JSON is invalid: ${{error.message}}` }});
         render();
         return;
       }}
@@ -1946,7 +1952,7 @@ def _page(
         }});
         state.operatorStatus = await response.json();
       }} catch (error) {{
-        state.operatorStatus = {{ state: 'failed', message: `Insight import failed: ${{error.message}}` }};
+        overlayOperatorStatus({{ state: 'failed', message: `Insight import failed: ${{error.message}}` }});
       }}
       render();
       pollOperatorStatus();

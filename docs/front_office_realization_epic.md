@@ -724,6 +724,18 @@ comparison, while the separate current pulse remained visible with its source
 event volume. The unavailable fallback was not substituted for a complete
 comparison, and no private identity or source token was exposed.
 
+## 2026-08-25 operator readiness overlay checkpoint
+
+The authenticated operator surface revealed a useful seam before the next
+writer run: clicking the LLM control without its required operator token
+replaced the complete status receipt with only a blocked message. That made a
+provider/model receipt disappear and could be mistaken for an API-key failure.
+The browser now overlays blocked and client-side failure state onto the
+existing status, preserving writer configuration, publication, and reader
+contract evidence. The action remains fail-closed and makes no provider call.
+This is a stability prerequisite for the protected Luna publication, not a
+publication run itself.
+
 ## 2026-08-25 cross-season trade-fit checkpoint
 
 Manager dossiers now expose a deterministic comparison between current

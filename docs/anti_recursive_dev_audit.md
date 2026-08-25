@@ -280,3 +280,14 @@ The production entry proof at
 the authenticated private Chrome route. The Data Room rendered the verified
 prior-bundle receipt and a zero-added-event result without replacing it with
 the unavailable state or exposing private implementation details.
+
+## 2026-08-25 - Do not erase live readiness on a blocked write action
+
+The production operator surface exposed a shallow state mutation: a missing
+operator token replaced the full authenticated status receipt with a minimal
+blocked object. The UI then displayed missing writer configuration even though
+the prior status had provider/model evidence. The browser now uses an additive
+status overlay for blocked and client-side failure paths. The entry-path test
+requires the helper and its rationale, and the authenticated browser audit must
+recheck that blocking an action preserves readiness evidence and does not call
+the provider.

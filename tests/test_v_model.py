@@ -1735,6 +1735,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Operator Mode", html)
         self.assertIn("FRONT_OFFICE_OPERATOR_TOKEN", html)
         self.assertIn("api/operator/status?league_id=", html)
+        self.assertIn("function overlayOperatorStatus", html)
+        self.assertIn("Keep the live writer/readiness receipt visible", html)
         self.assertNotIn("Packet path", html)
         self.assertNotIn("Validated path", html)
         self.assertIn("Writer receipt detail", html)

@@ -142,6 +142,13 @@ Before adding a feature or “cleaning up” an old artifact:
     show a visible unavailable state when the prior scope is incomplete. Never
     convert the first full snapshot into a list of supposedly new events.
 
+16. **A blocked operator action is not a provider failure.** When a write
+    control is pressed without the required operator token, overlay the blocked
+    message on the existing live status instead of replacing it with a small
+    object. Provider, model, publication, and reader-contract receipts must
+    remain visible so an authorization problem cannot masquerade as a missing
+    API key or an unsuccessful writer run.
+
 15. **A current revision does not prove a current reader.** Durable bundles
     must be checked for both the fields and the generated shell markers that
     the new entry path requires. If a manager dossier or the reader shell is

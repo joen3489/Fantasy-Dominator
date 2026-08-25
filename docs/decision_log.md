@@ -109,6 +109,16 @@ zero-added-event result alongside the current pulse. This closes the first
 return-later comparison seam; it does not close the broader Data Room or
 protected Luna publication work.
 
+## 2026-08-25 - Preserve readiness evidence when operator actions are blocked
+
+The authenticated operator panel initially showed the cached writer receipt,
+but pressing the LLM action without `FRONT_OFFICE_OPERATOR_TOKEN` replaced the
+whole status object with only `state=blocked` and a token message. That made the
+same screen appear to lose its provider and model configuration. The browser
+now overlays blocked or client-side failure state onto the existing status,
+preserving the live writer, publication, and reader-contract fields. No writer
+call is attempted until the operator token is present.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in
