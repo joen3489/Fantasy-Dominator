@@ -367,6 +367,14 @@ lower-confidence risk language. After a model change, regenerate the local
 tables and compare all proxy assets across every downstream consumer before
 claiming the data room is coherent.
 
+## 2026-08-25 writer preflight must separate secrets
+
+The OpenAI provider key and the browser's operator authorization are different
+controls. The Writer Desk now states both readiness states and the exact
+provider/model configuration before a user spends a generation attempt. It
+reports only configured/missing state, never values; a failed preflight must
+remain a no-call condition.
+
 Production receipt: revision
 `5654d74073656cb3ae225def1572ef74b450d67f` was publicly smoke-verified and
 then refreshed through the authenticated league surface. The private

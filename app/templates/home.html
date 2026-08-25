@@ -605,6 +605,9 @@
       .writer-actions input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fbfcf8; }
       .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
       .writer-note { margin: 0; color: #70551b; font-size: 12px; line-height: 1.4; }
+      .writer-readiness { display: flex; flex-wrap: wrap; gap: 7px; margin: 2px 0; }
+      .writer-readiness span { border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; color: var(--muted); background: #fbfcf8; font-size: 11px; }
+      .writer-readiness strong { color: var(--ink); font-weight: 700; }
       .writer-status.error { color: var(--sell); }
       .storage-panel { border-color: #c8d5ce; background: #f2f7f3; }
       .storage-panel summary { cursor: pointer; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
@@ -972,6 +975,14 @@
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
           <p class="writer-note" data-testid="writer-content-status">Selected league: {{ (featured_league.content_status or {}).label or "No writer receipt yet" }}.</p>
+          <div class="writer-readiness" data-testid="writer-readiness">
+            <span>Provider: <strong>{{ writer_provider }}</strong></span>
+            <span>Model: <strong>{{ writer_model }}</strong></span>
+            <span>Reasoning: <strong>{{ writer_reasoning_effort }}</strong></span>
+            <span>API key: <strong>{{ "ready" if writer_api_configured else "missing" }}</strong></span>
+            <span>Operator gate: <strong>{{ "configured; browser key required" if operator_status and operator_status.operator_enabled else "not configured" }}</strong></span>
+          </div>
+          <p class="writer-note" data-testid="writer-setup-note">The API key (<code>{{ writer_api_key_env }}</code>) stays in Railway. The operator key is a separate deployment secret, entered only in this browser field to authorize the write.</p>
           {% if operator_status and operator_status.operator_enabled %}
             <p class="writer-note" data-testid="writer-operator-note">Production writer controls are protected by <code>FRONT_OFFICE_OPERATOR_TOKEN</code>. Enter that operator key above; your Clerk login remains read-only.</p>
           {% endif %}

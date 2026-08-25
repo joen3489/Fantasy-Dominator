@@ -611,6 +611,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="writer-operator-note"', response.text)
         self.assertIn("FRONT_OFFICE_OPERATOR_TOKEN", response.text)
         self.assertIn("requires FRONT_OFFICE_OPERATOR_TOKEN", response.text)
+        self.assertIn('data-testid="writer-readiness"', response.text)
+        self.assertIn("gpt-5.6-luna", response.text)
+        self.assertIn('data-testid="writer-setup-note"', response.text)
+        self.assertIn("OPENAI_API_KEY", response.text)
 
     def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
         clerk_token = self._token("user_two_league_profiles")
@@ -897,6 +901,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-writer-button', html)
         self.assertIn("Generate this edition", html)
         self.assertIn('data-writer-all-button', html)
+        self.assertIn('data-testid="writer-readiness"', html)
+        self.assertIn('data-testid="writer-setup-note"', html)
         self.assertIn("Generate all editions", html)
         self.assertIn("'/api/operator/status?league_id=' + encodeURIComponent(leagueId)", html)
         self.assertIn("statusUrl = allEditions", html)

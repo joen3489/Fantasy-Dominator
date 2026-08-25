@@ -916,6 +916,12 @@ production is still in deterministic fallback mode until the
 operator-authorized Luna run is completed and its reporter receipts are
 verified.
 
+2026-08-25 writer preflight checkpoint: the headquarters now shows the
+configured provider, exact Luna model, reasoning effort, API-key readiness,
+and separate operator-gate readiness before a generation call. This improves
+the protected cost boundary; Release 1 remains open until the operator run
+actually produces and verifies all five current reporter receipts.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

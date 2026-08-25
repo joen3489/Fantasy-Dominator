@@ -1041,3 +1041,15 @@ Horn's player route showed market 43 with `Market source: internal proxy
 value` and the `internal_proxy_player_value` trace. Because Jimmy lacks
 projection support, the decision surface correctly remains low confidence
 with sparse-projection risk.
+
+## 2026-08-25 writer preflight receipt
+
+Repeated protected writer attempts correctly failed before any provider call,
+but the headquarters only exposed the failure after the user pressed the
+button. The home Writer Desk now publishes a safe preflight receipt showing
+the configured provider, exact model, reasoning effort, API-key readiness,
+and operator-gate state. It explicitly distinguishes the Railway
+`OPENAI_API_KEY` from the separate browser-entered
+`FRONT_OFFICE_OPERATOR_TOKEN`; neither secret is rendered or persisted. This
+is an operational depth slice for the cost-incurring publication boundary,
+not a relaxation of the protected-write rule.

@@ -881,3 +881,13 @@ the team route reconciled 30/30 market rows at 835.54, and Jimmy Horn's
 player route showed market 43 with the internal proxy descriptor and trace.
 The source is now connected through the decision layer in production; the
 proxy remains explicitly lower-confidence when projection evidence is absent.
+
+## 2026-08-25 - Make the writer gate observable before spending tokens
+
+The writer action is intentionally protected and cost-incurring. A missing or
+incorrect operator token must fail closed before the request reaches Luna, but
+the prior home surface made the distinction between the provider key and the
+operator key too easy to miss. The Writer Desk now shows provider, model,
+reasoning effort, API-key readiness, and operator-gate readiness without
+exposing secret values. This preserves the separate Clerk/read-only and
+operator/write boundaries while making the next publication attempt operable.

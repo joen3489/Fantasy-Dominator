@@ -366,3 +366,11 @@ the exact league/team/player routes. The refreshed production team showed
 30/30 market rows and the Jimmy Horn player evidence showed proxy value 43
 with its source trace. This closes the prior disconnected-production-data
 finding; it does not make proxy economics equivalent to external consensus.
+
+## 2026-08-25 - Writer configuration must be visible at the cost seam
+
+The protected writer endpoint was correctly fail-closed, but repeated browser
+failures showed that the UI did not make its two-secret contract observable
+before the action. The Writer Desk now renders safe provider/model/reasoning,
+API-key, and operator-gate receipts. Tests cover the user-facing entry path;
+no secret value is returned or persisted.
