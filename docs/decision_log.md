@@ -261,3 +261,13 @@ only configures the model provider. The headquarters now explains that
 separation before the user clicks Generate and translates a 403 into an
 actionable message. A failed authorization must not be mistaken for a writer
 failure or silently trigger a paid call.
+
+## 2026-08-25 - Manager dossiers must open the two-sided decision packet
+
+The manager page had strong historical intelligence but only a generic Trade
+Angle, forcing the reader back to the Trade Desk to reconstruct the actual
+conversation. It now renders the target assets, exact-roster offer candidates,
+observed valuation-lane evidence, why-the-manager-might-care context, price
+guardrails, and do-not-chase conditions in the dossier entry path. The
+underlying packet remains read-only and uncertainty-labeled; the dossier is a
+decision surface, not a second source of truth.

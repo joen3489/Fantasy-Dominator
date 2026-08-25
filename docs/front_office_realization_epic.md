@@ -506,3 +506,11 @@ The UI labels the shortlist as potential assets to discuss, and the packet
 retains explicit do-not-chase language. The behavioral test in
 `tests/test_v_model.py` proves that the ranking uses the active roster and
 does not leak an opponent's asset into the offer side.
+
+## 2026-08-25 manager dossier entry-path checkpoint
+
+Manager pages now open the same two-sided Trade Desk packet used by the main
+Trade Desk: target assets, selected-roster offer candidates, valuation-lane
+evidence, why-the-manager-might-care context, price guardrails, and
+do-not-chase conditions. This closes the dossier-to-decision seam without
+duplicating facts or implying that a trade was offered or accepted.

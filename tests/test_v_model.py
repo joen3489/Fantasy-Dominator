@@ -1360,6 +1360,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Trade Theses", html)
         self.assertIn("offer_candidates", html)
         self.assertIn("Potential assets from our roster to discuss (not a generated offer)", html)
+        self.assertIn("Trade decision packet", html)
+        self.assertIn("Do-not-chase conditions", html)
         self.assertIn("Manager Dossiers", html)
         self.assertIn("Breakout Candidates", html)
         self.assertIn("Sell Candidates", html)
