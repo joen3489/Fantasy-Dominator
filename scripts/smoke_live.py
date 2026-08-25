@@ -29,6 +29,8 @@ REQUIRED_MARKERS = [
 ]
 BOOT_ONLY_MARKER = "Data refresh is running; reload shortly"
 REQUIRED_EDITION_MARKERS = ["The Front Office", "Draft Room", "News Desk", "Data Room"]
+EXPECTED_ARTICLE_KEYS = ("daily_brief", "team_report", "market_watch", "trade_desk", "manager_intel")
+FALLBACK_ARTICLE_SCHEMA_VERSION = "deterministic_fallback_v2"
 
 
 def _get(url: str, **kwargs: object) -> requests.Response:
@@ -131,6 +133,38 @@ def validate_authenticated_edition(
         errors.append("edition bundle does not carry a verified Sleeper roster receipt")
     if identity.get("roster_id") in (None, ""):
         errors.append("edition bundle identity receipt has no exact roster_id")
+    errors.extend(_validate_publication_receipts(payload))
+    return errors
+
+
+def _validate_publication_receipts(payload: dict) -> list[str]:
+    """Require the reader payload to carry the same receipt contract as the UI."""
+
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), dict) else {}
+    errors: list[str] = []
+    for article_key in EXPECTED_ARTICLE_KEYS:
+        receipt = receipts.get(article_key)
+        if not isinstance(receipt, dict):
+            errors.append(f"edition bundle is missing publication receipt: {article_key}")
+            continue
+        mode = str(receipt.get("mode") or "").strip().lower()
+        if mode not in {"deterministic_template", "automatic_llm"}:
+            errors.append(f"publication receipt {article_key} has unknown mode {mode!r}")
+            continue
+        structured = receipt.get("structured") if isinstance(receipt.get("structured"), dict) else {}
+        for field in ("headline", "thesis", "what_changed", "action"):
+            if not str(structured.get(field) or "").strip():
+                errors.append(f"publication receipt {article_key} is missing structured field: {field}")
+        if mode == "deterministic_template":
+            if structured.get("fallback_schema_version") != FALLBACK_ARTICLE_SCHEMA_VERSION:
+                errors.append(f"publication receipt {article_key} has stale fallback schema")
+            if not str(structured.get("lede") or "").strip():
+                errors.append(f"publication receipt {article_key} is missing fallback lede")
+            if not str(structured.get("visual_brief") or "").strip():
+                errors.append(f"publication receipt {article_key} is missing visual direction")
+        if not str(receipt.get("reporter_id") or "").strip():
+            errors.append(f"publication receipt {article_key} has no reporter identity")
     return errors
 
 

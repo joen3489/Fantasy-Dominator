@@ -137,6 +137,22 @@ class LiveSmokeContractTests(unittest.TestCase):
         self.assertIn("edition bundle has no Draft Room payload", errors)
 
     def test_authenticated_edition_requires_revision_league_and_verified_roster(self) -> None:
+        receipts = {
+            key: {
+                "mode": "deterministic_template",
+                "reporter_id": key,
+                "structured": {
+                    "headline": key,
+                    "lede": "A grounded fallback lead.",
+                    "thesis": "Use the evidence.",
+                    "what_changed": "The receipt boundary is explicit.",
+                    "action": "Open the Data Room.",
+                    "visual_brief": "Use accessible HTML evidence rails.",
+                    "fallback_schema_version": "deterministic_fallback_v2",
+                },
+            }
+            for key in ("daily_brief", "team_report", "market_watch", "trade_desk", "manager_intel")
+        }
         payload = {
             "leagueId": "alpha",
             "sourceRevision": "new",
@@ -148,7 +164,7 @@ class LiveSmokeContractTests(unittest.TestCase):
                 "news_source_freshness": [{}],
                 "projection_source_freshness": [{}],
             },
-            "analysis": {"dailyGmBrief": "brief"},
+            "analysis": {"dailyGmBrief": "brief", "articleReceipts": receipts},
             "draftRoom": {"schema_version": "draft_room_v1"},
         }
 
@@ -160,6 +176,9 @@ class LiveSmokeContractTests(unittest.TestCase):
         errors = validate_authenticated_edition({**payload, "identityReceipt": {"status": "unverified"}}, "new", "alpha")
         self.assertIn("edition bundle does not carry a verified Sleeper roster receipt", errors)
         self.assertIn("edition bundle identity receipt has no exact roster_id", errors)
+
+        stale = {**payload, "analysis": {**payload["analysis"], "articleReceipts": {**receipts, "daily_brief": {**receipts["daily_brief"], "structured": {**receipts["daily_brief"]["structured"], "fallback_schema_version": "old"}}}}}
+        self.assertIn("publication receipt daily_brief has stale fallback schema", validate_authenticated_edition(stale, "new", "alpha"))
 
     def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
         self.assertEqual(

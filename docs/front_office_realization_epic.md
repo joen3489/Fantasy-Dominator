@@ -632,3 +632,8 @@ identity for Lulu’s Potatoe’s, the v2 fallback story spine, and the visual
 direction inside the publication receipt. The stale durable-bundle regression
 is closed and covered by an adversarial entry-path test. Release 1 remains open
 only for the protected Luna run and its five current writer receipts.
+
+The authenticated smoke contract now also checks all five publication receipt
+objects and their structured story fields, including fallback visual direction.
+This prevents a future green revision check from accepting a shallow shell
+with missing or stale editorial payloads.

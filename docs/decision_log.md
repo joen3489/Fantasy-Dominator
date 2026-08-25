@@ -37,6 +37,15 @@ The publication is still deterministic fallback (`0/5` current Luna articles)
 until the protected operator run is authorized. That is a truthful degraded
 state, not a deployment failure.
 
+## 2026-08-25 - Authenticated smoke must validate publication depth
+
+Revision, league, and roster checks alone can still leave a shallow or stale
+reader payload. The authenticated smoke now requires all five publication
+receipts, known writer modes, structured headline/thesis/change/action fields,
+reporter identity, and—when deterministic fallback is published—the current
+fallback schema, lede, and visual direction. This keeps the automated gate
+aligned with the media product rather than proving only that a shell exists.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in
