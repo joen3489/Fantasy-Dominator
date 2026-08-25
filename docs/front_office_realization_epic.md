@@ -737,3 +737,14 @@ serving path therefore still needs an observable bundle-selection and
 migration receipt, followed by a fail-closed response when it cannot produce a
 current reader. This is the next required slice before protected Luna content
 is generated or the release is described as fully propagated.
+
+## 2026-08-25 reader-serving contract implemented
+
+The route now computes a safe reader receipt for both user-scoped and legacy
+migration candidates, exposes it through authenticated status/readiness, and
+rechecks the final bundle after migration. Incomplete, wrong-identity, stale,
+or contract-incomplete bundles cannot be returned as a successful reader;
+they produce the branded recovery state instead. Local adversarial tests cover
+the failed-recovery path and the absence of filesystem details. The remaining
+acceptance check is a deployed signed-in browser proof at the exact league
+route.

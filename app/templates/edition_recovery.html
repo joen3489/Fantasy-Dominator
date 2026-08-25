@@ -34,6 +34,13 @@
         <span class="state {{ readiness.state }}">{{ readiness.label }}</span>
         <h1>Your edition is {{ readiness.label }}.</h1>
         <p class="message">{{ readiness.message }}</p>
+        {% if readiness.reader_bundle %}
+        <p class="next" data-testid="reader-contract-status">
+          Reader contract: {{ readiness.reader_bundle.state }}
+          ({{ readiness.reader_bundle.selected_root }}).
+          {% if readiness.reader_bundle.reasons %}Checks needing attention: {{ readiness.reader_bundle.reasons|join(', ') }}.{% endif %}
+        </p>
+        {% endif %}
         <p class="next">This page checks again automatically. The headquarters will show the latest source health and refresh receipt.</p>
         <a class="back" href="/">Back to headquarters</a>
       </section>

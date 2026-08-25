@@ -2321,7 +2321,13 @@ def _page(
         {{ item: 'Writer model', value: status.writer_model || status.model || '' }},
         {{ item: 'Reasoning effort', value: status.writer_reasoning_effort || status.reasoning_effort || '' }},
         {{ item: 'Publication', value: (status.content_status || {{}}).label || 'No publication receipt' }},
-        {{ item: 'Bundle revision', value: (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }}
+        {{ item: 'Bundle revision', value: (status.reader_bundle || {{}}).served_revision || (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }},
+        {{ item: 'Reader contract', value: (() => {{
+          const reader = status.reader_bundle || {{}};
+          const root = reader.selected_root || 'unselected';
+          const reasons = Array.isArray(reader.reasons) && reader.reasons.length ? ` · ${{reader.reasons.join(', ')}}` : '';
+          return `${{reader.state || 'unknown'}} · ${{root}}${{reasons}}`;
+        }})() }}
       ];
       const validation = status.validation || {{}};
       const errors = validation.errors || status.errors || [];

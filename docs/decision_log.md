@@ -624,3 +624,15 @@ historical verification. The next implementation slice is a safe diagnostic
 and fail-closed serving contract for that seam. It must not expose filesystem
 paths, session tokens, or private payloads, and it must not trigger paid Luna
 generation.
+
+## 2026-08-25 - Recheck the reader after recovery, not just after rebuild
+
+The league route now exposes a redacted reader-bundle receipt through the
+authenticated operator status and readiness surfaces. It reports the selected
+private or legacy root, expected and served revisions, identity match, shell
+contract, fallback receipt contract, manager dossier contract, and bounded
+failure reasons without returning filesystem paths or content. A rebuild that
+leaves the bundle stale no longer returns its existing `index.html`; it shows
+the recovery page with HTTP 503. This closes the silent-success code seam,
+while the production gate remains open until a deployed signed-in route proves
+the receipt and current reader together.

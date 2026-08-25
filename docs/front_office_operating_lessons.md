@@ -183,3 +183,13 @@ and the final served revision therefore belong in one observable contract.
 Until that contract is proven, do not run an expensive newsroom generation
 cycle or call the release fully propagated. Preserve the old bundle as a
 recoverable migration candidate, but never present it as current content.
+
+## 2026-08-25 reader-serving gate implementation
+
+The serving seam now has a safe per-league reader receipt with selected root,
+served revision, contract booleans, and bounded reason codes. After recovery,
+the route rechecks completeness, exact identity, shell markers, and the
+current durable payload before returning HTML. If the old shell remains, the
+user receives a branded 503 recovery state instead of silently reading stale
+content. This is the implementation of the gate; production verification is
+still required before calling the boundary closed.

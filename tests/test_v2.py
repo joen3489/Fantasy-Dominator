@@ -1007,7 +1007,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             with patch("app.main._rebuild_missing_bundle") as rebuild:
                 response = self.client.get("/league/stale-source/", cookies={"__session": token})
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 503)
         revision.assert_called()
         rebuild.assert_called_once()
 
@@ -1040,7 +1040,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             with patch("app.main._rebuild_missing_bundle") as rebuild:
                 response = self.client.get("/league/stale-fallback/", cookies={"__session": token})
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 503)
         rebuild.assert_called_once()
 
     def test_persisted_bundle_is_rebuilt_when_manager_dossier_schema_is_old(self) -> None:
@@ -1079,7 +1079,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             with patch("app.main._rebuild_missing_bundle") as rebuild:
                 response = self.client.get("/league/stale-manager/", cookies={"__session": token})
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 503)
         rebuild.assert_called_once()
 
     def test_persisted_bundle_is_rebuilt_when_reader_shell_contract_is_old(self) -> None:
@@ -1118,7 +1118,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             with patch("app.main._rebuild_missing_bundle") as rebuild:
                 response = self.client.get("/league/stale-shell/", cookies={"__session": token})
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 503)
         rebuild.assert_called_once()
 
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
@@ -1558,6 +1558,94 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertNotIn("traceback", payload)
         status.assert_called_once_with(LeaguePaths.for_user_league(str(user_id), "status-league"))
 
+    def test_operator_status_reports_safe_selected_reader_contract(self) -> None:
+        """Encodes AGENTS.md's deployment-proof rule without exposing bundle paths."""
+        token = self._token("user_reader_receipt")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_reader_receipt")
+        league = {
+            "league_id": "reader-receipt",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Reader Receipt League",
+            "roster_id": 1,
+        }
+        db.upsert_user_league(user_id, league)
+        site = self.tmp_path / "users" / str(user_id) / "leagues" / "reader-receipt" / "site"
+        _write_complete_bundle(site, "Cross-season valuation lanes trade_fit_evaluation")
+        receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        (site / "data" / "manifest.json").write_text(
+            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "bundleRevision": "bundle-1", "articleReceipts": receipts}),
+            encoding="utf-8",
+        )
+        (site / "data" / "app_bundle.json").write_text(
+            json.dumps({"myRosterId": 1, "identityReceipt": {"roster_id": 1}, "articleReceipts": receipts}),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-current"}, clear=False), patch(
+            "app.main.front_operator.status", return_value={"state": "idle"}
+        ), patch(
+            "app.main.writer_api_configuration",
+            return_value={
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "reasoning_effort": "medium",
+                "api_key_env": "OPENAI_API_KEY",
+                "configured": False,
+            },
+        ):
+            response = self.client.get(
+                "/api/operator/status?league_id=reader-receipt",
+                cookies={"__session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        reader = response.json()["reader_bundle"]
+        self.assertEqual(reader["state"], "current")
+        self.assertEqual(reader["selected_root"], "private")
+        self.assertEqual(reader["served_revision"], "release-current")
+        self.assertTrue(reader["shell_contract"])
+        self.assertTrue(reader["manager_dossier_contract"])
+        self.assertTrue(reader["identity_match"])
+        self.assertNotIn("site_path", json.dumps(reader))
+        self.assertNotIn(str(self.tmp_path), json.dumps(reader))
+
+    def test_stale_reader_is_not_served_when_recovery_does_not_make_it_current(self) -> None:
+        """A failed migration must produce an honest recovery state, not old HTML."""
+        token = self._token("user_stale_recovery")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_recovery")
+        league = {
+            "league_id": "stale-recovery",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Stale Recovery League",
+            "roster_id": 1,
+        }
+        db.upsert_user_league(user_id, league)
+        site = self.tmp_path / "users" / str(user_id) / "leagues" / "stale-recovery" / "site"
+        _write_complete_bundle(site, "OLD PRIVATE READER")
+        (site / "data" / "manifest.json").write_text(
+            json.dumps({"auditTables": {}, "sourceRevision": "release-old"}),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-new"}, clear=False), patch(
+            "app.main._rebuild_missing_bundle"
+        ) as rebuild:
+            response = self.client.get("/league/stale-recovery/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("edition", response.text.lower())
+        self.assertNotIn("OLD PRIVATE READER", response.text)
+        rebuild.assert_called_once()
+
     def test_operator_endpoint_requires_configured_operator_token(self) -> None:
         token = self._token("user_operator_token")
         with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
@@ -1885,6 +1973,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn('data-testid="edition-recovery"', response.text)
+        self.assertIn('data-testid="reader-contract-status"', response.text)
         self.assertNotIn('"detail":"league file not found"', response.text)
 
     def test_missing_bundle_rebuilds_from_processed_facts(self) -> None:
@@ -1900,10 +1989,11 @@ class FastAPIClerkAppTests(unittest.TestCase):
         (paths.processed_dir / "refresh_metadata.csv").write_text("generated_at\n2026-08-01T00:00:00+00:00\n", encoding="utf-8")
 
         def fake_build(site_dir: Path, *args: object, **kwargs: object) -> Path:
-            site_dir.mkdir(parents=True, exist_ok=True)
-            index = site_dir / "index.html"
-            index.write_text("<h1>Recovered edition</h1>", encoding="utf-8")
-            return index
+            _write_complete_bundle(
+                site_dir,
+                "Cross-season valuation lanes trade_fit_evaluation <h1>Recovered edition</h1>",
+            )
+            return site_dir / "index.html"
 
         with patch("app.main.build_browser_site", side_effect=fake_build) as builder:
             response = self.client.get("/league/repair/", cookies={"__session": token})

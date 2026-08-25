@@ -849,6 +849,132 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
     return False
 
 
+def _reader_bundle_snapshot(
+    paths: LeaguePaths,
+    league: dict[str, Any],
+    root_label: str,
+    expected_revision: str,
+) -> dict[str, Any]:
+    """Describe a candidate reader bundle without exposing its private path or payload."""
+
+    site_dir = paths.site_dir
+    complete = browser_bundle_is_complete(site_dir)
+    shell_contract = False
+    source_revision = ""
+    bundle_revision = ""
+    fallback_receipt_contract = False
+    manager_dossier_contract = False
+    identity_match = False
+    app_bundle: dict[str, Any] = {}
+    manifest: dict[str, Any] = {}
+    reasons: list[str] = []
+
+    if not complete:
+        reasons.append("incomplete_bundle")
+    try:
+        shell = (site_dir / "index.html").read_text(encoding="utf-8")
+        shell_contract = (
+            "Cross-season valuation lanes" in shell
+            and "trade_fit_evaluation" in shell
+        )
+    except (OSError, UnicodeError):
+        shell = ""
+    if not shell_contract:
+        reasons.append("reader_shell_contract")
+
+    try:
+        loaded_manifest = load_json(site_dir / "data" / "manifest.json")
+        if isinstance(loaded_manifest, dict):
+            manifest = loaded_manifest
+    except (OSError, ValueError):
+        pass
+    source_revision = str(manifest.get("sourceRevision") or "")
+    bundle_revision = str(manifest.get("bundleRevision") or "")
+    if expected_revision and source_revision != expected_revision:
+        reasons.append("source_revision")
+
+    fallback_receipt_contract = not _payload_has_stale_fallback_receipts(manifest)
+    if not fallback_receipt_contract:
+        reasons.append("fallback_receipt_contract")
+
+    try:
+        loaded_app_bundle = load_json(site_dir / "data" / "app_bundle.json")
+        if isinstance(loaded_app_bundle, dict):
+            app_bundle = loaded_app_bundle
+    except (OSError, ValueError):
+        pass
+    manager_dossier_contract = not _payload_has_stale_manager_dossier_fields(app_bundle)
+    if not manager_dossier_contract:
+        reasons.append("manager_dossier_contract")
+
+    identity_match = _bundle_matches_identity(paths, league)
+    if not identity_match:
+        reasons.append("identity_receipt")
+
+    stale = bool(_bundle_needs_source_rebuild(site_dir))
+    if stale and "source_revision" not in reasons and expected_revision:
+        reasons.append("reader_contract")
+    if complete and not stale and identity_match:
+        state = "current"
+    elif complete:
+        state = "stale"
+    else:
+        state = "missing"
+    return {
+        "root": root_label,
+        "state": state,
+        "complete": complete,
+        "identity_match": identity_match,
+        "shell_contract": shell_contract,
+        "fallback_receipt_contract": fallback_receipt_contract,
+        "manager_dossier_contract": manager_dossier_contract,
+        "source_revision": source_revision,
+        "bundle_revision": bundle_revision,
+        "reasons": list(dict.fromkeys(reasons)),
+    }
+
+
+def _reader_bundle_receipt(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Return safe selection evidence for the authenticated reader route."""
+
+    private = _private_paths(user_id, str(league.get("league_id") or ""))
+    legacy = LeaguePaths.for_league(str(league.get("league_id") or ""))
+    expected_revision = _deployment_revision()
+    candidates = [
+        _reader_bundle_snapshot(private, league, "private", expected_revision),
+        _reader_bundle_snapshot(legacy, league, "legacy", expected_revision),
+    ]
+    selected = _paths_for_user_league({"id": user_id}, league)
+    selected_root = "private" if selected.root == private.root else "legacy" if selected.root == legacy.root else "unknown"
+    selected_snapshot = next((item for item in candidates if item["root"] == selected_root), None)
+    if selected_snapshot is None:
+        selected_snapshot = {
+            "root": selected_root,
+            "state": "missing",
+            "complete": False,
+            "identity_match": False,
+            "shell_contract": False,
+            "fallback_receipt_contract": False,
+            "manager_dossier_contract": False,
+            "source_revision": "",
+            "bundle_revision": "",
+            "reasons": ["no_selected_bundle"],
+        }
+    return {
+        "state": selected_snapshot["state"],
+        "selected_root": selected_snapshot["root"],
+        "expected_revision": expected_revision,
+        "served_revision": selected_snapshot["source_revision"],
+        "bundle_revision": selected_snapshot["bundle_revision"],
+        "identity_match": selected_snapshot["identity_match"],
+        "shell_contract": selected_snapshot["shell_contract"],
+        "fallback_receipt_contract": selected_snapshot["fallback_receipt_contract"],
+        "manager_dossier_contract": selected_snapshot["manager_dossier_contract"],
+        "reasons": selected_snapshot["reasons"],
+        "candidates": candidates,
+    }
+
+
 def _payload_has_stale_fallback_receipts(payload: dict[str, Any]) -> bool:
     """Return whether one persisted publication receipt predates the fallback contract."""
 
@@ -973,7 +1099,14 @@ def _serve_league_file(
             target = (site_dir / (requested_path or "index.html")).resolve()
             if target.is_dir():
                 target = (target / "index.html").resolve()
-            if target.exists() and target.is_file():
+            post_rebuild_ready = (
+                target.exists()
+                and target.is_file()
+                and browser_bundle_is_complete(site_dir)
+                and _bundle_matches_identity(paths, league)
+                and not _bundle_needs_source_rebuild(site_dir)
+            )
+            if post_rebuild_ready:
                 return FileResponse(target, headers=_browser_file_headers(target))
             readiness = _edition_readiness(int(user["id"]), league)
             response = templates.TemplateResponse(
@@ -1142,6 +1275,7 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
     bundle_path = paths.site_dir / "index.html"
     bundle_missing = browser_bundle_missing(paths.site_dir)
     bundle_exists = not bundle_missing
+    reader_bundle = _reader_bundle_receipt(user_id, league)
     refresh_status = _refresh_status(str(league.get("league_id") or ""), user_id)
     latest_run = db.latest_refresh_run(user_id, str(league.get("league_id") or ""))
     run_state = str((latest_run or {}).get("status") or "").lower()
@@ -1177,6 +1311,15 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
             "The data is refreshing now. Your edition will appear when the bundle is ready.",
             "building",
         )
+    elif bundle_exists and reader_bundle["state"] != "current":
+        state, label, message, dot_class = (
+            "stale",
+            "Repair needed",
+            "The stored edition is available, but its reader contract is older than this deployment."
+            if reader_bundle["state"] == "stale"
+            else "The league edition bundle is incomplete and needs recovery.",
+            "stale",
+        )
     elif bundle_exists and (lifecycle_state == "failed" or freshness == "stale"):
         state, label, message, dot_class = (
             "stale",
@@ -1208,6 +1351,7 @@ def _edition_readiness(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
         "bundle_exists": bundle_exists,
         "bundle_missing": bundle_missing,
         "bundle_source": "private" if paths.user_id else "legacy",
+        "reader_bundle": reader_bundle,
         "updated_at": timestamp,
         "refresh_state": lifecycle_state or "unknown",
         "last_refresh": receipt,
@@ -1621,6 +1765,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "writer_api_key_env": writer_config["api_key_env"],
             "publication_receipt": publication_receipt,
             "content_status": content_status,
+            "reader_bundle": _reader_bundle_receipt(user_id, league),
         }
 
     statuses = []

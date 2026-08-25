@@ -147,3 +147,9 @@ actual user-facing artifact. The migration gate is therefore open until the
 route exposes a safe selected-bundle/migration receipt or refuses to serve a
 stale shell after recovery fails. The protected Luna boundary remains
 unchanged and no paid generation should be used to mask this serving defect.
+
+The implementation now does both: authenticated status/readiness exposes the
+safe receipt, and the league route fails closed with a recovery response when
+the post-migration bundle is still stale. A production browser check remains
+the required evidence that the deployed process is actually running this
+contract.
