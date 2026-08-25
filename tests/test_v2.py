@@ -1182,6 +1182,62 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_recommendation_learning_contract_is_old(self) -> None:
+        """Encodes AGENTS.md's entry-path rule for the decision-learning surface."""
+        token = self._token("user_stale_recommendation_learning")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_recommendation_learning")
+        league = {
+            "league_id": "stale-recommendation-learning",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Stale Recommendation Learning",
+            "roster_id": 1,
+        }
+        db.upsert_user_league(user_id, league)
+        site_dir = self.leagues_root / "stale-recommendation-learning" / "site"
+        # This represents the deployed 7fb6219 shell: the dossier contract is
+        # current, but the later recommendation outcome controls are absent.
+        _write_complete_bundle(site_dir, "Cross-season valuation lanes trade_fit_evaluation")
+        fallback_receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        (site_dir / "data" / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "auditTables": {},
+                    "sourceRevision": "release-current",
+                    "articleReceipts": fallback_receipts,
+                    "dataQuality": _empty_data_quality(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        (site_dir / "data" / "app_bundle.json").write_text(
+            json.dumps(
+                {
+                    "myRosterId": 1,
+                    "identityReceipt": {"roster_id": 1},
+                    "analysis": {"articleReceipts": fallback_receipts},
+                    "dataQuality": _empty_data_quality(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("app.main._deployment_revision", return_value="release-current"):
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get(
+                    "/league/stale-recommendation-learning/",
+                    cookies={"__session": token},
+                )
+
+        self.assertEqual(response.status_code, 503)
+        rebuild.assert_called_once()
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})
@@ -1409,7 +1465,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         private_site = self.tmp_path / "users" / str(user_id) / "leagues" / "private-stale" / "site"
         legacy_site = self.leagues_root / "private-stale" / "site"
         _write_complete_bundle(private_site, "<h1>Stale private shell</h1>")
-        _write_complete_bundle(legacy_site, '<script>Cross-season valuation lanes trade_fit_evaluation</script>')
+        _write_complete_bundle(
+            legacy_site,
+            '<script>Cross-season valuation lanes trade_fit_evaluation Recommendation outcome decision_outcome Recommendation learning</script>',
+        )
         receipts = {
             "daily_brief": {
                 "mode": "deterministic_template",
@@ -1634,7 +1693,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         }
         db.upsert_user_league(user_id, league)
         site = self.tmp_path / "users" / str(user_id) / "leagues" / "reader-receipt" / "site"
-        _write_complete_bundle(site, "Cross-season valuation lanes trade_fit_evaluation")
+        _write_complete_bundle(
+            site,
+            "Cross-season valuation lanes trade_fit_evaluation Recommendation outcome decision_outcome Recommendation learning",
+        )
         receipts = {
             "daily_brief": {
                 "mode": "deterministic_template",
@@ -1673,6 +1735,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(reader["selected_root"], "private")
         self.assertEqual(reader["served_revision"], "release-current")
         self.assertTrue(reader["shell_contract"])
+        self.assertTrue(reader["recommendation_learning_contract"])
         self.assertTrue(reader["manager_dossier_contract"])
         self.assertTrue(reader["data_quality_contract"])
         self.assertTrue(reader["identity_match"])

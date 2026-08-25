@@ -209,3 +209,15 @@ the seam validates recommendation-specific artifact type and outcome states,
 stores the bundle/evidence context, and reports recommendation rates separately
 from reporter rates. Tests cover the authenticated entry path, invalid states,
 and the separation of the two summaries.
+
+## 2026-08-25 - Entry-path markers must invalidate durable shells
+
+The next production check found the same failure class one layer deeper: the
+new recommendation-learning code was deployed, but an old durable shell still
+passed the existing dossier and data-quality checks. The guard now treats the
+recommendation outcome control, its `decision_outcome` wiring, and the
+recommendation learning summary as a semantic reader contract. An adversarial
+test uses a current source revision and valid preserved payload while omitting
+those markers, proving that the route requests migration instead of returning
+the old interface. Future slices must add their entry-path marker and stale
+bundle test in the same change.

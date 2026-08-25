@@ -704,3 +704,15 @@ The summary reports recommendation counts and confirmation rate separately
 from reporter/article outcomes. This keeps a useful article from looking like
 a correct decision and prevents a page view or generated sentence from being
 treated as evidence that a recommendation succeeded.
+
+## 2026-08-25 - Semantic reader contracts must advance with new entry paths
+
+The recommendation-learning deployment showed that a durable bundle can carry
+the current data and dossier contracts while still serving an older HTML/JS
+shell. The authenticated route therefore requires explicit markers for the
+recommendation outcome control and recommendation learning summary in addition
+to `sourceRevision`, data-quality, and publication receipts. Missing markers
+trigger shell migration from preserved facts; if recovery cannot produce a
+current bundle, the route returns the recovery state rather than silently
+serving the old interface. This is the reusable rule for every future
+user-facing capability.

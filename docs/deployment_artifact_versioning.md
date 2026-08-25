@@ -25,6 +25,9 @@ runtime effects:
   should use preserved processed facts when available, or rebuild only the
   HTML/JavaScript shell from a complete preserved bundle when intermediates
   are absent.
+- A new reader capability must also advance the semantic shell contract. A
+  current `sourceRevision` plus valid data receipts cannot bless an older
+  shell that lacks the capability's entry-path markers.
 - A code rebuild must not be represented as regenerated article content or
   trigger an unnecessary LLM call.
 

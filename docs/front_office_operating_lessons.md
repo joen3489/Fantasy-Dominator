@@ -252,3 +252,15 @@ keeps article outcomes and target/sell/trade decision outcomes in separate
 lanes, keyed to the recommendation and the bundle revision that produced it.
 Only an explicit manager report can move a call from open to confirmed,
 missed, or unclear; page views and generated prose never count as outcomes.
+
+## 2026-08-25 recommendation-learning shell migration
+
+The first deployment of the recommendation outcome ledger exposed a durable
+artifact seam: Railway and `/healthz` reported the new source revision, while
+the authenticated league route still served the previous shell because its
+manifest and older dossier markers looked otherwise healthy. A source SHA and
+payload receipt are not enough to prove that a new user-facing capability is
+reachable. New entry-path capabilities must add a semantic shell marker to the
+reader contract, and stale durable shells must rebuild or fail closed before
+HTML is returned. The browser proof must check the exact control and the
+reader's learning summary after migration.
