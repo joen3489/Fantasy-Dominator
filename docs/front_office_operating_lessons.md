@@ -106,7 +106,12 @@ The three product layers have distinct jobs:
 12. **A snapshot is not automatically a delta.** When the data room lacks a
     prior comparable receipt, show the latest event pulse and say what it is.
     Do not turn retained news, trade, or waiver rows into a claim that they
-    happened since the reader's last visit.
+happened since the reader's last visit.
+
+13. **Coverage is not feedback.** Seed newsroom coverage from the current
+    publication receipts so the full lineup remains visible, then overlay
+    only explicit user signals. A desk with no interactions is neither useful
+    nor unuseful yet.
 
 ## Anti-recursive change protocol
 

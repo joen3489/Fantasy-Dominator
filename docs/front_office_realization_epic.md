@@ -643,6 +643,11 @@ claim statistically meaningful reporter evaluation; the sample size and
 unresolved-call state remain visible so future content decisions have a clean
 ledger to build on.
 
+The browser now also seeds the desk list from the current publication
+receipts, then overlays explicit database signals when available. This keeps
+all five assigned desks visible before the first feedback record while
+preserving zero as the honest usefulness count.
+
 ## 2026-08-25 manager dossier completeness checkpoint
 
 Manager dossier entry pages now make the evidence boundary explicit even when

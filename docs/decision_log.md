@@ -81,6 +81,12 @@ alongside aggregate volume. It does not call the list a historical change
 unless a prior receipt supports that claim. A current snapshot can show a
 useful pulse without pretending that every retained row is new.
 
+The learning panel similarly separates receipt coverage from manager signals:
+current publication receipts establish which desks exist, while only the
+scoped interaction ledger can establish usefulness or outcomes. A desk with
+zero signals must remain visible as zero, not disappear or become successful
+by implication.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

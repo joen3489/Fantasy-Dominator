@@ -2549,11 +2549,41 @@ def _page(
         : `${{Math.round(Number(summary.confirmed_rate) * 100)}}% of resolved calls confirmed useful`;
       const latest = summary.latest_recorded_at ? `Last recorded ${{summary.latest_recorded_at}}.` : 'No explicit signals recorded yet.';
       const reporterNames = new Map((manifest.reporterLineup || []).map(row => [String(row.persona_id || ''), String(row.name || '')]));
-      const reporterRows = Array.isArray(summary.reporter_breakdown) ? summary.reporter_breakdown : [];
+      const reporterRowsById = new Map();
+      Object.entries(manifest.articleReceipts || {{}}).forEach(([articleKey, receipt]) => {{
+        const reporterId = String(receipt?.reporter_id || receipt?.reporter_persona || 'unassigned');
+        const current = reporterRowsById.get(reporterId) || {{
+          reporter_id: reporterId,
+          reporter_name: String(receipt?.reporter_name || ''),
+          writer_mode: String(receipt?.model_mode || receipt?.writer_mode || ''),
+          article_keys: [],
+          artifact_count: 0,
+          interaction_count: 0,
+          useful: 0,
+          not_useful: 0,
+          evidence_opened: 0,
+          resolved_outcomes: 0,
+          confirmed_rate: null
+        }};
+        current.artifact_count = Math.max(Number(current.artifact_count || 0), 0) + 1;
+        if (!current.article_keys.includes(articleKey)) current.article_keys.push(articleKey);
+        reporterRowsById.set(reporterId, current);
+      }});
+      (Array.isArray(summary.reporter_breakdown) ? summary.reporter_breakdown : []).forEach(row => {{
+        const reporterId = String(row.reporter_id || 'unassigned');
+        const current = reporterRowsById.get(reporterId) || {{ reporter_id: reporterId, article_keys: [], artifact_count: 0 }};
+        reporterRowsById.set(reporterId, {{
+          ...current,
+          ...row,
+          artifact_count: Math.max(Number(current.artifact_count || 0), Number(row.artifact_count || 0)),
+          article_keys: [...new Set([...(current.article_keys || []), ...(row.article_keys || [])])]
+        }});
+      }});
+      const reporterRows = [...reporterRowsById.values()].sort((left, right) => String(left.reporter_id).localeCompare(String(right.reporter_id)));
       const breakdown = reporterRows.length
         ? `<div class="learning-breakdown"><h4>Which desks are earning trust?</h4><div class="brief-list">${{reporterRows.map(row => {{
             const reporterId = String(row.reporter_id || 'unassigned');
-            const reporterName = reporterNames.get(reporterId) || label(reporterId);
+            const reporterName = row.reporter_name || reporterNames.get(reporterId) || label(reporterId);
             const resolvedCount = Number(row.resolved_outcomes || 0);
             const outcomeLabel = resolvedCount ? `${{Math.round(Number(row.confirmed_rate || 0) * 100)}}% confirmed across ${{resolvedCount}} resolved call${{resolvedCount === 1 ? '' : 's'}}` : 'No resolved calls yet';
             const signalLabel = `${{Number(row.interaction_count || 0)}} deliberate signal${{Number(row.interaction_count || 0) === 1 ? '' : 's'}} · ${{Number(row.artifact_count || 0)}} article receipt${{Number(row.artifact_count || 0) === 1 ? '' : 's'}}`;
