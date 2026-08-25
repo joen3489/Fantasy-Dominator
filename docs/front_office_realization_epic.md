@@ -514,3 +514,12 @@ Trade Desk: target assets, selected-roster offer candidates, valuation-lane
 evidence, why-the-manager-might-care context, price guardrails, and
 do-not-chase conditions. This closes the dossier-to-decision seam without
 duplicating facts or implying that a trade was offered or accepted.
+
+## 2026-08-25 player dossier entry-path checkpoint
+
+Player pages now expose a structured dossier instead of only a headline and
+metric tiles. The page connects the current analyst read to market,
+projection, opportunity, role, news, and league-history evidence, then labels
+confidence, source traces, watchouts, and the no-outcome guardrail. This makes
+player analysis inspectable at the entity entry point while keeping canonical
+facts in the data room.

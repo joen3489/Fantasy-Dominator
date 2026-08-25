@@ -3024,6 +3024,16 @@ def _page(
       const history = findRows(tables.player_transaction_history, 'player_id', id).slice(0, 20);
       const insight = insightFor('player', id);
       const marketValue = dossier.market_value ?? signal.market_value ?? '';
+      const playerEvidence = [
+        {{ label: 'Market', value: marketValue !== '' ? `value ${{marketValue}}` : '', trace: dossier.source_trace || signal.source_trace || '' }},
+        {{ label: 'Projection', value: (dossier.projected_ppg ?? signal.projected_ppg) !== undefined && (dossier.projected_ppg ?? signal.projected_ppg) !== '' ? `${{dossier.projected_ppg ?? signal.projected_ppg}} projected PPG (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}})` : '', trace: dossier.source_trace || signal.source_trace || '' }},
+        {{ label: 'Opportunity', value: opp.opportunity_score !== undefined && opp.opportunity_score !== '' ? `score ${{opp.opportunity_score}} vs production ${{opp.production_score ?? 'n/a'}}` : '', trace: opp.source_trace || '' }},
+        {{ label: 'Role trend', value: opp.role_trend_score !== undefined && opp.role_trend_score !== '' ? `score ${{opp.role_trend_score}}; fragility ${{opp.fragility_score ?? 'n/a'}}` : '', trace: opp.source_trace || '' }},
+        {{ label: 'League history', value: history.length ? `${{history.length}} recorded transaction${{history.length === 1 ? '' : 's'}} in this bundle` : '', trace: 'player_transaction_history' }},
+        {{ label: 'News', value: newsRows.length ? `${{newsRows.length}} mapped news signal${{newsRows.length === 1 ? '' : 's'}}` : '', trace: newsRows[0]?.source_trace || '' }}
+      ].filter(row => row.value);
+      const actionText = action.why || action.action_label || action.consumer_label || '';
+      const playerPacket = `<div class="panel article-panel player-decision-packet"><h3>Player dossier</h3><p class="article-p"><strong>Current read:</strong> ${{escapeHtml(insight.headline || insight.one_line_read || `${{name}} is in the evidence room, not a verdict.`)}}</p>${{insight.why_it_matters ? `<p class="article-p"><strong>Why it matters:</strong> ${{escapeHtml(insight.why_it_matters)}}</p>` : ''}}${{insight.what_changed ? `<p class="article-p"><strong>What changed:</strong> ${{escapeHtml(insight.what_changed)}}</p>` : ''}}${{actionText ? `<p class="article-p"><strong>Decision lens:</strong> ${{escapeHtml(actionText)}}</p>` : ''}}${{action.risk || insight.watchouts ? `<p class="note"><strong>Watch:</strong> ${{escapeHtml(action.risk || insight.watchouts)}}</p>` : ''}}${{playerEvidence.length ? `<details class="evidence-drawer" open><summary>Evidence chain</summary><ul class="article-list">${{playerEvidence.map(row => `<li><strong>${{escapeHtml(row.label)}}:</strong> ${{escapeHtml(String(row.value))}}${{row.trace ? ` <span class="note">(${{escapeHtml(row.trace)}})</span>` : ''}}</li>`).join('')}}</ul></details>` : ''}}<p class="note"><strong>Guardrail:</strong> This is a deterministic evidence synthesis with an analyst lens. Confidence ${{escapeHtml(String(action.confidence || insight.confidence || signal.confidence || 'unknown'))}}; inspect the source trace and freshness before acting. It does not imply a trade, waiver claim, or future outcome.</p></div>`;
       if (!name || name === 'Unknown player') {{
         document.getElementById('player-page-body').innerHTML = `${{backLink()}}<p class="note">No data found for this player id. They may be outside the current rostered pool.</p>`;
         return;
@@ -3054,8 +3064,8 @@ def _page(
           ${{entityTile('Breakout', signal.breakout_score ?? '', 'score')}}
           ${{entityTile('Sell', signal.sell_score ?? '', 'score')}}
         </div>
+        ${{playerPacket}}
         ${{tags.length ? `<div class="brief-card-meta">${{tags.map(row => `<span class="brief-chip cat-chip-${{categoryFor('tag', row.tag)}}">${{escapeHtml(row.tag)}}</span>`).join('')}}</div>` : ''}}
-        ${{action.why ? `<div class="panel article-panel"><h3>${{escapeHtml(action.consumer_label || 'Read')}}</h3><p class="article-p">${{escapeHtml(action.why)}}</p><p class="note">${{escapeHtml(action.risk || '')}}</p></div>` : ''}}
         ${{opp.opportunity_evidence ? `<p class="note">Usage: ${{escapeHtml(opp.opportunity_evidence)}} (${{escapeHtml(String(opp.games_sample || 0))}} games sampled)</p>` : ''}}
         ${{newsRows.length ? `<h3>News</h3><div class="brief-list">${{newsRows.map(row => briefCard({{
           title: `${{row.impact_type ? label(row.impact_type) : 'News'}}`,

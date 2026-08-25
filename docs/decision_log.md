@@ -271,3 +271,14 @@ observed valuation-lane evidence, why-the-manager-might-care context, price
 guardrails, and do-not-chase conditions in the dossier entry path. The
 underlying packet remains read-only and uncertainty-labeled; the dossier is a
 decision surface, not a second source of truth.
+
+## 2026-08-25 - Player pages must expose an evidence chain
+
+Player entity pages previously stopped at a one-line insight, score tiles, and
+a transaction drawer. That made the player surface feel like a lookup page
+even though the bundle contained market, projection, opportunity, role, news,
+and history evidence. The page now opens a player dossier with the current
+read, why it matters, the active decision lens, watchouts, an evidence chain,
+source traces, confidence, and an explicit no-outcome guardrail. It remains a
+view over canonical rows and validated insight cards; it does not create a
+new player fact or imply a transaction.
