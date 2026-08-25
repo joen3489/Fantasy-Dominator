@@ -855,3 +855,8 @@ players now resolve market value through `team_asset_inventory` using exact
 `roster_id` and `asset_id`, expose the proxy/external descriptor, and fail to
 an unavailable value if the scoped asset row is absent. Profile market values
 remain valid only for unrostered players.
+
+Production revision
+`b0142965abe1ba10986b40ed289eea21fa3b37e9` was smoke-verified and checked
+in authenticated Chrome. Jimmy Horn's page now reports market 43 with the
+internal proxy descriptor and trace instead of the prior profile-derived 0.

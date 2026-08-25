@@ -1007,3 +1007,12 @@ fail closed to unavailable when the scoped asset row is missing. Unrostered
 players may still use their profile market value because no owned asset row
 exists. The entry-path test protects the inventory join and unavailable label;
 the production amendment will follow the deployed browser check.
+
+### Production acceptance amendment — `b014296`
+
+Public smoke passed for
+`b0142965abe1ba10986b40ed289eea21fa3b37e9`. Authenticated Chrome opened
+Jimmy Horn's exact player entity page from Moose Caboose. The page rendered
+market value 43, labeled it `internal proxy value`, and exposed the
+`internal_proxy_player_value` trace; the team route still reconciled at
+835.54 and the private root remained Lulu’s Potatoe’s.

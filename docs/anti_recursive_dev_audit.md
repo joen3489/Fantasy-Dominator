@@ -342,3 +342,9 @@ inventory row by `roster_id + asset_id`, shows the ledger/proxy descriptor, and
 fails closed for an owned player when the row is missing. A profile fallback is
 reserved for unrostered players. This extends the reconciliation check from
 team totals to the individual decision object.
+
+Production proof at
+`b0142965abe1ba10986b40ed289eea21fa3b37e9`: Jimmy Horn's exact player route
+showed market 43, `Market source: internal proxy value`, and the
+`internal_proxy_player_value` trace. The same authenticated pass retained
+the team-level 835.54 reconciliation and private Lulu’s Potatoe’s identity.

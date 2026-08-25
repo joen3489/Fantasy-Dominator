@@ -171,7 +171,7 @@ Before adding a feature or “cleaning up” an old artifact:
 ## Current open boundary
 
 The durable-bundle migration and semantic-reader gates are closed for the
-current deployment `eb9b68d96f40cffa0afec6131547be178d8f1395`. A fresh,
+current deployment `b0142965abe1ba10986b40ed289eea21fa3b37e9`. A fresh,
 authenticated direct entry served the current private bundle for exact
 `roster_id=2` / Lulu’s Potatoe’s, rendered the Data Room's “Historical
 identity receipt,” and reported 3,101 history rows, 3,101 resolved joins, zero
