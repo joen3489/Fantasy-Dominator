@@ -46,6 +46,16 @@ reporter identity, and—when deterministic fallback is published—the current
 fallback schema, lede, and visual direction. This keeps the automated gate
 aligned with the media product rather than proving only that a shell exists.
 
+## 2026-08-25 - Reuse one two-sided Trade Desk packet at every entry point
+
+The main Trade Desk and team dossier routes now call the same browser packet
+renderer. A structured trade thesis is not deep enough if its offer side,
+alternative counterparties, timing risks, do-not-chase conditions, and source
+trace are only present in JSON or only on one page. The shared renderer keeps
+both paths read-only and shows an explicit empty state when the evidence does
+not support an alternate counterparty. This is a presentation contract over
+the deterministic thesis fields, not a new recommendation engine.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

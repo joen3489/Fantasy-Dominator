@@ -612,6 +612,22 @@ last, and peak activity week, with trade and waiver weeks kept separate. This
 adds the timing dimension required by the dossier contract without turning a
 week number into a story about motive or deadline strategy.
 
+## 2026-08-25 two-sided Trade Desk entry-path checkpoint
+
+The main Trade Desk cards and manager team pages now share one browser packet
+renderer. Both entry paths expose the target assets, selected-roster offer
+shortlist, alternative counterparties when supported, why-the-manager-might-
+care context, price guardrails, separate risks of waiting and acting,
+do-not-chase conditions, and the evidence/source trace. The same packet is
+explicitly read-only and labels potential assets as a conversation shortlist,
+not a generated offer.
+
+This closes the presentation seam where deterministic fields existed in the
+artifact but were inconsistently visible at the decision point. It does not
+claim a predicted response, a trade recommendation, or a complete market of
+counterparties when the evidence does not support one; the empty alternative
+counterparty state is shown honestly.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

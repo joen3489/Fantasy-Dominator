@@ -85,6 +85,13 @@ The three product layers have distinct jobs:
    If code is current but a preserved bundle is stale, treat that as a
    migration defect and fix the seam rather than declaring success.
 
+9. **A decision packet must be two-sided at the entry point.** Trade analysis
+   needs the target side and the selected roster's possible conversation side,
+   plus price guardrails, timing risks, alternative counterparties, evidence,
+   and explicit read-only limits. If those fields exist only in an artifact or
+   only on one route, the product still feels shallow. Reuse one renderer and
+   show unsupported alternatives as an honest empty state.
+
 ## Anti-recursive change protocol
 
 Before adding a feature or “cleaning up” an old artifact:

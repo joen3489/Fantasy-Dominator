@@ -2887,10 +2887,7 @@ def _page(
       if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
       const bucket = categoryFor('mode', mode);
       return `<div class="brief-list">${{rows.map(row => {{
-        const offerCandidates = (row.offer_candidates || []).slice(0, 3).map(asset => `${{asset.asset_name || 'unnamed asset'}} (${{asset.position_group || asset.position || 'asset'}}; ${{asset.manager_preference_label || 'low-signal manager lane'}}; evidence ${{asset.manager_preference_evidence_count ?? 0}})`).join(', ');
-        const packet = mode === 'trade'
-          ? `Pursue: ${{(row.assets_to_pursue || []).map(asset => asset.player_name).filter(Boolean).join(', ') || row.assets_to_discuss || 'no named asset'}}. Offer band: ${{row.plausible_offer_range?.low || 'n/a'}}-${{row.plausible_offer_range?.high || 'n/a'}} estimated market value. Minimum return: ${{row.minimum_acceptable_return?.value || 'n/a'}}. Potential assets from our roster to discuss (not a generated offer): ${{offerCandidates || (row.assets_we_can_offer || []).join(', ') || 'not established'}}. Why this manager may care: ${{row.why_manager_might_care || 'not established'}}. Risk of waiting: ${{row.risk_of_waiting || 'not established'}}. Risk of acting: ${{row.risk_of_acting || row.risk || 'review evidence'}}.`
-          : '';
+        const packet = mode === 'trade' ? tradePacketMarkup(row, 'Trade decision packet') : '';
         return briefCard({{
         title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',
         category: categoryFor('signal_label', row.signal_label) !== 'info' ? categoryFor('signal_label', row.signal_label) : bucket,
@@ -2903,7 +2900,8 @@ def _page(
           row.confidence ? `confidence ${{row.confidence}}` : '',
           row.risk ? `risk ${{row.risk}}` : ''
         ],
-        evidence: `${{row.analysis_text || ''}} ${{packet}} Evidence: ${{row.evidence || ''}} Source: ${{row.source_trace || ''}}`
+        evidence: `${{row.analysis_text || ''}} Evidence: ${{row.evidence || ''}} Source: ${{row.source_trace || ''}}`,
+        detailsHtml: packet
       }});
       }}).join('')}}</div>`;
     }}
@@ -3118,6 +3116,7 @@ def _page(
       const summary = card.summary || card.oneLine || '';
       const watchouts = card.watchouts ? `<div class="brief-card-evidence"><strong>Watch:</strong> ${{escapeHtml(card.watchouts)}}</div>` : '';
       const details = card.details || card.evidence || '';
+      const detailsHtml = card.detailsHtml || '';
 
       const rankBlock = rank
         ? `<div class="brief-card-rank ${{rank <= 3 ? 'brief-card-rank-top' : ''}}">${{rank}}</div>`
@@ -3137,6 +3136,7 @@ def _page(
           ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
           ${{watchouts}}
           ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
+          ${{detailsHtml ? `<details class="evidence-drawer trade-packet-drawer"><summary>Open the two-sided decision packet</summary>${{detailsHtml}}</details>` : ''}}
         </div>
       </article>`;
     }}
@@ -3201,6 +3201,31 @@ def _page(
         band = num >= 70 ? 'score-high' : num >= 40 ? 'score-mid' : 'score-low';
       }}
       return `<div class="entity-tile"><div class="entity-tile-value ${{band}}">${{escapeHtml(String(shown))}}</div><div class="entity-tile-label">${{escapeHtml(label)}}</div></div>`;
+    }}
+
+    function tradePacketMarkup(thesis, heading) {{
+      if (!thesis || !thesis.thesis_id) return '';
+      const pursue = (thesis.assets_to_pursue || []).slice(0, 5)
+        .map(asset => `${{asset.player_name || 'unnamed target'}} (${{asset.position || 'asset'}}; ${{asset.confidence || 'confidence unknown'}})`)
+        .join(', ') || thesis.assets_to_discuss || 'No named target';
+      const offers = (thesis.offer_candidates || []).slice(0, 5)
+        .map(asset => `${{asset.asset_name || 'unnamed asset'}} (${{asset.position_group || asset.position || 'asset'}}; lane ${{asset.manager_preference_label || 'low-signal manager lane'}}; evidence ${{String(asset.manager_preference_evidence_count ?? 0)}})`)
+        .join(', ') || (thesis.assets_we_can_offer || []).join(', ') || 'Not established';
+      const alternatives = (thesis.alternative_counterparties || []).filter(Boolean).join(', ');
+      const conditions = thesis.do_not_chase_conditions || [];
+      const evidence = [thesis.evidence, thesis.source_trace].filter(Boolean).join(' Source: ');
+      return `<div class="trade-packet" data-trade-packet="${{escapeHtml(String(thesis.thesis_id))}}">
+        <h3>${{escapeHtml(heading || 'Trade decision packet')}}</h3>
+        <p class="article-p"><strong>Pursue:</strong> ${{escapeHtml(pursue)}}</p>
+        <p class="article-p"><strong>Potential assets from our roster to discuss (not a generated offer):</strong> ${{escapeHtml(offers)}}</p>
+        <p class="article-p"><strong>Alternative counterparties:</strong> ${{escapeHtml(alternatives || 'No alternate counterparty is supported for this target by the current evidence.')}}</p>
+        <p class="article-p"><strong>Why this manager might care:</strong> ${{escapeHtml(thesis.why_manager_might_care || 'Not established')}}</p>
+        <p class="article-p"><strong>Price guardrails:</strong> offer band ${{escapeHtml(String(thesis.plausible_offer_range?.low ?? 'n/a'))}}–${{escapeHtml(String(thesis.plausible_offer_range?.high ?? 'n/a'))}} estimated market value; minimum return ${{escapeHtml(String(thesis.minimum_acceptable_return?.value ?? 'n/a'))}}.</p>
+        <p class="article-p"><strong>Risk of waiting:</strong> ${{escapeHtml(thesis.risk_of_waiting || 'not established')}} <strong>Risk of acting:</strong> ${{escapeHtml(thesis.risk_of_acting || thesis.risk || 'review evidence')}}.</p>
+        ${{conditions.length ? `<details class="evidence-drawer"><summary>Do-not-chase conditions</summary><ul class="article-list">${{conditions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}
+        ${{evidence ? `<details class="evidence-drawer"><summary>Evidence and source trace</summary><p class="brief-card-evidence">${{escapeHtml(evidence)}}</p></details>` : ''}}
+        <p class="note"><strong>Read-only guardrail:</strong> This is a conversation shortlist grounded in observed history, not a generated offer or predicted response. The human manager decides whether to investigate or act.</p>
+      </div>`;
     }}
 
     function backLink() {{
@@ -3302,9 +3327,7 @@ def _page(
       const dossierQuestions = dossier.questions_to_ask || [];
       const repeated = dossier.repeated_behavior || {{}};
       const tradeFits = dossier.trade_fits || [];
-      const pursueText = (thesis.assets_to_pursue || []).slice(0, 5).map(row => `${{row.player_name || 'unnamed target'}} (${{row.position || 'asset'}}; ${{row.confidence || 'confidence unknown'}})`).join(', ');
-      const offerText = (thesis.offer_candidates || []).slice(0, 5).map(row => `${{row.asset_name || 'unnamed asset'}} (${{row.position_group || row.position || 'asset'}}; lane ${{row.manager_preference_label || 'low-signal manager lane'}}; evidence ${{String(row.manager_preference_evidence_count ?? 0)}})`).join(', ');
-      const tradePacket = thesis.thesis_id ? `<div class="panel article-panel"><h3>Trade decision packet</h3><p class="article-p"><strong>Pursue:</strong> ${{escapeHtml(pursueText || thesis.assets_to_discuss || 'No named target')}}</p><p class="article-p"><strong>Potential assets from our roster to discuss:</strong> ${{escapeHtml(offerText || (thesis.assets_we_can_offer || []).join(', ') || 'Not established')}}</p><p class="article-p"><strong>Why this manager might care:</strong> ${{escapeHtml(thesis.why_manager_might_care || 'Not established')}}</p><p class="note"><strong>Read-only guardrail:</strong> This is a conversation shortlist grounded in observed history, not a generated offer or predicted response. Offer band: ${{escapeHtml(String(thesis.plausible_offer_range?.low ?? 'n/a'))}}–${{escapeHtml(String(thesis.plausible_offer_range?.high ?? 'n/a'))}}; minimum return: ${{escapeHtml(String(thesis.minimum_acceptable_return?.value ?? 'n/a'))}}.</p>${{thesis.do_not_chase_conditions?.length ? `<details class="evidence-drawer"><summary>Do-not-chase conditions</summary><ul class="article-list">${{thesis.do_not_chase_conditions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}</div>` : '';
+      const tradePacket = tradePacketMarkup(thesis, 'Trade decision packet');
       document.getElementById('team-page-body').innerHTML = `
         ${{backLink()}}
         <div class="entity-header">
