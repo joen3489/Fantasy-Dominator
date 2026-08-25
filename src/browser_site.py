@@ -2688,8 +2688,9 @@ def _page(
       if (!rows.length) return `<p class="note">No ${{mode}} theses found for this scope.</p>`;
       const bucket = categoryFor('mode', mode);
       return `<div class="brief-list">${{rows.map(row => {{
+        const offerCandidates = (row.offer_candidates || []).slice(0, 3).map(asset => `${{asset.asset_name || 'unnamed asset'}} (${{asset.position_group || asset.position || 'asset'}}; ${{asset.manager_preference_label || 'low-signal manager lane'}}; evidence ${{asset.manager_preference_evidence_count ?? 0}})`).join(', ');
         const packet = mode === 'trade'
-          ? `Pursue: ${{(row.assets_to_pursue || []).map(asset => asset.player_name).filter(Boolean).join(', ') || row.assets_to_discuss || 'no named asset'}}. Offer band: ${{row.plausible_offer_range?.low || 'n/a'}}-${{row.plausible_offer_range?.high || 'n/a'}} estimated market value. Minimum return: ${{row.minimum_acceptable_return?.value || 'n/a'}}. We can offer: ${{(row.assets_we_can_offer || []).join(', ') || 'not established'}}. Why this manager may care: ${{row.why_manager_might_care || 'not established'}}. Risk of waiting: ${{row.risk_of_waiting || 'not established'}}. Risk of acting: ${{row.risk_of_acting || row.risk || 'review evidence'}}.`
+          ? `Pursue: ${{(row.assets_to_pursue || []).map(asset => asset.player_name).filter(Boolean).join(', ') || row.assets_to_discuss || 'no named asset'}}. Offer band: ${{row.plausible_offer_range?.low || 'n/a'}}-${{row.plausible_offer_range?.high || 'n/a'}} estimated market value. Minimum return: ${{row.minimum_acceptable_return?.value || 'n/a'}}. Potential assets from our roster to discuss (not a generated offer): ${{offerCandidates || (row.assets_we_can_offer || []).join(', ') || 'not established'}}. Why this manager may care: ${{row.why_manager_might_care || 'not established'}}. Risk of waiting: ${{row.risk_of_waiting || 'not established'}}. Risk of acting: ${{row.risk_of_acting || row.risk || 'review evidence'}}.`
           : '';
         return briefCard({{
         title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',

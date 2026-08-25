@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from app import db
-from src.articles import ArticleContext, _scope_team_report
+from src.articles import ArticleContext, _scope_team_report, _scope_trade_desk
 from src.context import FantasyContext, context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 
@@ -198,6 +199,33 @@ class ContextIsolationTests(unittest.TestCase):
             rows = _scope_team_report(context)
 
             self.assertEqual([row["name"] for row in rows], ["Private Player"])
+
+    def test_trade_desk_article_scope_preserves_offer_candidate_evidence(self) -> None:
+        """The Trade Desk entry path must carry the structured shortlist to writers."""
+        with tempfile.TemporaryDirectory() as temporary:
+            analysis = Path(temporary)
+            (analysis / "trade_theses.json").write_text(
+                json.dumps(
+                    {"items": [
+                        {
+                            "target_manager_roster_id": 4,
+                            "target_manager_name": "Moose Caboose",
+                            "offer_candidates": [
+                                {
+                                    "asset_name": "My Wideout",
+                                    "position_group": "PASS_CATCHER",
+                                    "manager_preference_evidence_count": 5,
+                                }
+                            ],
+                        }
+                    ]}
+                ),
+                encoding="utf-8",
+            )
+            rows = _scope_trade_desk(ArticleContext(analysis_dir=analysis, active_roster_id=2))
+
+        self.assertEqual(rows[0]["offer_candidates"][0]["asset_name"], "My Wideout")
+        self.assertEqual(rows[0]["offer_candidates"][0]["manager_preference_evidence_count"], 5)
 
 
 if __name__ == "__main__":

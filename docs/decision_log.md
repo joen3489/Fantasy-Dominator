@@ -225,3 +225,19 @@ above-the-fold masthead eagerly, and leaves a text-gradient fallback when the
 asset is unavailable. The Data Room shows the asset status, variant count,
 alt-text receipt, and prompt hash. Artwork remains decorative and cannot carry
 fantasy facts.
+
+## 2026-08-25 - Trade Desk fit is a shortlist, not an offer
+
+The Trade Desk's `assets_we_can_offer` field was too shallow when it merely
+listed our highest-market-value players. A useful packet must connect the
+selected roster's exact assets to the target manager's observed valuation
+lanes, while preserving the distinction between what the target owns and what
+we might discuss.
+
+The deterministic packet now emits `offer_candidates` with the asset's roster
+and market context plus the matching `manager_valuation_profiles` label,
+preference score, evidence count, confidence, and source trace. The browser
+calls these “potential assets from our roster to discuss (not a generated
+offer).” This is evidence of a historical lane, not proof of current intent,
+a quote, or a predicted response. The system remains read-only and the human
+manager makes the final decision.

@@ -135,7 +135,7 @@ Strategy views are browser and markdown outputs that apply configurable team str
 | `data/analysis/analysis_context_packets.json` | Analysis layer | Machine-readable context packets for analyst generation | Interpretation input only; built from processed tables |
 | `data/analysis/target_theses.json` | Codex analyst layer | Explained target theses from signal outputs | Interpretation only; must cite signal/projection evidence |
 | `data/analysis/sell_theses.json` | Codex analyst layer | Explained sell theses from signal outputs | Interpretation only; must cite signal/projection evidence |
-| `data/analysis/trade_theses.json` | Codex analyst layer | Manager-aware trade thesis packets | Interpretation only; no transaction execution or outbound messaging |
+| `data/analysis/trade_theses.json` | Codex analyst layer | Manager-aware trade thesis packets | Interpretation only; no transaction execution or outbound messaging; distinguish target-owned assets from selected-roster `offer_candidates`, which must carry observed valuation-lane evidence and must not imply current intent |
 | `data/analysis/daily_gm_brief.md` | Codex analyst layer | Readable active-team analyst brief | Presentation and interpretation only |
 | `data/analysis/manager_dossiers.md` | Codex analyst layer | Plain-language manager behavior summaries | Must be grounded in manager behavior/event tables |
 | `data/analysis/manager_dossiers.json` | Codex analyst layer | Machine-readable manager dossier items | Interpretation only; must cite manager profile tags and cycle evidence |

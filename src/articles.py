@@ -304,6 +304,7 @@ def _scope_trade_desk(ctx: ArticleContext) -> list[dict[str, Any]]:
                 assets=item.get("assets_to_discuss", ""),
                 assets_to_pursue=item.get("assets_to_pursue", []),
                 assets_we_can_offer=item.get("assets_we_can_offer", []),
+                offer_candidates=item.get("offer_candidates", []),
                 plausible_offer_range=item.get("plausible_offer_range", {}),
                 minimum_acceptable_return=item.get("minimum_acceptable_return", {}),
                 why_manager_might_care=item.get("why_manager_might_care", ""),

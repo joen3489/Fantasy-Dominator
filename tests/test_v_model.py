@@ -1358,6 +1358,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Target Theses", html)
         self.assertIn("Sell Theses", html)
         self.assertIn("Trade Theses", html)
+        self.assertIn("offer_candidates", html)
+        self.assertIn("Potential assets from our roster to discuss (not a generated offer)", html)
         self.assertIn("Manager Dossiers", html)
         self.assertIn("Breakout Candidates", html)
         self.assertIn("Sell Candidates", html)
@@ -2721,6 +2723,42 @@ class VModelTests(unittest.TestCase):
         self.assertIn("plausible_offer_range", by_manager["The Clapper"])
         self.assertIn("historical_evidence", by_manager["The Clapper"])
         self.assertIn("do_not_chase_conditions", by_manager["The Clapper"])
+
+    def test_trade_offer_candidates_follow_observed_counterparty_lanes(self) -> None:
+        """The Front Office realization epic requires offer fit to stay evidence-bound.
+
+        The Trade Desk may rank assets from our exact roster against a target
+        manager's observed valuation lanes, but it must label that shortlist as
+        a conversation aid rather than a predicted response or generated offer.
+        """
+        from src.analysis import build_trade_theses
+
+        dataframes = {
+            "manager_behavior_signals": pd.DataFrame(
+                [{"roster_id": 4, "team_name": "Moose Caboose", "plain_language_label": "pick buyer", "evidence": "behavior-4"}]
+            ),
+            "team_asset_inventory": pd.DataFrame(
+                [
+                    {"roster_id": 2, "asset_type": "player", "asset_id": "wr-1", "asset_name": "My Wideout", "position": "WR", "market_value": 60, "liquidity_tier": "high", "timeline_fit": "now", "source_trace": "inventory"},
+                    {"roster_id": 2, "asset_type": "player", "asset_id": "rb-1", "asset_name": "My Runner", "position": "RB", "market_value": 100, "liquidity_tier": "medium", "timeline_fit": "now", "source_trace": "inventory"},
+                    {"roster_id": 4, "asset_type": "player", "asset_id": "wrong-1", "asset_name": "Opponent Player", "position": "WR", "market_value": 200, "source_trace": "inventory"},
+                ]
+            ),
+            "manager_valuation_profiles": pd.DataFrame(
+                [
+                    {"roster_id": 4, "position_group": "PASS_CATCHER", "preference_score": 0.90, "evidence_count": 5, "confidence": "high", "label": "pass-catcher accumulator"},
+                    {"roster_id": 4, "position_group": "RB", "preference_score": 0.20, "evidence_count": 2, "confidence": "low", "label": "low RB lane"},
+                ]
+            ),
+        }
+
+        theses = build_trade_theses(dataframes, 2, "Lulu's Potatoes", "2026-01-01T00:00:00+00:00")
+        thesis = theses[0]
+        self.assertEqual(thesis["offer_candidates"][0]["asset_name"], "My Wideout")
+        self.assertEqual(thesis["offer_candidates"][0]["manager_preference_evidence_count"], 5)
+        self.assertNotIn("Opponent Player", thesis["assets_we_can_offer"])
+        self.assertTrue(thesis["historical_evidence"]["valuation_lanes"])
+        self.assertIn("observed valuation lane", " ".join(thesis["do_not_chase_conditions"]))
 
     def test_dynasty_cycles_differentiate_by_future_pick_capital(self) -> None:
         # 11/12 managers classified "rebuild" in production because all-time pick counts tripped

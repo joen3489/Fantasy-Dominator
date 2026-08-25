@@ -230,6 +230,7 @@ def build_trade_theses(
     edges = dataframes.get("counterparty_trade_edges", pd.DataFrame())
     inventory = dataframes.get("team_asset_inventory", pd.DataFrame())
     profiles = dataframes.get("manager_profiles", pd.DataFrame())
+    valuation_profiles = dataframes.get("manager_valuation_profiles", pd.DataFrame())
     needs = dataframes.get("team_needs_matrix", pd.DataFrame())
     # Opportunities keyed by the manager they actually target -- opportunity_board.target_team is
     # the real linkage (each asset_in genuinely belongs to that team). The old round-robin pairing
@@ -260,17 +261,23 @@ def build_trade_theses(
             assets = "; ".join(str(row.get("player_name", "")) for row in target_edges[:3] if row.get("player_name"))
         target_profile = profile_by_roster.get(target_roster_id, {})
         target_need = need_by_roster.get(target_roster_id, {})
+        manager_preferences = sorted(
+            [
+                row
+                for row in _rows(valuation_profiles)
+                if _int(row.get("roster_id")) == target_roster_id
+            ],
+            key=lambda row: _num(row.get("preference_score")),
+            reverse=True,
+        )
+        offer_candidates = _offer_candidates(current_assets, manager_preferences)
         top_edge = target_edges[0] if target_edges else {}
         market_value = _num(top_edge.get("market_consensus_value"))
         estimated_owner_value = _num(top_edge.get("estimated_owner_value_score"))
         starting_low = round(max(0.0, market_value * 0.9), 2) if market_value else 0
         starting_high = round(max(starting_low, market_value * 1.1), 2) if market_value else 0
         minimum_return = round(max(0.0, market_value * 0.85), 2) if market_value else 0
-        preferred_ours = [
-            row.get("asset_name", "")
-            for row in current_assets
-            if row.get("asset_name") and str(row.get("asset_type")) == "player"
-        ][:3]
+        preferred_ours = [row.get("asset_name", "") for row in offer_candidates[:3] if row.get("asset_name")]
         alternate_counterparties = [
             str(row.get("target_team", ""))
             for row in edge_rows
@@ -312,6 +319,7 @@ def build_trade_theses(
                     for row in target_edges[:3]
                 ],
                 "assets_we_can_offer": preferred_ours,
+                "offer_candidates": offer_candidates[:5],
                 "plausible_offer_range": {
                     "low": starting_low,
                     "high": starting_high,
@@ -322,13 +330,22 @@ def build_trade_theses(
                     "basis": "estimated 85% of the target asset market value; review roster context before acting",
                 },
                 "why_manager_might_care": (
-                    f"Observed roster label: {target_label}. Their recorded needs are {target_need.get('team_shape', 'not available')}; "
+                    f"Observed roster label: {target_label}. Their recorded position needs are {_need_summary(target_need)}; "
                     f"their transaction history shows {target_profile.get('total_trades', manager.get('trade_activity_score', 0))} observed trades."
                 ),
                 "historical_evidence": {
                     "manager_profile": target_profile.get("most_common_transaction_partners", ""),
                     "behavior_signal": manager.get("evidence", ""),
                     "edge_signal": fit_evidence,
+                    "valuation_lanes": [
+                        {
+                            "position_group": row.get("position_group", ""),
+                            "label": row.get("label", ""),
+                            "preference_score": row.get("preference_score", ""),
+                            "evidence_count": row.get("evidence_count", ""),
+                        }
+                        for row in manager_preferences[:8]
+                    ],
                 },
                 "risk_of_waiting": (
                     "The current market gap may close before the next review."
@@ -339,6 +356,7 @@ def build_trade_theses(
                 "alternative_counterparties": alternate_counterparties,
                 "do_not_chase_conditions": [
                     "Do not treat the estimated owner value as a quote or motive.",
+                    "An offer candidate reflects an observed valuation lane, not a predicted response.",
                     "Do not proceed if the live market or roster context invalidates the evidence packet.",
                 ],
                 "manager_signal": manager_signal,
@@ -351,6 +369,89 @@ def build_trade_theses(
             }
         )
     return theses
+
+
+def _offer_candidates(
+    current_assets: list[dict[str, Any]],
+    manager_preferences: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Rank our own assets by an observed counterparty valuation lane.
+
+    This is deliberately a conversation shortlist, not an offer generator. A
+    manager profile can say that a roster historically collects pass catchers
+    or accumulates picks; it cannot prove that the manager wants a particular
+    asset today.
+    """
+    preferences: dict[str, dict[str, Any]] = {}
+    for row in manager_preferences:
+        group = str(row.get("position_group") or "DEPTH")
+        existing = preferences.get(group)
+        if existing is None or _num(row.get("preference_score")) > _num(existing.get("preference_score")):
+            preferences[group] = row
+    candidates: list[dict[str, Any]] = []
+    for asset in current_assets:
+        asset_name = str(asset.get("asset_name") or "").strip()
+        if not asset_name:
+            continue
+        group = _asset_position_group(asset)
+        preference = preferences.get(group) or preferences.get("DEPTH") or {}
+        preference_score = _num(preference.get("preference_score"))
+        evidence_count = _int(preference.get("evidence_count"))
+        candidates.append(
+            {
+                "asset_id": asset.get("asset_id", ""),
+                "asset_name": asset_name,
+                "asset_type": asset.get("asset_type", ""),
+                "position": asset.get("position", ""),
+                "position_group": group,
+                "market_value": asset.get("market_value", ""),
+                "liquidity_tier": asset.get("liquidity_tier", ""),
+                "timeline_fit": asset.get("timeline_fit", ""),
+                "manager_preference_score": round(preference_score, 2),
+                "manager_preference_label": preference.get("label", "low-signal manager lane"),
+                "manager_preference_evidence_count": evidence_count,
+                "fit_confidence": preference.get("confidence", "low") or "low",
+                "evidence": (
+                    f"asset_market={asset.get('market_value', '')}; asset_liquidity={asset.get('liquidity_tier', '')}; "
+                    f"manager_lane={preference.get('label', 'low-signal manager lane')}; "
+                    f"preference_score={round(preference_score, 2)}; evidence_count={evidence_count}"
+                ),
+                "source_trace": ";".join(
+                    value
+                    for value in (str(asset.get("source_trace") or ""), "manager_valuation_profiles")
+                    if value
+                ),
+            }
+        )
+    return sorted(
+        candidates,
+        key=lambda row: (_num(row.get("manager_preference_score")), _num(row.get("market_value"))),
+        reverse=True,
+    )
+
+
+def _asset_position_group(asset: dict[str, Any]) -> str:
+    if str(asset.get("asset_type") or "") == "pick" or str(asset.get("position") or "") == "PICK":
+        return "PICK"
+    if str(asset.get("position") or "") in {"WR", "TE"}:
+        return "PASS_CATCHER"
+    if str(asset.get("position") or "") in {"QB", "RB"}:
+        return str(asset.get("position"))
+    return "DEPTH"
+
+
+def _need_summary(needs: dict[str, Any]) -> str:
+    labels = {
+        "QB": needs.get("need_qb"),
+        "RB": needs.get("need_rb"),
+        "pass catcher": needs.get("need_pass_catcher"),
+        "picks": needs.get("need_picks"),
+    }
+    high = [label for label, value in labels.items() if str(value).lower() == "high"]
+    if high:
+        return ", ".join(high)
+    known = [f"{label}: {value}" for label, value in labels.items() if value not in (None, "", "unknown")]
+    return ", ".join(known) if known else "not available"
 
 
 def build_daily_gm_brief(

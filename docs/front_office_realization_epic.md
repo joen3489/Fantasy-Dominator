@@ -251,6 +251,11 @@ Acceptance criteria:
 - The system never implies an offer was sent or accepted.
 - Counterparty fit is tied to actual roster ownership and history.
 - Recommendations show evidence and confidence, not only a score.
+- The packet separates the target's owned assets from our exact-roster offer
+  candidates.
+- Offer candidates are ranked only against observed valuation lanes and carry
+  evidence count and confidence; they are never presented as a predicted
+  response or an automatically generated offer.
 
 ## Workstream 7: Rebuild the data room around questions
 
@@ -485,3 +490,19 @@ falls back to the desktop artwork and then to the text gradient if an image
 fails, and exposes the decorative asset receipt in the Data Room. This is
 deliberately limited to reusable masthead atmosphere; it does not claim that
 all reporters have custom art or that artwork is evidence.
+
+## 2026-08-25 Trade Desk depth checkpoint
+
+The Trade Desk now carries `offer_candidates` as a structured shortlist from
+the selected roster's `team_asset_inventory`. Each candidate is tied to the
+counterparty's `manager_valuation_profiles` lane for its position group and
+includes the lane label, preference score, evidence count, confidence, asset
+liquidity, timeline fit, and source trace. The older `assets_we_can_offer`
+name list remains as a compatibility field for existing readers.
+
+This is a deliberate boundary: observed historical preference is useful for
+opening a conversation, but it is not a quote, motive, or predicted response.
+The UI labels the shortlist as potential assets to discuss, and the packet
+retains explicit do-not-chase language. The behavioral test in
+`tests/test_v_model.py` proves that the ranking uses the active roster and
+does not leak an opponent's asset into the offer side.
