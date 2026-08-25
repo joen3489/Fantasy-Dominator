@@ -428,8 +428,11 @@ and its five reporter receipts still need to be completed and verified.
 
 A first decorative masthead, `assets/media/front-office-masthead-v1.png`, is
 now versioned in the repo and copied into each generated site through the
-manifest. Responsive variants, asset-level operator receipts, and additional
-reporter art remain Release 4 work; the masthead contains no factual text or
+manifest. The masthead now also has a versioned mobile composition,
+`assets/media/front-office-masthead-mobile-v1.png`, and the browser serves it
+through a guarded responsive `<picture>` path with eager loading, dimensions,
+and an explicit media receipt. Additional reporter art and article-specific
+media remain Release 4 work; the artwork contains no factual text or
 statistics.
 ## 2026-08-25 writer and outcome checkpoint
 
@@ -471,3 +474,14 @@ route from the story to the Data Room instead of making a fallback silently
 look like a complete generated article. The regression test covers the
 fallback marker, evidence limitation text, and Data Room link; the production
 gate must also verify the rendered receipt count against the visible sections.
+
+## 2026-08-25 responsive-media checkpoint
+
+The first media slice is now a real browser contract rather than a single CSS
+background. The manifest records responsive variant media queries, public
+paths, content hashes, dimensions, loading priority, and publication status.
+The masthead uses a mobile-specific generated composition at narrow widths,
+falls back to the desktop artwork and then to the text gradient if an image
+fails, and exposes the decorative asset receipt in the Data Room. This is
+deliberately limited to reusable masthead atmosphere; it does not claim that
+all reporters have custom art or that artwork is evidence.

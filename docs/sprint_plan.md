@@ -902,9 +902,10 @@ evidence fingerprint, and whether the selected league and roster are correct.
 2026-08-25 checkpoint: the local implementation now has article fingerprints,
 content hashes, bundle revisions, generated-article publication cards, reuse
 gates, structured manager dossiers, read-only Trade Desk packets, question-led
-edition prompts, and a versioned media manifest. Release 1 remains open until
-the authenticated Railway browser check proves the production revision and
-selected roster path.
+edition prompts, and a versioned responsive masthead manifest. Release 1
+remains open because production is still in deterministic fallback mode until
+the operator-authorized Luna run is completed and its reporter receipts are
+verified.
 
 ## Source And Ownership Contracts
 

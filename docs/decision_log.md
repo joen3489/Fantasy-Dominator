@@ -130,7 +130,9 @@ The first controlled asset is the repository-scoped decorative masthead
 `assets/media/front-office-masthead-v1.png`. It is copied into generated league
 sites with a site-relative path and content hash; the browser applies it only
 when the manifest marks it available or published. This is an atmosphere layer,
-not evidence, and it does not yet satisfy the full responsive-media workstream.
+not evidence. The initial single-asset version did not satisfy the full
+responsive-media workstream; the first responsive masthead slice is recorded
+below.
 
 ## 2026-08-25 - Make evidence and article contracts explicit
 
@@ -212,3 +214,14 @@ look more complete than it was and severed the media-to-evidence path. The
 entry-path test now requires the fallback receipt marker and the Data Room link,
 and the live browser check must count receipts for all displayed sections even
 when no Luna article artifacts exist.
+
+## 2026-08-25 - Responsive media is a real contract
+
+The initial masthead was only a single CSS background, which made the media
+manifest more aspirational than operational on a phone. The first media slice
+now keeps desktop and mobile artwork as separately hashed, site-relative
+variants, selects them through a guarded `<picture>` path, loads the
+above-the-fold masthead eagerly, and leaves a text-gradient fallback when the
+asset is unavailable. The Data Room shows the asset status, variant count,
+alt-text receipt, and prompt hash. Artwork remains decorative and cannot carry
+fantasy facts.

@@ -117,6 +117,7 @@ def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Pat
         raise ValueError("complete browser bundle payloads are required")
     identity = app_payload.get("identityReceipt") if isinstance(app_payload.get("identityReceipt"), dict) else {}
     my_team_name = str(app_payload.get("myTeamName") or identity.get("team_name") or "Unknown team")
+    _refresh_preserved_media(output_dir, app_payload, manifest)
     source_revision = _source_revision()
     manifest["sourceRevision"] = source_revision
     app_payload["sourceRevision"] = source_revision
@@ -131,6 +132,43 @@ def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Pat
     target = output_dir / "index.html"
     target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target
+
+
+def _refresh_preserved_media(output_dir: Path, app_payload: dict[str, Any], manifest: dict[str, Any]) -> None:
+    """Refresh configured decorative media while preserving the durable fact bundle.
+
+    A shell-only deployment rebuild intentionally skips processed data and LLM
+    work. It must still be able to ship a new versioned, non-factual asset;
+    otherwise a durable bundle would silently keep the old media contract after
+    a source deploy. The existing app payload remains the fallback if config or
+    an asset is unavailable.
+    """
+    try:
+        configured = load_config().get("media_assets") or []
+        if not configured:
+            return
+        identity = app_payload.get("identityReceipt") if isinstance(app_payload.get("identityReceipt"), dict) else {}
+        league_id = str(app_payload.get("leagueId") or manifest.get("leagueId") or identity.get("league_id") or "")
+        user_id = identity.get("user_id")
+        bundle_revision = str(app_payload.get("bundleRevision") or manifest.get("bundleRevision") or "")
+        materialized = materialize_media_assets(output_dir, configured)
+        media_manifest = build_media_manifest(
+            materialized,
+            user_id=user_id,
+            league_id=league_id,
+            bundle_revision=bundle_revision,
+        )
+        app_payload["mediaManifest"] = media_manifest
+        manifest["mediaManifest"] = media_manifest
+        (output_dir / "data" / "media_manifest.json").write_text(
+            media_manifest_json(media_manifest),
+            encoding="utf-8",
+        )
+    except (OSError, TypeError, ValueError):
+        # Decorative media is optional. Preserve the durable payload and let
+        # the browser use its text/gradient fallback when this refresh is not
+        # possible.
+        return
 
 
 def browser_bundle_missing(site_dir: Path) -> list[str]:
@@ -1250,6 +1288,11 @@ def _page(
       <h3>Since the last edition</h3>
       <p class="note">This compares the current article receipts with the last recorded publication state. A changed evidence fingerprint means the underlying packet changed; it is not a claim that the recommendation improved.</p>
       <div id="edition-changes-body"><p class="note">No prior publication receipt is available yet.</p></div>
+    </div>
+    <div class="panel article-panel media-ledger" id="media-ledger">
+      <h3>Editorial media receipt</h3>
+      <p class="note">Artwork is atmosphere, not evidence. This receipt shows its scope and responsive delivery without allowing an image to carry a fantasy claim.</p>
+      <div id="media-ledger-body"><p class="note">No media receipt is available yet.</p></div>
     </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>

@@ -17,12 +17,39 @@ EDITORIAL_STYLE = r"""
       box-shadow: 0 10px 30px rgba(32, 39, 34, .08);
     }
     .issue-hero {
+      position: relative;
+      isolation: isolate;
       padding: clamp(22px, 4vw, 42px);
       color: #f8f4ea;
       background:
         radial-gradient(circle at 88% 20%, rgba(196, 155, 68, .22), transparent 32%),
         linear-gradient(135deg, #202722 0%, #173f35 100%);
     }
+    .editorial-masthead-picture {
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      display: block;
+      overflow: hidden;
+      background: #173f35;
+    }
+    .editorial-masthead-picture img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      opacity: .92;
+    }
+    .issue-hero::after {
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background: linear-gradient(90deg, rgba(32,39,34,.96) 0%, rgba(23,63,53,.78) 48%, rgba(23,63,53,.28) 100%);
+    }
+    .issue-hero > *:not(.editorial-masthead-picture) { position: relative; z-index: 1; }
     .issue-hero.has-masthead {
       background-position: center;
       background-size: cover;
@@ -207,7 +234,7 @@ EDITORIAL_STYLE = r"""
     .publication-summary strong { color: var(--ink); }
     .learning-ledger { margin: 0 18px 18px; }
     .learning-ledger .tile-row { padding: 0; }
-    .edition-changes { margin: 0 18px 18px; }
+    .edition-changes, .media-ledger { margin: 0 18px 18px; }
     .edition-change-list { display: grid; gap: 8px; }
     .edition-change { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcf8; }
     .edition-change strong { margin-left: 8px; }
@@ -262,6 +289,7 @@ EDITORIAL_STYLE = r"""
 EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
       <div class="issue-shell" data-testid="editorial-issue">
         <div class="issue-hero" data-media-slot="masthead">
+          <picture id="issue-masthead-picture" class="editorial-masthead-picture" data-editorial-masthead aria-hidden="true"></picture>
           <div class="issue-kicker-row">
             <span id="issue-kicker" class="issue-kicker">Personal league edition</span>
             <span id="issue-date" class="issue-date">Latest refresh</span>
@@ -349,16 +377,38 @@ EDITORIAL_JS = r"""
     function renderEditorialMedia() {
       const hero = document.querySelector('[data-media-slot="masthead"]');
       const assets = (app && app.mediaManifest && app.mediaManifest.assets) || [];
-      const asset = assets.find(item => ['available', 'published'].includes(String(item.status || '').toLowerCase()) && item.path);
-      if (!hero || !asset) return;
-      const path = String(asset.path || '').trim();
-      // The builder emits only a site-relative media path. Keep the browser
-      // guard here as a second seam check in case a hand-edited manifest leaks
-      // an external URL or traversal segment.
-      if (!path || path.includes('://') || path.startsWith('//') || path.includes('..')) return;
-      hero.style.backgroundImage = `linear-gradient(90deg, rgba(32,39,34,.96) 0%, rgba(23,63,53,.78) 48%, rgba(23,63,53,.28) 100%), url("${path.replace(/"/g, '')}")`;
+      const asset = assets.find(item => String(item.asset_type || '') === 'masthead');
+      const receipt = document.getElementById('media-ledger-body');
+      const safePath = value => {
+        const path = String(value || '').trim();
+        return path && !path.includes('://') && !path.startsWith('//') && !path.includes('..') ? path : '';
+      };
+      const usable = value => ['available', 'published'].includes(String(value || '').toLowerCase());
+      if (!hero || !asset) {
+        if (receipt) receipt.innerHTML = '<p class="note">No editorial media asset is configured. Typography and evidence remain available.</p>';
+        return;
+      }
+      const path = safePath(asset.path);
+      const variants = Array.isArray(asset.variants) ? asset.variants.filter(item => usable(item.status) && safePath(item.path)) : [];
+      const picture = document.getElementById('issue-masthead-picture');
+      if (!picture || !usable(asset.status) || !path) {
+        if (receipt) receipt.innerHTML = `<p class="note">Masthead status: ${escapeHtml(asset.status || 'unavailable')}. Text publication is unaffected.</p>`;
+        return;
+      }
+      const sources = variants.map(item => `<source media="${escapeHtml(item.media || '')}" srcset="${escapeHtml(safePath(item.path))}" sizes="${escapeHtml(item.sizes || asset.sizes || '100vw')}">`).join('');
+      picture.innerHTML = `${sources}<img src="${escapeHtml(path)}" alt="${escapeHtml(asset.alt_text || '')}" loading="${escapeHtml(asset.loading || 'eager')}" fetchpriority="${escapeHtml(asset.fetchpriority || 'high')}" decoding="async"${asset.width ? ` width="${escapeHtml(String(asset.width))}"` : ''}${asset.height ? ` height="${escapeHtml(String(asset.height))}"` : ''}>`;
+      const image = picture.querySelector('img');
+      image.addEventListener('error', () => {
+        picture.hidden = true;
+        hero.classList.remove('has-masthead');
+        hero.dataset.mediaStatus = 'unavailable';
+        if (receipt) receipt.innerHTML = '<p class="note">The masthead failed to load. The evidence-led publication is still available without it.</p>';
+      }, { once: true });
       hero.classList.add('has-masthead');
       hero.dataset.mediaStatus = asset.status || 'available';
+      if (receipt) {
+        receipt.innerHTML = `<p class="note"><strong>${escapeHtml(asset.asset_id || 'Masthead')}</strong> · ${escapeHtml(asset.status || 'available')} · ${variants.length} responsive variant${variants.length === 1 ? '' : 's'}. Decorative only; no factual claims are carried by this artwork.</p><p class="note">Alt text: ${escapeHtml(asset.alt_text || 'Not supplied')} · Prompt hash: ${escapeHtml(String(asset.prompt_hash || 'not recorded').slice(0, 16))}…</p>`;
+      }
     }
 
     function publicationArticleMarkup(article) {

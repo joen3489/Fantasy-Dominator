@@ -42,6 +42,7 @@ class MediaAssetContractTests(unittest.TestCase):
         self.assertTrue(asset["prompt_hash"])
         self.assertIn("no text", "abstract football war room, no text")
         self.assertTrue(asset["alt_text"])
+        self.assertEqual(asset["variants"], [])
 
     def test_unchanged_asset_can_be_reused_but_scope_or_prompt_change_cannot(self) -> None:
         """Encodes the epic's cost-control rule: unchanged scoped art is reusable."""
@@ -55,6 +56,36 @@ class MediaAssetContractTests(unittest.TestCase):
         self.assertFalse(asset_is_current(current, changed))
         other_league = dict(current, league_id="league-2")
         self.assertFalse(asset_is_current(current, other_league))
+        changed_variant = dict(current, variants=[{"key": "mobile", "media": "(max-width: 620px)", "content_hash": "new"}])
+        self.assertFalse(asset_is_current(current, changed_variant))
+
+    def test_variants_are_materialized_and_remain_site_relative(self) -> None:
+        """Encodes Workstream 8 responsive variants and the no-source-path bundle rule."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            desktop = root / "desktop.png"
+            mobile = root / "mobile.png"
+            desktop.write_bytes(b"desktop-image")
+            mobile.write_bytes(b"mobile-image")
+            site = root / "site"
+            items = materialize_media_assets(
+                site,
+                [{
+                    "asset_id": "masthead",
+                    "path": str(desktop),
+                    "status": "published",
+                    "variants": [{"key": "mobile", "media": "(max-width: 620px)", "path": str(mobile), "status": "published"}],
+                }],
+            )
+            manifest = build_media_manifest(items, league_id="league-1")
+            asset = manifest["assets"][0]
+            variant = asset["variants"][0]
+            self.assertTrue((site / asset["path"]).is_file())
+            self.assertTrue((site / variant["path"]).is_file())
+            self.assertEqual(variant["key"], "mobile")
+            self.assertEqual(variant["media"], "(max-width: 620px)")
+            self.assertNotIn(str(root), variant["path"])
+            self.assertTrue(variant["content_hash"])
 
     def test_materialization_exposes_only_a_site_relative_asset_path(self) -> None:
         """Encodes the media rule: source paths never enter a browser bundle."""
@@ -93,12 +124,18 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIsNotNone(masthead)
             self.assertTrue((site / masthead["path"]).is_file())
             self.assertNotIn(str(repo), masthead["path"])
+            self.assertEqual(masthead["variants"][0]["key"], "mobile")
+            self.assertTrue((site / masthead["variants"][0]["path"]).is_file())
             scripts = [body for body in re.findall(r"<script(?:[^>]*)>([\s\S]*?)</script>", html) if "function render" in body]
             self.assertTrue(scripts, "The generated browser bundle must contain the app script")
             self.assertIn("Question-led data room", html)
             self.assertIn('data-data-question="mispriced"', html)
             self.assertIn("renderDataRoomQuestions", html)
             self.assertIn("renderEditorialMedia", html)
+            self.assertIn("<picture", html)
+            self.assertIn("fetchpriority", html)
+            self.assertIn("responsive variant", html)
+            self.assertIn("media-ledger", html)
             self.assertIn("data-outcome-select", html)
             self.assertIn("explicit_article_outcome", html)
             self.assertIn("Decision ledger", html)
@@ -142,6 +179,10 @@ class MediaAssetContractTests(unittest.TestCase):
             html = shell.read_text(encoding="utf-8")
             self.assertEqual(html.count('id="issue-publication"'), 1)
             self.assertIn('id="issue-publication-receipt"', html)
+            rebuilt_manifest = json.loads((data / "media_manifest.json").read_text(encoding="utf-8"))
+            rebuilt_masthead = next(item for item in rebuilt_manifest["assets"] if item["asset_type"] == "masthead")
+            self.assertEqual(rebuilt_masthead["variants"][0]["key"], "mobile")
+            self.assertTrue((site / rebuilt_masthead["variants"][0]["path"]).is_file())
 
 
 if __name__ == "__main__":

@@ -65,6 +65,20 @@ media_assets:
     credit: AI-generated editorial artwork
     moderation_status: not_run
     status: published
+    loading: eager
+    fetchpriority: high
+    sizes: 100vw
+    width: 1536
+    height: 1024
+    variants:
+      - key: mobile
+        media: "(max-width: 620px)"
+        path: assets/media/front-office-masthead-mobile-v1.png
+        prompt_hash: mobile-masthead-v1
+        width: 864
+        height: 1536
+        sizes: 100vw
+        status: published
 strategy_profile:
   name: Melkor rebuild
   team_direction: deep_rebuild
