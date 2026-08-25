@@ -135,11 +135,11 @@ Before adding a feature or “cleaning up” an old artifact:
     scope. Show overlap and non-overlap explicitly; historical preference is
     a conversation prioritizer, never proof of intent or a predicted response.
 
-15. **A current revision does not prove a current payload schema.** Durable
-    bundles must be checked for the fields that the new reader entry path
-    requires. If a manager dossier lacks the current evaluation object, trigger
-    an additive shell migration before serving it; do not stamp or trust a
-    healthy bundle merely because its source SHA matches.
+15. **A current revision does not prove a current reader.** Durable bundles
+    must be checked for both the fields and the generated shell markers that
+    the new entry path requires. If a manager dossier or the reader shell is
+    old, trigger an additive migration before serving it; do not stamp or trust
+    a healthy bundle merely because its source SHA matches.
 
 ## Current open boundary
 

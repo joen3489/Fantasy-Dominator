@@ -596,4 +596,6 @@ the preserved manager dossier objects lacked the new evaluation field. The
 serving gate now checks the persisted payload schema, not only the revision and
 fallback article receipts, and triggers the additive shell migration when the
 field is absent. A current SHA is therefore no longer treated as proof that
-the reader payload is current.
+the reader payload is current. The same guard now checks the generated HTML
+shell for its current entry-path markers, because a current payload and SHA
+can still be presented through a stale interface.

@@ -1082,6 +1082,45 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_reader_shell_contract_is_old(self) -> None:
+        """A current payload receipt cannot bless an older generated interface."""
+        token = self._token("user_stale_reader_shell")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_reader_shell")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "stale-shell", "season": "2026", "league_type": "dynasty", "name": "Stale Shell", "roster_id": 1},
+        )
+        site_dir = self.leagues_root / "stale-shell" / "site"
+        _write_complete_bundle(site_dir, "<h1>Old interface</h1>")
+        fallback_receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        (site_dir / "data" / "manifest.json").write_text(
+            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": fallback_receipts}),
+            encoding="utf-8",
+        )
+        (site_dir / "data" / "app_bundle.json").write_text(
+            json.dumps(
+                {
+                    "myRosterId": 1,
+                    "identityReceipt": {"roster_id": 1},
+                    "analysis": {"articleReceipts": fallback_receipts},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("app.main._deployment_revision", return_value="release-current"):
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get("/league/stale-shell/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        rebuild.assert_called_once()
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})
