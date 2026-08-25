@@ -561,3 +561,10 @@ fallback markdown and embedded editorial payload in place from preserved
 validated context before stamping the new source and bundle revisions. This
 keeps the browser receipt truthful even when a full data refresh is not part of
 the deploy.
+
+The authenticated production check then confirmed the intended result on
+`/league/1313490073630547968/#view-today`: the verified Sleeper roster is
+`roster_id=2`, the current label is `Lulu’s Potatoe’s`, and all five displayed
+fallback articles expose their new receipt metadata. Release 1 is still open
+only for the protected Luna run; the deterministic publication itself is no
+longer silently missing its evidence receipt.

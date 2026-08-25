@@ -380,3 +380,14 @@ migration of deterministic fallback metadata from the preserved validated
 rows and rebuild the editorial payload. They do not refresh Sleeper facts or
 invoke an LLM. The regression test keeps this deployment path honest when
 processed CSV intermediates are unavailable.
+
+## 2026-08-25 - Receipt migration verified on the authenticated production path
+
+The signed-in browser check after revision `536bc51` loaded the owned league
+route, verified the identity receipt for `roster_id=2` and `Lulu’s Potatoe’s`,
+and found five publication receipt drawers. Every deterministic fallback had
+its assigned reporter, evidence fingerprint, fallback reason, structured
+payload, and source receipt; the visible drawer separated the absence of
+article-level evidence IDs from the underlying source IDs and linked back to
+the Data Room. This is the required proof that a green health endpoint and a
+new shell revision did not leave the reader on stale or uninspectable content.
