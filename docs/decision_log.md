@@ -573,3 +573,7 @@ entered the viewport. Individual viewport-entry checks then confirmed all four
 assets loaded at 1536px, while the exact `roster_id=2` identity for Lulu’s
 Potatoe’s and the article evidence receipt remained intact. Future browser
 verification must distinguish DOM presence from a loaded media response.
+Receipt presentation must also use the actual receipt schema: fallback
+publication receipts expose their mode as `mode`, while durable database rows
+use writer-mode fields. If the UI cannot read a mode, it must say that receipt
+state is unavailable rather than implying the article is unlinked.

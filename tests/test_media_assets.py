@@ -151,6 +151,8 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn("Which desks are earning trust?", html)
             self.assertIn("reporter_breakdown", html)
             self.assertIn("reporterRowsById", html)
+            self.assertIn("receipt?.mode", html)
+            self.assertIn("Receipt state unavailable", html)
             self.assertIn("Since the last edition", html)
             self.assertIn("edition-changes", html)
             self.assertIn("Evidence IDs:", html)

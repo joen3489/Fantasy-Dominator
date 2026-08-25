@@ -2555,7 +2555,7 @@ def _page(
         const current = reporterRowsById.get(reporterId) || {{
           reporter_id: reporterId,
           reporter_name: String(receipt?.reporter_name || ''),
-          writer_mode: String(receipt?.model_mode || receipt?.writer_mode || ''),
+          writer_mode: String(receipt?.mode || receipt?.model_mode || receipt?.writer_mode || ''),
           article_keys: [],
           artifact_count: 0,
           interaction_count: 0,
@@ -2588,7 +2588,7 @@ def _page(
             const outcomeLabel = resolvedCount ? `${{Math.round(Number(row.confirmed_rate || 0) * 100)}}% confirmed across ${{resolvedCount}} resolved call${{resolvedCount === 1 ? '' : 's'}}` : 'No resolved calls yet';
             const signalLabel = `${{Number(row.interaction_count || 0)}} deliberate signal${{Number(row.interaction_count || 0) === 1 ? '' : 's'}} · ${{Number(row.artifact_count || 0)}} article receipt${{Number(row.artifact_count || 0) === 1 ? '' : 's'}}`;
             const usefulness = `${{Number(row.useful || 0)}} useful · ${{Number(row.not_useful || 0)}} needs work · ${{Number(row.evidence_opened || 0)}} evidence opened`;
-            return `<article class="brief-card"><div class="brief-card-body"><div class="brief-card-title">${{escapeHtml(reporterName)}} <span class="tag">${{escapeHtml(row.writer_mode ? label(row.writer_mode) : 'Receipt not linked')}}</span></div><div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(signalLabel)}}</span><span class="brief-chip">${{escapeHtml(outcomeLabel)}}</span></div><div class="brief-card-evidence">${{escapeHtml(usefulness)}}${{row.article_keys?.length ? ` · keys: ${{row.article_keys.join(', ')}}` : ''}}</div></div></article>`;
+            return `<article class="brief-card"><div class="brief-card-body"><div class="brief-card-title">${{escapeHtml(reporterName)}} <span class="tag">${{escapeHtml(row.writer_mode ? label(row.writer_mode) : 'Receipt state unavailable')}}</span></div><div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(signalLabel)}}</span><span class="brief-chip">${{escapeHtml(outcomeLabel)}}</span></div><div class="brief-card-evidence">${{escapeHtml(usefulness)}}${{row.article_keys?.length ? ` · keys: ${{row.article_keys.join(', ')}}` : ''}}</div></div></article>`;
           }}).join('')}}</div></div>`
         : '';
       node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p>${{breakdown}}`;
