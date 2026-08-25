@@ -168,6 +168,14 @@ checked first, and the current team is resolved by the linked Sleeper user and
 exact `roster_id`. Mutable display names such as `Moose Caboose`, `Melkor Lord
 of Light`, or `Lulu's Potatoes` must never be used as identity keys.
 
+## 2026-08-25 - Make learning visible without inventing certainty
+
+Explicit article feedback and outcomes are now summarized in the authenticated
+Data Room. The ledger counts useful, needs-work, evidence-reviewed, saved,
+pursued, open, confirmed, missed, and unclear states without counting ordinary
+page views. A confirmation rate is withheld until there are resolved calls;
+this is a manager-recorded feedback measure, not a model accuracy claim.
+
 An owned direct edition route is also a selection event. Visiting a bookmarked
 `/league/{league_id}/` now updates the remembered league, so a manager does
 not have to return through the home query-string link for the preference to

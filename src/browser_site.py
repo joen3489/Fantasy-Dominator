@@ -1241,6 +1241,11 @@ def _page(
       <div id="data-room-answer" class="question-answer" role="status"></div>
       <div id="data-room-visuals" class="decision-visual-grid"></div>
     </div>
+    <div class="panel article-panel learning-ledger" id="learning-ledger">
+      <h3>Decision ledger</h3>
+      <p class="note">Only deliberate signals appear here. Reading an article is not treated as approval, and a tracked call remains unresolved until you record what happened.</p>
+      <div id="learning-ledger-body"><p class="note">No explicit feedback recorded for this edition yet.</p></div>
+    </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>
       <h3>Operator Mode</h3>
@@ -1727,6 +1732,7 @@ def _page(
         }});
         if (!response.ok) throw new Error(`${{response.status}}`);
         button.textContent = interactionType === 'outcome' ? 'Outcome saved' : 'Saved';
+        hydrateLearningLedger();
       }} catch (error) {{
         button.textContent = original;
         button.disabled = false;
@@ -1930,6 +1936,7 @@ def _page(
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
       renderDataRoomQuestions();
+      hydrateLearningLedger();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
       renderDraftRoom();
@@ -2274,6 +2281,38 @@ def _page(
       const result = dataRoomQuestionResult(state.dataQuestion || 'changed');
       answerNode.innerHTML = `<strong>${{escapeHtml(result.title)}}</strong><br>${{escapeHtml(result.answer)}}`;
       visualsNode.innerHTML = (result.visuals || []).join('');
+    }}
+
+    function renderLearningLedger(summary) {{
+      const node = document.getElementById('learning-ledger-body');
+      if (!node) return;
+      const feedback = summary.feedback_counts || {{}};
+      const outcomes = summary.outcome_counts || {{}};
+      const cards = [
+        entityTile('Useful', feedback.useful || 0),
+        entityTile('Needs work', feedback.not_useful || 0),
+        entityTile('Evidence reviewed', feedback.evidence_opened || 0),
+        entityTile('Saved / pursued', (feedback.saved || 0) + (feedback.pursued || 0)),
+        entityTile('Open calls', outcomes.open || 0),
+        entityTile('Resolved calls', summary.resolved_outcomes || 0)
+      ].join('');
+      const rate = summary.confirmed_rate === null || summary.confirmed_rate === undefined
+        ? 'Not enough resolved calls for a rate.'
+        : `${{Math.round(Number(summary.confirmed_rate) * 100)}}% of resolved calls confirmed useful`;
+      const latest = summary.latest_recorded_at ? `Last recorded ${{summary.latest_recorded_at}}.` : 'No explicit signals recorded yet.';
+      node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p>`;
+    }}
+
+    async function hydrateLearningLedger() {{
+      const node = document.getElementById('learning-ledger-body');
+      if (!node || !manifest.leagueId) return;
+      try {{
+        const response = await fetch(`/api/leagues/${{encodeURIComponent(manifest.leagueId)}}/learning-summary`);
+        if (!response.ok) return;
+        renderLearningLedger(await response.json());
+      }} catch (error) {{
+        console.warn('Could not load the decision ledger', error);
+      }}
     }}
 
     function dataRoomQuestionResult(question) {{

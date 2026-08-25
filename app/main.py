@@ -423,6 +423,17 @@ def create_app() -> FastAPI:
             "interactions": db.list_content_interactions(int(user["id"]), league_id, int(roster_id)),
         }
 
+    @app.get("/api/leagues/{league_id}/learning-summary")
+    def learning_summary(
+        league_id: str,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        roster_id = league.get("roster_id")
+        if roster_id in (None, ""):
+            return db.content_learning_summary(int(user["id"]), league_id)
+        return db.content_learning_summary(int(user["id"]), league_id, int(roster_id))
+
 
     @app.get("/league/{league_id}/")
     def league_index(request: Request, league_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:

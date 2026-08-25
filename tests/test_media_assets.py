@@ -101,6 +101,8 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn("renderEditorialMedia", html)
             self.assertIn("data-outcome-select", html)
             self.assertIn("explicit_article_outcome", html)
+            self.assertIn("Decision ledger", html)
+            self.assertIn("learning-summary", html)
             self.assertEqual(html.count('id="issue-publication"'), 1)
             self.assertIn('id="issue-publication-receipt"', html)
             duplicate_ids = [key for key, count in Counter(re.findall(r'id="([^"]+)"', html)).items() if count > 1]

@@ -1042,6 +1042,46 @@ def list_content_interactions(
     return output
 
 
+def content_learning_summary(
+    user_id: int,
+    league_id: str,
+    roster_id: int | None = None,
+) -> dict[str, Any]:
+    """Summarize deliberate feedback for one authenticated league scope."""
+
+    rows = list_content_interactions(user_id, league_id, roster_id)
+    feedback_types = {"useful", "not_useful", "evidence_opened", "saved", "pursued"}
+    outcome_types = {"open", "confirmed", "missed", "unclear"}
+    feedback = {name: 0 for name in sorted(feedback_types)}
+    outcomes = {name: 0 for name in sorted(outcome_types)}
+    artifacts: set[tuple[str, str]] = set()
+    latest_recorded_at = ""
+
+    for row in rows:
+        interaction_type = str(row.get("interaction_type") or "")
+        if interaction_type in feedback:
+            feedback[interaction_type] += 1
+        elif interaction_type == "outcome":
+            outcome = str((row.get("payload") or {}).get("outcome") or "").strip().lower()
+            if outcome in outcomes:
+                outcomes[outcome] += 1
+        artifacts.add((str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")))
+        latest_recorded_at = max(latest_recorded_at, str(row.get("created_at") or ""))
+
+    resolved = outcomes["confirmed"] + outcomes["missed"]
+    return {
+        "league_id": str(league_id),
+        "roster_id": int(roster_id) if roster_id is not None else None,
+        "interaction_count": len(rows),
+        "artifact_count": len(artifacts),
+        "feedback_counts": feedback,
+        "outcome_counts": outcomes,
+        "resolved_outcomes": resolved,
+        "confirmed_rate": round(outcomes["confirmed"] / resolved, 3) if resolved else None,
+        "latest_recorded_at": latest_recorded_at,
+    }
+
+
 def start_refresh_run(user_id: int, league_id: str, season: str) -> int:
     started_at = datetime.now(timezone.utc).isoformat()
     conn = _connect()

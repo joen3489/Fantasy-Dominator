@@ -438,3 +438,12 @@ missed, or unclear. Outcomes are stored with the selected league, exact
 roster, article key, and bundle revision. They are never inferred from page
 views, and they do not claim that a recommendation was correct until the
 manager records a result.
+
+## 2026-08-25 learning-ledger checkpoint
+
+The feedback loop now has a reader-facing summary in the Data Room. It counts
+only deliberate signals, separates open calls from resolved outcomes, and
+shows a confirmed rate only after the manager has recorded confirmed or missed
+results. The summary is fetched through the authenticated league boundary and
+is scoped to the exact verified roster, so a shared bundle cannot expose
+another team's learning history.

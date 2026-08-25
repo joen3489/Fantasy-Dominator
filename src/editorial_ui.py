@@ -205,6 +205,8 @@ EDITORIAL_STYLE = r"""
     .publication-summary { margin: 0 0 14px; padding: 12px 13px; border-left: 3px solid var(--gold); background: #f4f0df; border-radius: 8px; }
     .publication-summary p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
     .publication-summary strong { color: var(--ink); }
+    .learning-ledger { margin: 0 18px 18px; }
+    .learning-ledger .tile-row { padding: 0; }
     .question-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
     .question-card { display: block; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 13px; }
     .question-card strong { display: block; margin-bottom: 5px; font-size: 13px; }
