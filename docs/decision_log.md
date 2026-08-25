@@ -91,6 +91,17 @@ scoped interaction ledger can establish usefulness or outcomes. A desk with
 zero signals must remain visible as zero, not disappear or become successful
 by implication.
 
+## 2026-08-25 - Preserve a prior reader bundle for return-later deltas
+
+The Data Room now records a deterministic `dataRoomDelta` while the previous
+durable `app_bundle.json` is still available. It compares news, trade, and
+waiver rows by their source event IDs and keeps per-table added, updated, and
+removed counts separate from the current pulse. The receipt is visibly
+`not_available` when the previous comparison scope is missing or incomplete;
+the first snapshot is never presented as historical change. This establishes
+the return-later evidence seam without claiming that a newly observed event
+is important, intentional, or a recommendation outcome.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

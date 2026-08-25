@@ -696,6 +696,23 @@ This is a useful first event view without inventing a previous state or
 burying the user in an unmotivated chart. The raw tables and source receipts
 remain the authoritative drill-down.
 
+## 2026-08-25 prior-bundle change receipt checkpoint
+
+The question-led Data Room now preserves the prior durable reader bundle long
+enough to compare the current `league_news_impact`, `trades`, and `waivers`
+event scopes before overwrite. The deterministic `dataRoomDelta` receipt uses
+source event IDs, reports per-table added/updated/removed counts, and exposes
+a bounded list of newly recorded event views. The browser separates this
+historical delta from the current event pulse and labels the comparison's
+source scope.
+
+The seam fails closed when there is no prior bundle or when any comparison
+table is missing: the reader says that the change receipt is unavailable and
+continues to show the current pulse without calling it historical change. The
+entry-path test covers both verified and unavailable states. This is the first
+return-later slice of the Data Room; it does not infer strategic importance,
+manager intent, or recommendation outcome from event presence.
+
 ## 2026-08-25 cross-season trade-fit checkpoint
 
 Manager dossiers now expose a deterministic comparison between current

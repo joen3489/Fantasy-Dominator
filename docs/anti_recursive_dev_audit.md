@@ -261,3 +261,16 @@ must cover the no-lane case rather than weakening the label.
 The production browser proof at `2c8d2a6de187a8db50b8c472d2c6df93d4eb12bd`
 showed both states in the live manager dossier: three aligned and three with
 no direct lane.
+
+## 2026-08-25 - Data Room change receipts must use a prior scope
+
+The first question-led event view correctly showed a current pulse but could
+not yet answer a return visit's “what changed?” question. The reader now
+computes `dataRoomDelta` before overwriting the durable bundle, compares the
+three event tables by source IDs, and reports added/updated/removed counts.
+The contract fails closed when the prior bundle or any comparison table is
+missing; it never treats every row in a first snapshot as new. A unit test
+covers the added-event ordering and incomplete-scope failure, while the
+browser entry test requires the comparison copy and fallback marker. Future
+changes must preserve the prior bundle boundary and keep strategic meaning in
+the deterministic analysis layer rather than smuggling it into the delta.

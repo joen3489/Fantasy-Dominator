@@ -142,6 +142,16 @@ learning rates must not be blended with recommendation rates.
 
 ## Presentation Artifacts
 
+`app_bundle.json.dataRoomDelta` is a deterministic reader receipt, not a
+strategy or editorial artifact. It compares the current `league_news_impact`,
+`trades`, and `waivers` tables with the prior durable reader bundle by their
+source event IDs. A complete prior scope yields `status=verified`, per-table
+added/updated/removed counts, and bounded added-event views. A first build or
+incomplete prior scope must yield `status=not_available` with a visible reason;
+the current event pulse remains useful but must not be described as historical
+change. This receipt is not allowed to infer importance, intent, or a manager
+decision from row presence alone.
+
 | Artifact | Owner | Purpose | Rule |
 | --- | --- | --- | --- |
 | `data/site/index.html` | Browser generation code | Primary browser workflow | Presentation only; reads processed tables |

@@ -13,7 +13,7 @@ import pandas as pd
 
 from src import operator
 from src.analysis import build_analysis_artifacts
-from src.browser_site import build_browser_site
+from src.browser_site import _data_room_delta, build_browser_site
 from src.draft_room import build_draft_room
 from src.economics import build_economic_tables, build_manager_behavior_signals
 from src.external_sources import _normalize_pick_values, build_market_consensus_values, refresh_external_sources
@@ -1537,6 +1537,53 @@ class VModelTests(unittest.TestCase):
         self.assertFalse(receipt["valid"])
         self.assertTrue(receipt["errors"])
 
+    def test_data_room_delta_requires_prior_scope_and_reports_added_events(self) -> None:
+        """Encodes docs/front_office_realization_epic.md's return-later delta rule."""
+        previous = {
+            "bundleRevision": "prior-revision",
+            "tables": {
+                "league_news_impact": [
+                    {"event_id": "news-old", "player_name": "Old Player", "published_at": "2026-08-24", "evidence": "old signal"}
+                ],
+                "trades": [],
+                "waivers": [
+                    {"transaction_id": "waiver-same", "created_datetime": "2026-08-23", "team_name": "Other Team", "player_added": "Old Add"}
+                ],
+            },
+        }
+        current = {
+            "league_news_impact": [
+                {"event_id": "news-old", "player_name": "Old Player", "published_at": "2026-08-24", "evidence": "old signal"},
+                {"event_id": "news-new", "player_name": "New Player", "published_at": "2026-08-25", "evidence": "new signal"},
+            ],
+            "trades": [
+                {"transaction_id": "trade-new", "created_datetime": "2026-08-25T12:00:00Z", "team_a_name": "A", "team_b_name": "B", "team_a_players_received": "New Player"}
+            ],
+            "waivers": [
+                {"transaction_id": "waiver-same", "created_datetime": "2026-08-23", "team_name": "Other Team", "player_added": "Old Add"}
+            ],
+        }
+
+        receipt = _data_room_delta(previous, current, "2026-08-25T13:00:00Z")
+
+        self.assertEqual(receipt["status"], "verified")
+        self.assertEqual(receipt["from_bundle_revision"], "prior-revision")
+        self.assertEqual(receipt["categories"]["news"]["added_rows"], 1)
+        self.assertEqual(receipt["categories"]["trades"]["added_rows"], 1)
+        self.assertEqual(receipt["categories"]["waivers"]["added_rows"], 0)
+        self.assertEqual([row["event_id"] for row in receipt["added_events"]], ["trade-new", "news-new"])
+        self.assertEqual(_data_room_delta({}, current, "now")["status"], "not_available")
+
+        incomplete = {"tables": {"league_news_impact": [], "trades": []}}
+        unavailable = _data_room_delta(incomplete, current, "now")
+        self.assertEqual(unavailable["status"], "not_available")
+        self.assertIn("waivers", unavailable["reason"])
+
+        missing_key = {"tables": {**previous["tables"], "trades": [{"created_datetime": "2026-08-25"}]}}
+        unavailable = _data_room_delta(missing_key, current, "now")
+        self.assertEqual(unavailable["status"], "not_available")
+        self.assertIn("transaction_id", unavailable["reason"])
+
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             processed = Path(tmp) / "processed"
@@ -1656,6 +1703,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Data Diagnostics", html)
         self.assertIn("Latest recorded league events", html)
         self.assertIn("historical delta unless a prior receipt says so", html)
+        self.assertIn("dataRoomDelta", html)
+        self.assertIn("Since the prior reader bundle", html)
+        self.assertIn("Change receipt", html)
         self.assertIn("waiver-scope", html)
         self.assertIn("Source Freshness", html)
         self.assertIn("Player market rows", html)

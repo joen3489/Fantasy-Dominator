@@ -199,6 +199,7 @@ def rebuild_browser_shell(
     manifest["reporterPersona"] = app_payload["reporterPersona"]
     manifest["reporterLineup"] = app_payload["reporterLineup"]
     manifest["dataQuality"] = app_payload["dataQuality"]
+    manifest["dataRoomDelta"] = app_payload.get("dataRoomDelta") or manifest.get("dataRoomDelta") or {}
     manifest["articleReceipts"] = analysis.get("articleReceipts") or {}
     manifest["mediaManifest"] = app_payload.get("mediaManifest") or manifest.get("mediaManifest") or {}
     (data_dir / "manifest.json").write_text(
@@ -636,6 +637,126 @@ def _my_team_name(teams: list[dict[str, Any]], my_roster_id: int | None) -> str:
     return "Unknown team"
 
 
+def _data_room_delta(
+    previous_payload: Mapping[str, Any] | None,
+    current_tables: Mapping[str, list[dict[str, Any]]],
+    generated_at: str = "",
+) -> dict[str, Any]:
+    """Compare event tables with the prior durable reader bundle.
+
+    This receipt is deliberately limited to immutable-ish event evidence. It
+    does not infer that an event is strategically important, and it fails to a
+    visible unavailable state when the prior bundle did not carry the complete
+    comparison scope. The current pulse remains available in that state.
+    """
+
+    specs = {
+        "news": ("league_news_impact", "event_id", "published_at"),
+        "trades": ("trades", "transaction_id", "created_datetime"),
+        "waivers": ("waivers", "transaction_id", "created_datetime"),
+    }
+    scope = list(specs)
+    prior_revision = str(previous_payload.get("bundleRevision") or "") if isinstance(previous_payload, Mapping) else ""
+
+    def unavailable(reason: str) -> dict[str, Any]:
+        return {
+            "status": "not_available",
+            "reason": reason,
+            "scope": scope,
+            "generated_at": generated_at,
+            "from_bundle_revision": prior_revision,
+            "added_events": [],
+            "categories": {},
+        }
+
+    previous_tables = previous_payload.get("tables") if isinstance(previous_payload, Mapping) else None
+    if not isinstance(previous_tables, Mapping):
+        return unavailable("No prior reader bundle contains a comparison receipt yet.")
+    missing = [
+        table
+        for table, _, _ in specs.values()
+        if table not in previous_tables or table not in current_tables or not isinstance(previous_tables.get(table), list) or not isinstance(current_tables.get(table), list)
+    ]
+    if missing:
+        return unavailable(f"The comparison scope lacks complete event tables: {', '.join(missing)}.")
+
+    categories: dict[str, dict[str, Any]] = {}
+    added_events: list[dict[str, Any]] = []
+    for category, (table_name, key_field, timestamp_field) in specs.items():
+        previous_rows = [row for row in previous_tables.get(table_name, []) if isinstance(row, Mapping)]
+        current_rows = [row for row in current_tables.get(table_name, []) if isinstance(row, Mapping)]
+        if any(not str(row.get(key_field) or "").strip() for row in [*previous_rows, *current_rows]):
+            return unavailable(f"The {category} comparison contains a row without its source key {key_field}.")
+        previous_by_key = {_delta_row_key(row, key_field): row for row in previous_rows}
+        current_by_key = {_delta_row_key(row, key_field): row for row in current_rows}
+        added_rows = [row for key, row in current_by_key.items() if key not in previous_by_key]
+        updated_rows = [
+            row
+            for key, row in current_by_key.items()
+            if key in previous_by_key and _bundle_revision(row) != _bundle_revision(previous_by_key[key])
+        ]
+        categories[category] = {
+            "table": table_name,
+            "prior_rows": len(previous_rows),
+            "current_rows": len(current_rows),
+            "added_rows": len(added_rows),
+            "updated_rows": len(updated_rows),
+            "removed_rows": sum(1 for key in previous_by_key if key not in current_by_key),
+            "source_trace": table_name,
+        }
+        added_events.extend(_data_room_event_view(category, row, key_field, timestamp_field) for row in added_rows)
+
+    added_events.sort(key=lambda row: str(row.get("recorded_at") or ""), reverse=True)
+    return {
+        "status": "verified",
+        "reason": "Compared with the prior durable reader bundle.",
+        "scope": list(specs),
+        "generated_at": generated_at,
+        "from_bundle_revision": str(previous_payload.get("bundleRevision") or ""),
+        "added_events": added_events[:20],
+        "categories": categories,
+    }
+
+
+def _delta_row_key(row: Mapping[str, Any], key_field: str) -> str:
+    value = str(row.get(key_field) or "").strip()
+    return value
+
+
+def _data_room_event_view(
+    category: str,
+    row: Mapping[str, Any],
+    key_field: str,
+    timestamp_field: str,
+) -> dict[str, Any]:
+    if category == "news":
+        headline = f"News · {row.get('player_name') or 'League signal'}"
+        detail = str(row.get("evidence") or row.get("impact_type") or "event recorded")
+    elif category == "trades":
+        headline = f"Trade · {row.get('team_a_name') or 'Roster A'} ↔ {row.get('team_b_name') or 'Roster B'}"
+        detail = str(
+            row.get("team_a_players_received")
+            or row.get("team_a_picks_received")
+            or row.get("team_b_players_received")
+            or row.get("team_b_picks_received")
+            or "assets recorded"
+        )
+    else:
+        headline = f"Waiver · {row.get('team_name') or 'Roster'}"
+        detail = f"added {row.get('player_added') or 'an unknown player'}"
+        if row.get("player_dropped"):
+            detail += f" and dropped {row.get('player_dropped')}"
+    return {
+        "category": category,
+        "event_id": str(row.get(key_field) or ""),
+        "recorded_at": str(row.get(timestamp_field) or row.get("week") or ""),
+        "headline": headline,
+        "detail": detail,
+        "evidence": str(row.get("evidence") or ""),
+        "source_trace": str(row.get("source_trace") or category),
+    }
+
+
 def _write_data_chunks(
     data_dir: Path,
     tables: dict[str, list[dict[str, Any]]],
@@ -652,6 +773,12 @@ def _write_data_chunks(
     }
     table_counts = {name: len(rows) for name, rows in tables.items()}
     app_tables = {name: rows for name, rows in tables.items() if name not in audit_only_tables}
+    try:
+        previous_payload = load_json(data_dir / "app_bundle.json")
+    except (OSError, ValueError):
+        previous_payload = {}
+    generated_at = str((tables.get("refresh_metadata") or [{}])[0].get("generated_at") or "")
+    data_room_delta = _data_room_delta(previous_payload, tables, generated_at)
     editorial = build_editorial_issue(
         tables,
         analysis,
@@ -706,6 +833,7 @@ def _write_data_chunks(
         "leagueId": str(league_id or ""),
         "analysis": analysis,
         "dataQuality": _data_quality_receipt(tables),
+        "dataRoomDelta": data_room_delta,
         "tableCounts": table_counts,
         "mediaManifest": media_manifest,
     }
@@ -760,6 +888,7 @@ def _write_data_chunks(
         "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
         "identityReceipt": identity_receipt,
         "dataQuality": app_payload["dataQuality"],
+        "dataRoomDelta": data_room_delta,
         "bundleRevision": bundle_revision,
         "sourceRevision": source_revision,
         "articleReceipts": analysis.get("articleReceipts") or {},
@@ -2891,6 +3020,13 @@ def _page(
           text: `Waiver · ${{row.team_name || `Roster ${{row.roster_id || 'unknown'}}`}} added ${{row.player_added || 'an unknown player'}}${{row.player_dropped ? ` and dropped ${{row.player_dropped}}` : ''}} · ${{row.created_datetime || `week ${{row.week || 'unknown'}}`}}`
         }}))
       ].sort((left, right) => String(right.sortKey || '').localeCompare(String(left.sortKey || ''))).slice(0, 8).map(row => row.text);
+      const delta = app.dataRoomDelta || {{}};
+      const deltaEvents = Array.isArray(delta.added_events) ? delta.added_events : [];
+      const deltaVisual = delta.status === 'verified'
+        ? decisionListVisual('Since the prior reader bundle', deltaEvents.length
+          ? deltaEvents.map(row => `${{row.headline || row.category || 'Event'}}: ${{row.detail || 'event recorded'}} · ${{row.recorded_at || 'time unavailable'}}`)
+          : ['No new news, trade, or waiver rows were added since the prior reader bundle.'])
+        : decisionListVisual('Change receipt', [delta.reason || 'No prior reader bundle is available for a historical comparison.']);
       if (question === 'matters') {{
         const composition = {{}};
         roster.forEach(row => {{ composition[row.position || 'Unknown'] = (composition[row.position || 'Unknown'] || 0) + 1; }});
@@ -2964,8 +3100,10 @@ def _page(
       }}
       return {{
         title: 'What changed?',
-        answer: `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The pulse below shows the latest recorded events available to this bundle; it is not a historical delta unless a prior receipt says so.`,
-        visuals: [decisionVisual('Current event volume', [
+        answer: delta.status === 'verified'
+          ? `${{deltaEvents.length}} news, trade, or waiver rows were added since the prior reader bundle. The current pulse below is the latest recorded event view; it is separate from the historical delta.`
+          : `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The pulse below shows the latest recorded events available to this bundle; it is not a historical delta unless a prior receipt says so.`,
+        visuals: [deltaVisual, decisionVisual('Current event volume', [
           {{ label: 'News signals', value: (tables.league_news_impact || []).length, display: String((tables.league_news_impact || []).length) }},
           {{ label: 'Trades', value: (tables.trades || []).length, display: String((tables.trades || []).length) }},
           {{ label: 'Waivers', value: (tables.waivers || []).length, display: String((tables.waivers || []).length) }}

@@ -135,6 +135,13 @@ Before adding a feature or “cleaning up” an old artifact:
     scope. Show overlap and non-overlap explicitly; historical preference is
     a conversation prioritizer, never proof of intent or a predicted response.
 
+15. **Preserve the prior bundle before overwriting it.** A return visit can
+    only explain what changed when the reader compares the current event rows
+    with a durable prior scope keyed by source IDs. Compute that receipt before
+    writing the new bundle, keep added/updated/removed counts separate, and
+    show a visible unavailable state when the prior scope is incomplete. Never
+    convert the first full snapshot into a list of supposedly new events.
+
 15. **A current revision does not prove a current reader.** Durable bundles
     must be checked for both the fields and the generated shell markers that
     the new entry path requires. If a manager dossier or the reader shell is
