@@ -576,6 +576,22 @@ class FastAPIClerkAppTests(unittest.TestCase):
             row = conn.execute("SELECT clerk_user_id FROM users").fetchone()
         self.assertEqual(row[0], "user_valid")
 
+    def test_home_explains_production_operator_gate_for_writer_controls(self) -> None:
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            token = self._token("user_writer_gate")
+            self.client.get("/", cookies={"__session": token})
+            user_id = self._user_id("user_writer_gate")
+            db.upsert_user_league(
+                user_id,
+                {"league_id": "writer-gate", "season": "2026", "league_type": "dynasty", "name": "Writer Gate", "roster_id": 1},
+            )
+            response = self.client.get("/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-testid="writer-operator-note"', response.text)
+        self.assertIn("FRONT_OFFICE_OPERATOR_TOKEN", response.text)
+        self.assertIn("requires FRONT_OFFICE_OPERATOR_TOKEN", response.text)
+
     def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
         clerk_token = self._token("user_two_league_profiles")
         self.client.get("/", cookies={"__session": clerk_token})

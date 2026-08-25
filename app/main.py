@@ -1519,7 +1519,12 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         state = "complete"
     else:
         state = "idle"
-    return {"state": state, "leagues": statuses, "updated_at": max(item.get("updated_at", "") for item in statuses)}
+    return {
+        "state": state,
+        "leagues": statuses,
+        "updated_at": max(item.get("updated_at", "") for item in statuses),
+        "operator_enabled": any(bool(item.get("operator_enabled")) for item in statuses),
+    }
 
 
 def _continuity_view(user_id: int) -> dict[str, Any]:

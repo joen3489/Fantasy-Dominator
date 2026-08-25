@@ -972,6 +972,9 @@
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
           <p class="writer-note" data-testid="writer-content-status">Selected league: {{ (featured_league.content_status or {}).label or "No writer receipt yet" }}.</p>
+          {% if operator_status and operator_status.operator_enabled %}
+            <p class="writer-note" data-testid="writer-operator-note">Production writer controls are protected by <code>FRONT_OFFICE_OPERATOR_TOKEN</code>. Enter that operator key above; your Clerk login remains read-only.</p>
+          {% endif %}
           {% if not writer_api_configured %}
             <p class="writer-note" data-testid="writer-fallback-note">The API writer is not configured here yet. The evidence-led edition remains available; add the production writer key to unlock persona-written articles.</p>
           {% endif %}
@@ -1415,7 +1418,10 @@
                 body: JSON.stringify(allEditions ? {} : {league_id: leagueId}),
               });
               const payload = await response.json().catch(() => ({}));
-              if (!response.ok) throw new Error(payload.detail || 'writer request failed (' + response.status + ')');
+              if (!response.ok) {
+                if (response.status === 403) throw new Error('This production writer control requires FRONT_OFFICE_OPERATOR_TOKEN. Enter the operator key above; your Clerk login remains read-only.');
+                throw new Error(payload.detail || 'writer request failed (' + response.status + ')');
+              }
               if (!payload.accepted) {
                 writerStatus.textContent = payload.message || 'Writer is already running.';
                 resetWriterButton(button, allEditions);

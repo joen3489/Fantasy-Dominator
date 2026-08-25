@@ -252,3 +252,12 @@ verification. Private generated HTML and JSON bundle files now send
 check must inspect the rendered entry path after a fresh load and confirm the
 expected shell marker. This protects the user's personal edition from looking
 stale after a successful deploy.
+
+## 2026-08-25 - Make the cost gate visible before a writer run
+
+The Clerk login is intentionally read-only; production writer and refresh
+actions remain behind `FRONT_OFFICE_OPERATOR_TOKEN`, while `OPENAI_API_KEY`
+only configures the model provider. The headquarters now explains that
+separation before the user clicks Generate and translates a 403 into an
+actionable message. A failed authorization must not be mistaken for a writer
+failure or silently trigger a paid call.
