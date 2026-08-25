@@ -154,6 +154,7 @@ def _decorate_deterministic_article(
     """Give deterministic fallback articles the same inspectable receipt shape as LLM output."""
 
     reporter = persona_metadata(writer_preferences, article_key)
+    evidence_ids = _deterministic_evidence_ids(article_key, evidence_rows)
     source_ids = _deterministic_source_ids(evidence_rows, source_tables)
     related_entities = _deterministic_related_entities(evidence_rows)
     confidence = _deterministic_confidence(evidence_rows)
@@ -181,7 +182,8 @@ def _decorate_deterministic_article(
         "confidence": confidence,
         "related_entities": related_entities,
         "visual_brief": "",
-        "evidence_ids": [],
+        "evidence_ids": evidence_ids,
+        "evidence_count": len(evidence_ids),
         "source_ids": source_ids,
         "source_count": len(source_ids),
         "source_quality": source_quality,
@@ -384,6 +386,41 @@ def _deterministic_source_ids(rows: list[dict[str, Any]], source_tables: list[st
                 if value and value not in values:
                     values.append(value)
     return values[:16]
+
+
+def _deterministic_evidence_ids(article_key: str, rows: list[dict[str, Any]]) -> list[str]:
+    """Assign canonical evidence identities to the exact rows behind a fallback read."""
+
+    evidence_ids: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        if article_key in {"trade_desk", "manager_intel"}:
+            entity_type = "manager"
+            entity_id = row.get("target_manager_roster_id") or row.get("roster_id")
+        elif article_key == "daily_brief" and row.get("target_manager_roster_id") not in (None, ""):
+            entity_type = "manager"
+            entity_id = row.get("target_manager_roster_id")
+        else:
+            entity_type = "player"
+            entity_id = row.get("player_id")
+        entity_id = _stable_entity_id(entity_id, index)
+        evidence_id = f"{entity_type}:{entity_id}:{index}"
+        if evidence_id not in evidence_ids:
+            evidence_ids.append(evidence_id)
+    return evidence_ids[:24]
+
+
+def _stable_entity_id(value: Any, fallback: int) -> str:
+    if value in (None, ""):
+        return str(fallback)
+    try:
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip() or str(fallback)
 
 
 def _deterministic_related_entities(rows: list[dict[str, Any]]) -> list[str]:

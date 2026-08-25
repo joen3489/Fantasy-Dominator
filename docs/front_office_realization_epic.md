@@ -568,3 +568,13 @@ The authenticated production check then confirmed the intended result on
 fallback articles expose their new receipt metadata. Release 1 is still open
 only for the protected Luna run; the deterministic publication itself is no
 longer silently missing its evidence receipt.
+
+## 2026-08-25 canonical fallback evidence checkpoint
+
+The deterministic publication now carries row-level evidence IDs in the same
+shape used by the writer packet contract. Player reads cite `player` evidence
+rows; manager and trade reads cite `manager` rows; the daily brief preserves
+the row type for both. The browser can therefore distinguish an exact evidence
+anchor from a source trace even before the protected Luna run is available.
+The next writer run can replace the interpretation while retaining this same
+evidence identity seam.

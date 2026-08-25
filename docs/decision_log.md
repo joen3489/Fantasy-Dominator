@@ -381,6 +381,17 @@ rows and rebuild the editorial payload. They do not refresh Sleeper facts or
 invoke an LLM. The regression test keeps this deployment path honest when
 processed CSV intermediates are unavailable.
 
+## 2026-08-25 - Fallback stories need canonical evidence IDs
+
+Source traces tell the reader where the data came from, but they do not
+identify the exact row supporting a claim. Deterministic fallback articles now
+assign stable evidence IDs using the same `entity_type:entity_id:index`
+convention as the canonical article evidence packets. The structured payload
+reports those IDs and their count, while `source_ids` remains reserved for
+source traces. This lets a fallback article and a future Luna article share the
+same claim-to-evidence seam instead of making the degraded path permanently
+second-class.
+
 ## 2026-08-25 - Receipt migration verified on the authenticated production path
 
 The signed-in browser check after revision `536bc51` loaded the owned league

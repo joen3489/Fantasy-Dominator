@@ -1948,6 +1948,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("source_trace", target_items[0])
         self.assertIn("analysis_text", target_items[0])
         self.assertIn("Target Theses", daily_brief)
+        self.assertIn('"evidence_ids":["player:1:1"', daily_brief)
         self.assertNotIn("accepted", validation_text.lower())
 
     def test_external_sources_fail_soft_with_diagnostics(self) -> None:
