@@ -750,3 +750,7 @@ the existing recommendation outcome lane with a stable
 `manager-fit:<roster_id>:<player_id>` key and retain the fit's evidence, risk,
 and confidence in the interaction payload. This keeps main Trade Desk and
 manager-entry learning comparable and does not imply that a trade happened.
+The authenticated production reader then exposed six `manager_fit` controls
+on Moose Caboose's dossier at revision
+`9fb20f8778fffb396e966af640fb11f6efc92824`; the check inspected the keys and
+evidence without writing an outcome.

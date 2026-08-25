@@ -247,3 +247,5 @@ path. The direct card now carries a stable `manager-fit` key into the existing
 recommendation interaction endpoint with evidence, risk, confidence, and the
 exact target player. The source-level entry test and authenticated browser
 proof must cover the manager path; no second feedback table is allowed.
+The deployed entry proof at `9fb20f8778fffb396e966af640fb11f6efc92824`
+found six live `manager_fit` controls with roster/player keys and evidence.

@@ -734,6 +734,14 @@ risk, and confidence, and a manager-fit outcome control. This makes the
 manager page a learnable decision surface without confusing a fit hypothesis
 with a completed trade or creating a second feedback system.
 
+The authenticated production check after revision
+`9fb20f8778fffb396e966af640fb11f6efc92824` opened the private Joanie Loves
+Dynasty Football edition, entered Moose Caboose's dossier, and found six
+`manager_fit` controls. The expanded drawer displayed the manager-fit label,
+stable roster/player keys, and the evidence-bearing payload attributes without
+submitting an outcome. The transient first bundle fetch was retried and the
+clean entry then loaded the current reader.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the
