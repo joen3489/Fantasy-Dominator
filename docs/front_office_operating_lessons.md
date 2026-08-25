@@ -277,3 +277,14 @@ recommendation-learning ledger and the verified 3,101-row historical identity
 receipt. Public revision smoke also passed. This closes the stale-shell slice;
 future capability slices must add an equivalent semantic marker and browser
 entry proof.
+
+## 2026-08-25 event grain must reach the manager dossier
+
+The manager data room already contained event-level trades and waivers, but the
+manager entry page primarily showed career totals, season aggregates, and fit
+labels. That made a deep source table feel disconnected from the dossier a
+manager actually reads. The structured dossier now carries a bounded,
+roster-scoped transaction timeline and the browser renders the event details
+with an explicit evidence and motive boundary. The reusable rule is to promote
+the exact evidence grain needed for a decision into the dossier object before
+adding more interpretation or more cards.

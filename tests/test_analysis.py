@@ -242,6 +242,81 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertIn("overlap", evaluation["summary"])
         self.assertEqual(evaluation["historical_seasons"], 2)
 
+    def test_manager_dossier_carries_scoped_event_timeline(self) -> None:
+        """Encodes Workstream 5's transaction-timeline requirement from the realization epic."""
+        items = build_manager_dossier_items(
+            {
+                "manager_cycle_profiles": pd.DataFrame(
+                    [{
+                        "roster_id": 4,
+                        "team_name": "Archive Team",
+                        "dynasty_cycle": "contender",
+                        "trade_temperature": "active",
+                        "pick_posture": "pick spender",
+                        "confidence": "high",
+                        "evidence": "trades=2",
+                    }]
+                ),
+                "manager_profiles": pd.DataFrame(
+                    [{
+                        "roster_id": 4,
+                        "team_name": "Archive Team",
+                        "seasons_covered": "2025; 2026",
+                        "total_trades": 2,
+                        "number_of_waiver_claims": 1,
+                    }]
+                ),
+                "manager_event_log": pd.DataFrame(
+                    [
+                        {
+                            "season": "2026",
+                            "event_type": "trade",
+                            "week": 5,
+                            "created_datetime": "2026-05-02T00:00:00+00:00",
+                            "transaction_id": "new-event",
+                            "roster_id": 4,
+                            "team_name": "Archive Team",
+                            "counterparty": "Partner Team",
+                            "players_in": "Target WR",
+                            "players_out": "Shop RB",
+                            "evidence": "Sleeper trade transaction",
+                        },
+                        {
+                            "season": "2026",
+                            "event_type": "waiver",
+                            "week": 2,
+                            "created_datetime": "2026-04-01T00:00:00+00:00",
+                            "transaction_id": "old-event",
+                            "roster_id": 4,
+                            "team_name": "Archive Team",
+                            "counterparty": "waiver wire",
+                            "players_in": "Depth WR",
+                            "evidence": "Sleeper waiver transaction",
+                        },
+                        {
+                            "season": "2026",
+                            "event_type": "trade",
+                            "week": 6,
+                            "created_datetime": "2026-06-01T00:00:00+00:00",
+                            "transaction_id": "foreign-event",
+                            "roster_id": 9,
+                            "team_name": "Foreign Team",
+                            "counterparty": "Archive Team",
+                            "players_in": "Foreign Player",
+                            "evidence": "Sleeper trade transaction",
+                        },
+                    ]
+                ),
+            },
+            "now",
+        )
+
+        timeline = items[0]["transaction_timeline"]
+        self.assertEqual([row["event_id"] for row in timeline], ["new-event", "old-event"])
+        self.assertTrue(all(row["roster_id"] == 4 for row in timeline))
+        self.assertEqual(timeline[0]["source_trace"], "manager_event_log")
+        self.assertEqual(timeline[0]["players_in"], "Target WR")
+
 
 if __name__ == "__main__":
     unittest.main()

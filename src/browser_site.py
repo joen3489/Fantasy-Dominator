@@ -1099,6 +1099,20 @@ def _page(
       font-size: 13px;
       font-weight: 700;
     }}
+    .manager-event-list {{
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }}
+    .manager-event-row {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+      padding: 10px;
+    }}
+    .manager-event-row p {{
+      margin: 6px 0 0;
+    }}
     .lens-preset-row {{
       display: flex;
       flex-wrap: wrap;
@@ -3541,6 +3555,26 @@ def _page(
       return `<details class="evidence-drawer manager-trade-fit"><summary>Trade-fit status · ${{escapeHtml(status === 'supported' ? 'supported' : 'none supported')}}</summary><p class="brief-card-evidence">${{escapeHtml(summary)}}</p>${{fitCards}}${{laneMarkup}}</details>`;
     }}
 
+    function managerTransactionTimelineMarkup(events) {{
+      const rows = (events || []).slice(0, 24);
+      if (!rows.length) return '<p class="note">No event-level transaction history is available for this manager.</p>';
+      const clean = value => String(value ?? '').trim();
+      const movement = row => [
+        clean(row.players_in) ? `In: ${{escapeHtml(clean(row.players_in))}}` : '',
+        clean(row.players_out) ? `Out: ${{escapeHtml(clean(row.players_out))}}` : '',
+        clean(row.picks_in) ? `Picks in: ${{escapeHtml(clean(row.picks_in))}}` : '',
+        clean(row.picks_out) ? `Picks out: ${{escapeHtml(clean(row.picks_out))}}` : '',
+        clean(row.faab_in) ? `FAAB in: ${{escapeHtml(clean(row.faab_in))}}` : '',
+        clean(row.faab_out) ? `FAAB out: ${{escapeHtml(clean(row.faab_out))}}` : ''
+      ].filter(Boolean).join(' · ') || 'No asset detail recorded';
+      return `<details class="evidence-drawer manager-transaction-timeline"><summary>Observed transaction timeline (${{rows.length}} latest events)</summary><p class="brief-card-evidence">Event-level evidence is scoped to this roster and ordered newest first. It records what Sleeper logged; it does not establish why the manager acted or what they will do next.</p><div class="manager-event-list">${{rows.map(row => `<article class="manager-event-row">
+        <div class="brief-card-top"><strong>${{escapeHtml(label(row.event_type || 'event'))}} · ${{escapeHtml(String(row.season || 'season unknown'))}} · week ${{escapeHtml(String(row.week || 'n/a'))}}</strong><span class="tag">${{escapeHtml(clean(row.created_datetime) || 'time unavailable')}}</span></div>
+        <p class="brief-card-evidence"><strong>Counterparty:</strong> ${{escapeHtml(clean(row.counterparty) || 'none recorded')}}</p>
+        <p class="brief-card-evidence"><strong>Movement:</strong> ${{movement(row)}}</p>
+        <p class="note"><strong>Event-level evidence:</strong> ${{escapeHtml(clean(row.evidence) || 'manager_event_log')}} · source trace: manager_event_log</p>
+      </article>`).join('')}}</div></details>`;
+    }}
+
     function backLink() {{
       return '<a class="back-link" href="javascript:history.back()">&larr; back</a>';
     }}
@@ -3639,6 +3673,7 @@ def _page(
       const edges = (tables.counterparty_trade_edges || []).filter(row => Number(row.target_roster_id) === rid).slice(0, 5);
       const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) === rid) || {{}};
       const dossierHistory = dossier.season_history || [];
+      const transactionTimeline = managerTransactionTimelineMarkup(dossier.transaction_timeline || []);
       const dossierQuestions = dossier.questions_to_ask || [];
       const repeated = dossier.repeated_behavior || {{}};
       const tradePacket = tradePacketMarkup(thesis, 'Trade decision packet');
@@ -3664,7 +3699,7 @@ def _page(
           ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
           ${{entityTile('Future 1sts Owned', picks.length)}}
         </div>
-          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Waiver Claims', dossier.sample_size?.waiver_claims ?? '')}}${{entityTile('Observed Events', dossier.sample_size?.observed_events ?? '')}}${{entityTile('Active Seasons', dossier.sample_size?.seasons_with_activity ?? '')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers · ${{escapeHtml(String(row.faab_spent || 0))}} FAAB · ${{escapeHtml(String(row.roster_player_count || 0))}} roster players${{row.active_weeks ? ` · active weeks: ${{escapeHtml(String(row.active_weeks))}}` : ''}}${{row.peak_transaction_week ? ` · peak week: ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}</p>`).join('')}}</div></details>` : ''}}${{managerTradeFitMarkup(dossier)}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
+          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Waiver Claims', dossier.sample_size?.waiver_claims ?? '')}}${{entityTile('Observed Events', dossier.sample_size?.observed_events ?? '')}}${{entityTile('Active Seasons', dossier.sample_size?.seasons_with_activity ?? '')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers · ${{escapeHtml(String(row.faab_spent || 0))}} FAAB · ${{escapeHtml(String(row.roster_player_count || 0))}} roster players${{row.active_weeks ? ` · active weeks: ${{escapeHtml(String(row.active_weeks))}}` : ''}}${{row.peak_transaction_week ? ` · peak week: ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}</p>`).join('')}}</div></details>` : ''}}${{transactionTimeline}}${{managerTradeFitMarkup(dossier)}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
         ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
         ${{tradePacket}}
         ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{

@@ -1245,6 +1245,7 @@ def build_manager_dossier_items(
         evidence = str(cycle.get("evidence", ""))
         manager_events = [row for row in events if str(row.get("roster_id")) == roster_id]
         manager_seasons = [row for row in season_history_rows if str(row.get("roster_id")) == roster_id]
+        transaction_timeline = _manager_transaction_timeline(manager_events)
         manager_assets = [row for row in inventory if str(row.get("roster_id")) == roster_id]
         manager_needs = needs_by_id.get(roster_id, {})
         manager_preferences = [row for row in valuation_profiles if str(row.get("roster_id")) == roster_id]
@@ -1337,6 +1338,7 @@ def build_manager_dossier_items(
                 "roster_construction": roster_construction,
                 "historical_aliases": historical_aliases,
                 "season_history": season_history,
+                "transaction_timeline": transaction_timeline,
                 "repeated_behavior": repeated_behavior,
                 "behavior_observations": behavior_observations,
                 "trade_fits": trade_fits,
@@ -1361,6 +1363,57 @@ def build_manager_dossier_items(
             }
         )
     return items
+
+
+def _manager_transaction_timeline(
+    events: list[dict[str, Any]],
+    limit: int = 24,
+) -> list[dict[str, Any]]:
+    """Return a bounded, roster-scoped event ledger for the manager dossier.
+
+    ``manager_event_log`` is already deterministic source data. The dossier
+    keeps the event grain instead of asking the browser to reconstruct a
+    timeline from aggregate season totals. This is evidence presentation, not
+    an inference about motive or a forecast of the next transaction.
+    """
+
+    ordered = sorted(
+        events,
+        key=lambda row: (
+            str(row.get("created_datetime") or ""),
+            _int(row.get("season")),
+            _int(row.get("week")),
+            str(row.get("transaction_id") or ""),
+        ),
+        reverse=True,
+    )
+    fields = (
+        "season",
+        "event_type",
+        "week",
+        "created_datetime",
+        "transaction_id",
+        "roster_id",
+        "team_name",
+        "counterparty",
+        "players_in",
+        "picks_in",
+        "faab_in",
+        "players_out",
+        "picks_out",
+        "faab_out",
+        "evidence",
+    )
+    timeline: list[dict[str, Any]] = []
+    for row in ordered[:limit]:
+        timeline.append(
+            {
+                "event_id": str(row.get("transaction_id") or ""),
+                "source_trace": "manager_event_log",
+                **{field: row.get(field, "") for field in fields},
+            }
+        )
+    return timeline
 
 
 def _split_values(value: Any, limit: int | None = None) -> list[str]:

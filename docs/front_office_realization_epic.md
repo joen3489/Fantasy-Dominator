@@ -706,6 +706,18 @@ and an explicit no-alignment state when the current fit does not match the
 historical profile. This narrows the next conversation without treating a
 preference lane as intent or a predicted response.
 
+## 2026-08-25 manager transaction timeline entry-path slice
+
+Manager dossiers now carry a bounded `transaction_timeline` derived from the
+exact roster-scoped `manager_event_log` rows. The team dossier renders the 24
+most recent observed trade/waiver events with season, week, counterparty,
+assets moving in and out, FAAB/pick movement, and the event-level evidence
+label. It explicitly says the log records what Sleeper observed, not why a
+manager acted or what they will do next. The event timeline is structured in
+the dossier payload so the browser and future writer packet consume the same
+evidence object; the old aggregate-only manager view is no longer the only
+path to historical behavior.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

@@ -151,7 +151,7 @@ learning rates must not be blended with recommendation rates.
 | `data/analysis/trade_theses.json` | Codex analyst layer | Manager-aware trade thesis packets | Interpretation only; no transaction execution or outbound messaging; distinguish target-owned assets from selected-roster `offer_candidates`, which must carry observed valuation-lane evidence and must not imply current intent |
 | `data/analysis/daily_gm_brief.md` | Codex analyst layer | Readable active-team analyst brief | Presentation and interpretation only |
 | `data/analysis/manager_dossiers.md` | Codex analyst layer | Plain-language manager behavior summaries | Must be grounded in manager behavior/event tables |
-| `data/analysis/manager_dossiers.json` | Codex analyst layer | Machine-readable manager dossier items | Interpretation only; must cite manager profile tags and cycle evidence |
+| `data/analysis/manager_dossiers.json` | Codex analyst layer | Machine-readable manager dossier items | Interpretation only; must cite manager profile tags and cycle evidence; `transaction_timeline` is a bounded roster-scoped projection of `manager_event_log`, not an inferred motive |
 | `data/analysis/player_dossiers.json` | Codex analyst layer | Machine-readable player dossier items | Interpretation only; must cite player dossier/tag evidence |
 | `data/analysis/news_impact_brief.md` | Codex analyst layer | Readable summary of imported news impact rows | Must not become canonical news truth |
 | `data/analysis/analysis_validation.json` | Analysis layer | Artifact validation status and guardrail errors | Generated validation artifact |

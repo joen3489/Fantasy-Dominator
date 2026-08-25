@@ -228,3 +228,13 @@ rendered the recommendation controls, separate learning summary, exact roster
 identity, and semantic history receipt. The migration gate is closed for this
 slice; browser freshness and exact entry-path proof remain required for the
 next one.
+
+## 2026-08-25 - Do not leave event evidence stranded behind aggregate metrics
+
+The manager page could look complete while its event-level source table was
+unreachable from the manager dossier. The new structured `transaction_timeline`
+is built only from rows whose exact `roster_id` matches the dossier, is bounded
+and ordered deterministically, and has an entry-path test for the rendered
+timeline and event evidence. A foreign roster fixture is excluded. This keeps
+the slice aligned with the identity and evidence rules before any writer
+interpretation is added.

@@ -726,3 +726,15 @@ rendered 25 scoped recommendation outcome controls with the four validated
 states. Data Room showed the recommendation learning lane and the 3,101-row
 historical identity receipt. The earlier stale-shell observation is retained
 as the reason for the contract, not as the current production state.
+
+## 2026-08-25 - Surface manager event grain in the dossier
+
+The manager dossier had season history, repeated behavior, and trade-fit
+summaries, but the actual `manager_event_log` was only available through a
+separate table view. That was a disconnected-depth defect: a reader could see
+that a manager made 46 trades without seeing the observed event that supported
+the next conversation. Dossiers now carry a bounded `transaction_timeline`
+with exact roster scope, event identity, timing, counterparty, asset movement,
+and source evidence. The UI labels it as observed history and keeps motive and
+future response unknown. The slice is deterministic and does not spend a Luna
+call.
