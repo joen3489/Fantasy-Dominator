@@ -1043,6 +1043,45 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_manager_dossier_schema_is_old(self) -> None:
+        """Encodes the anti-recursive seam rule for newly added dossier fields."""
+        token = self._token("user_stale_manager_dossier")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_manager_dossier")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "stale-manager", "season": "2026", "league_type": "dynasty", "name": "Stale Manager", "roster_id": 1},
+        )
+        site_dir = self.leagues_root / "stale-manager" / "site"
+        _write_complete_bundle(site_dir, "<h1>Persisted old manager dossier</h1>")
+        fallback_receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        (site_dir / "data" / "manifest.json").write_text(
+            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": fallback_receipts}),
+            encoding="utf-8",
+        )
+        (site_dir / "data" / "app_bundle.json").write_text(
+            json.dumps(
+                {
+                    "myRosterId": 1,
+                    "identityReceipt": {"roster_id": 1},
+                    "analysis": {"articleReceipts": fallback_receipts, "managerDossierItems": [{"roster_id": 8}]},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("app.main._deployment_revision", return_value="release-current"):
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get("/league/stale-manager/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        rebuild.assert_called_once()
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})

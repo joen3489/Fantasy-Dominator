@@ -587,3 +587,13 @@ manager's recency-weighted historical valuation lanes and show the number of
 seasons in scope. The browser distinguishes alignment, non-alignment, and no
 current fit. This is a prioritization aid grounded in observed rows, not a
 claim about manager intent or a predicted response.
+
+## 2026-08-25 - Rebuild durable dossiers when their schema is stale
+
+The first production browser check after the cross-season change exposed a
+durable-bundle seam: the deployed shell and source revision were current, but
+the preserved manager dossier objects lacked the new evaluation field. The
+serving gate now checks the persisted payload schema, not only the revision and
+fallback article receipts, and triggers the additive shell migration when the
+field is absent. A current SHA is therefore no longer treated as proof that
+the reader payload is current.

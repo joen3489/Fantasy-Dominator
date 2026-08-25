@@ -826,7 +826,11 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         app_bundle = load_json(app_bundle_path)
     except (OSError, ValueError):
         return True
-    if not isinstance(app_bundle, dict) or _payload_has_stale_fallback_receipts(app_bundle):
+    if (
+        not isinstance(app_bundle, dict)
+        or _payload_has_stale_fallback_receipts(app_bundle)
+        or _payload_has_stale_manager_dossier_fields(app_bundle)
+    ):
         return True
     return False
 
@@ -848,6 +852,19 @@ def _payload_has_stale_fallback_receipts(payload: dict[str, Any]) -> bool:
         if not isinstance(structured, dict) or structured.get("fallback_schema_version") != FALLBACK_ARTICLE_SCHEMA_VERSION:
             return True
     return False
+
+
+def _payload_has_stale_manager_dossier_fields(payload: dict[str, Any]) -> bool:
+    """Return whether a durable dossier predates the current fit contract."""
+
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    items = analysis.get("managerDossierItems")
+    if not isinstance(items, list):
+        return False
+    return any(
+        isinstance(item, dict) and "trade_fit_evaluation" not in item
+        for item in items
+    )
 
 
 def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:
