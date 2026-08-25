@@ -649,3 +649,8 @@ desk art above each article and repeats its decorative-only status in the
 publication receipt. This is a recognition and reading aid, not evidence; the
 masthead remains the only hero asset. Future art should extend this contract
 only when it improves comprehension or section recognition.
+
+The production browser check after `e830e05` loaded all four desk images after
+individual viewport entry, while preserving the authenticated `roster_id=2`
+receipt for Lulu’s Potatoe’s. This closes the first media entry-path slice;
+the protected Luna publication remains the separate open boundary.

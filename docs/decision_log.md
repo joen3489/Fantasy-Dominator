@@ -523,3 +523,12 @@ status. The reader only renders a valid site-relative asset and labels it as
 decorative; the article, evidence receipt, and Data Room remain usable when an
 image is missing or fails to load. This keeps generated artwork from becoming
 a second fact channel or a deployment dependency.
+
+## 2026-08-25 - Live media verification must include lazy loading
+
+The first signed-in production check after `e830e05` found the four article
+figures in the publication, but two lazy images had not loaded before they
+entered the viewport. Individual viewport-entry checks then confirmed all four
+assets loaded at 1536px, while the exact `roster_id=2` identity for Lulu’s
+Potatoe’s and the article evidence receipt remained intact. Future browser
+verification must distinguish DOM presence from a loaded media response.

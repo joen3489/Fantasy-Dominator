@@ -111,3 +111,9 @@ protected Luna publication: deterministic fallback remains the honest reader
 state until the operator-authorized run produces current per-article writer
 receipts. This is an explicit cost and authority boundary, not a reason to
 weaken the receipt contract.
+
+The article-specific media slice is live on `e830e05`: the signed-in edition
+loaded four 1536px desk illustrations, kept the exact `roster_id=2` identity
+for Lulu’s Potatoe’s, and exposed media metadata beside the evidence receipt.
+Lazy artwork must be checked after it enters the viewport; an initial DOM
+presence check is not proof that the browser loaded the asset.
