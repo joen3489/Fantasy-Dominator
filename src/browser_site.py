@@ -2130,12 +2130,27 @@ def _page(
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
         {{ item: 'League', value: status.league_name || manifest.leagueId || 'Current league' }},
         {{ item: 'Evidence count', value: status.evidence_count || '' }},
+        {{ item: 'Writer provider', value: status.provider || '' }},
+        {{ item: 'Writer model', value: status.model || '' }},
+        {{ item: 'Reasoning effort', value: status.reasoning_effort || '' }},
         {{ item: 'Publication', value: (status.content_status || {{}}).label || 'No publication receipt' }},
         {{ item: 'Bundle revision', value: (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }}
       ];
       const validation = status.validation || {{}};
       const errors = validation.errors || status.errors || [];
-      return table(rows, ['item', 'value']) + (errors.length
+      const articleEntries = status.articles && typeof status.articles === 'object'
+        ? Object.entries(status.articles)
+        : [];
+      const articleRows = articleEntries.map(([key, result]) => ({{
+        article: key,
+        state: result?.state || 'unknown',
+        reporter: result?.reporter?.name || result?.reporter?.persona_id || '',
+        detail: result?.errors?.join('; ') || result?.message || ''
+      }}));
+      const receiptDetail = articleRows.length
+        ? `<h4>Writer receipt detail</h4>${{table(articleRows, ['article', 'state', 'reporter', 'detail'])}}<p class="note">Only articles marked complete or unchanged have current LLM receipts. Failed or skipped sections remain deterministic fallback content.</p>`
+        : '<p class="note">No per-article writer receipts were returned by the last run. Treat this as an incomplete or older operator record until a new run reports its sections.</p>';
+      return table(rows, ['item', 'value']) + receiptDetail + (errors.length
         ? `<details class="evidence-drawer" open><summary>Validation Errors</summary><div class="brief-card-evidence">${{escapeHtml(errors.join('; '))}}</div></details>`
         : '<p class="note">No operator validation errors reported.</p>');
     }}

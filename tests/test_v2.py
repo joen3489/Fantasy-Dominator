@@ -714,6 +714,32 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertTrue(queued.json()["accepted"])
         generate.assert_called_once_with(None, user_id)
 
+    def test_generate_insights_preserves_failed_workflow_diagnostics(self) -> None:
+        league = {
+            "league_id": "diagnostic-league",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Diagnostic League",
+            "roster_id": 2,
+        }
+        workflow = {
+            "state": "failed",
+            "message": "OPENAI_API_KEY is not set. No LLM call was attempted.",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "articles": {},
+        }
+        with patch("app.main._refresh_job"), \
+             patch("app.main._context_for_league", return_value=object()), \
+             patch("app.main._private_paths", return_value=MagicMock()), \
+             patch("app.main.front_operator.generate_articles_workflow", return_value=workflow), \
+             patch("app.main._rebuild_browser_job", return_value={"state": "complete"}):
+            result = app_main._generate_insights_job(league, 42)
+
+        self.assertEqual(result["state"], "failed")
+        self.assertEqual(result["message"], workflow["message"])
+        self.assertEqual(result["model"], "gpt-5.6-luna")
+
     def test_blank_profile_has_same_scalar_contract_as_saved_profile(self) -> None:
         token = self._token("user_blank_profile")
         self.client.get("/", cookies={"__session": token})

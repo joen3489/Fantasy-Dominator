@@ -531,3 +531,10 @@ read legible, and the full source trace remains available in a drawer.
 The deployment check also now treats the rendered manifest revision as part of
 the entry-path proof. A health revision alone cannot prove that an already-open
 private browser has settled onto the new durable shell.
+
+The next production writer attempt must be diagnosed from its returned
+per-article receipt. The operator path now preserves workflow state, provider
+and model metadata, reporter-level results, and validation messages instead of
+replacing a failed run with a success-sounding refresh message. Until a
+protected operator run produces five current reporter receipts, Release 1
+remains open and the deterministic fallback must remain visible.

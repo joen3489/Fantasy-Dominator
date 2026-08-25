@@ -976,13 +976,33 @@ def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[
             article_result = front_operator.generate_articles_workflow(paths, context)
             _rebuild_browser_job(row, user_id)
             results[str(row["league_id"])] = article_result
-        return {"state": "complete", "message": "All league writers and browser bundles rebuilt.", "leagues": results}
+        states = [str(result.get("state") or "").lower() for result in results.values()]
+        if states and all(state == "failed" for state in states):
+            state = "failed"
+        elif any(state in {"failed", "partial"} for state in states):
+            state = "partial"
+        else:
+            state = "complete"
+        complete_count = sum(state in {"complete", "unchanged"} for state in states)
+        return {
+            "state": state,
+            "message": (
+                f"All league writers and browser bundles rebuilt; "
+                f"{complete_count}/{len(states)} league writer runs current."
+            ),
+            "leagues": results,
+        }
     _refresh_job(league, user_id)
     paths = _private_paths(user_id, str(league["league_id"]))
     context = _context_for_league(user_id, league)
     result = front_operator.generate_articles_workflow(paths, context)
     _rebuild_browser_job(league, user_id)
-    return result | {"message": "League refreshed, writers run, and browser bundle rebuilt."}
+    # Keep the workflow's diagnostic message and per-article results. A generic
+    # success-sounding message used to hide missing-key, provider, and
+    # validation failures behind the phrase "writers run".
+    return result | {
+        "message": result.get("message") or "League refreshed, writers run, and browser bundle rebuilt."
+    }
 
 
 def _rebuild_browser_job(

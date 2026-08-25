@@ -297,3 +297,22 @@ check then confirmed revision `c91108bc` and the new entry path.
 The live smoke contract now encodes that lesson: authenticated checks fail if
 the private bundle or manifest is bound to a different revision, league, or
 missing verified roster receipt.
+
+## 2026-08-25 - Writer failures must preserve their receipt
+
+The authenticated production edition currently resolves the correct Sleeper
+identity (`roster_id=2`, `Lulu’s Potatoe’s`) and serves the question-led Data
+Room, but its last operator record is still `0/5 reporter articles ·
+evidence-led fallback`. That is a valid degraded publication state, not proof
+that the newsroom ran successfully.
+
+The writer orchestration previously replaced the workflow's diagnostic message
+with the generic phrase “League refreshed, writers run, and browser bundle
+rebuilt.” This hid whether the run failed before an API call, during provider
+generation, or during article validation. The orchestration now preserves the
+workflow state, provider/model metadata, per-article results, and useful error
+message. The Operator Mode panel renders those receipts and explicitly says
+that failed or skipped sections remain deterministic fallback content. The
+operator token remains a deliberate protected write boundary; no UI change may
+turn a Clerk login or an API-key presence check into authorization to spend a
+generation call.
