@@ -71,7 +71,8 @@ EXPECTED_TABLE_COLUMNS = {
     "manager_profiles": ["owner_id", "roster_id", "display_name", "team_name", "seasons_covered", "roster_ids_by_season", "team_names_by_season", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
-    "manager_event_log": ["event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
+    "manager_event_log": ["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
+    "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "source_trace", "evidence"],
     "team_needs_matrix": ["roster_id", "team_name", "qb_count", "rb_count", "wr_count", "te_count", "pass_catcher_count", "future_firsts_owned", "need_qb", "need_rb", "need_pass_catcher", "need_picks", "team_shape"],
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
     "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
@@ -1195,6 +1196,59 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(row["faab_spent_on_waivers"], 33)
         self.assertIn("2025", row["seasons_covered"])
         self.assertIn("2026", row["seasons_covered"])
+
+    def test_manager_season_history_preserves_activity_grain_and_identity(self) -> None:
+        """Encodes docs/data_contract.md and docs/front_office_research.md's historical-dossier rule."""
+        from src.manager_profiles import build_manager_season_history
+
+        teams = pd.DataFrame(
+            [
+                {"season": "2025", "roster_id": 7, "owner_id": "owner-a", "team_name": "Old Name"},
+                {"season": "2026", "roster_id": 2, "owner_id": "owner-a", "team_name": "New Name"},
+                {"season": "2025", "roster_id": 8, "owner_id": "owner-b", "team_name": "Other"},
+            ]
+        )
+        trades = pd.DataFrame(
+            [
+                {
+                    "season": "2025",
+                    "team_a_roster_id": 7,
+                    "team_a_name": "Old Name",
+                    "team_a_players_received": "Young WR",
+                    "team_a_picks_received": "2026 R1 original roster 2",
+                    "team_b_roster_id": 8,
+                    "team_b_name": "Other",
+                    "team_b_players_received": "Veteran RB",
+                    "team_b_picks_received": "",
+                }
+            ]
+        )
+        waivers = pd.DataFrame(
+            [{"season": "2025", "roster_id": 7, "team_name": "Old Name", "player_added": "Depth WR", "waiver_bid": 11}]
+        )
+        roster_players = pd.DataFrame(
+            [
+                {"season": "2025", "roster_id": 7, "position": "WR"},
+                {"season": "2025", "roster_id": 7, "position": "RB"},
+                {"season": "2026", "roster_id": 2, "position": "QB"},
+            ]
+        )
+
+        history = build_manager_season_history(teams, trades, waivers, roster_players)
+        old = history[(history["owner_id"] == "owner-a") & (history["season"].astype(str) == "2025")].iloc[0]
+        quiet = history[(history["owner_id"] == "owner-a") & (history["season"].astype(str) == "2026")].iloc[0]
+
+        self.assertEqual(old["roster_id"], 7)
+        self.assertEqual(old["trades"], 1)
+        self.assertEqual(old["waiver_claims"], 1)
+        self.assertEqual(old["faab_spent"], 11)
+        self.assertEqual(old["transaction_count"], 2)
+        self.assertEqual(old["roster_player_count"], 2)
+        self.assertIn("Other:1", old["trade_partners"])
+        self.assertIn("Young WR", old["players_acquired"])
+        self.assertEqual(quiet["roster_id"], 2)
+        self.assertEqual(quiet["transaction_count"], 0)
+        self.assertIn("roster_id=2", quiet["evidence"])
 
     def test_profile_intelligence_builds_manager_cycle_and_player_tags(self) -> None:
         manager_profiles = pd.DataFrame(
@@ -2534,7 +2588,7 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"owner_id": "u2", "roster_id": 2, "team_name": "Melkor Lord of Light", "asset_type": "pick", "position_group": "PICK", "preference_score": 20, "evidence_count": 1, "recency_weighted_score": 20, "confidence": "low", "label": "low-signal manager", "evidence": "test"}]
         ).to_csv(processed / "manager_valuation_profiles.csv", index=False)
-        pd.DataFrame(columns=["event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"]).to_csv(
+        pd.DataFrame(columns=["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"]).to_csv(
             processed / "manager_event_log.csv", index=False
         )
         pd.DataFrame(

@@ -578,3 +578,20 @@ the row type for both. The browser can therefore distinguish an exact evidence
 anchor from a source trace even before the protected Luna run is available.
 The next writer run can replace the interpretation while retaining this same
 evidence identity seam.
+
+## 2026-08-25 manager-season depth checkpoint
+
+Manager dossiers now consume a deterministic `manager_season_history` ledger
+rather than relying on career totals and historical-name strings. The ledger
+preserves one row per historical manager roster, including quiet seasons,
+trade and waiver activity, FAAB, assets moved, trade partners, roster shape,
+exact roster identity, evidence, and source trace. The manager entry path now
+renders that history alongside the existing cycle estimate and two-sided trade
+packet.
+
+The browser builder also derives the ledger from preserved canonical tables on
+a source-only deployment when the newly introduced CSV is not present. An
+adversarial shell-rebuild test proves that this migration does not change the
+bundle on a second rebuild. This closes one important “metrics list versus
+dossier” gap; it does not yet claim that manager intent is known or that the
+Trade Desk has a guaranteed response model.

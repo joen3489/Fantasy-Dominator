@@ -8,6 +8,167 @@ import pandas as pd
 from .utils import join_items
 
 
+MANAGER_SEASON_HISTORY_COLUMNS = [
+    "owner_id",
+    "season",
+    "roster_id",
+    "team_name",
+    "trades",
+    "waiver_claims",
+    "faab_spent",
+    "transaction_count",
+    "players_acquired",
+    "players_sold",
+    "picks_acquired",
+    "picks_sold",
+    "trade_partners",
+    "roster_player_count",
+    "qb_count",
+    "rb_count",
+    "pass_catcher_count",
+    "source_trace",
+    "evidence",
+]
+
+
+def build_manager_season_history(
+    teams_df: pd.DataFrame,
+    trades_df: pd.DataFrame,
+    waivers_df: pd.DataFrame,
+    roster_players_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build an auditable manager-by-season activity ledger.
+
+    ``manager_profiles`` is intentionally a cross-season summary. This table
+    preserves the per-season grain needed to tell whether a tendency is recent
+    or merely accumulated over a long league history. It uses Sleeper roster
+    IDs for identity and keeps team names as labels only.
+    """
+
+    states: dict[tuple[str, int], dict[str, Any]] = {}
+
+    def ensure_state(season: Any, roster_id: Any, team_name: Any = "", owner_id: Any = "") -> dict[str, Any] | None:
+        season_key = str(season or "").strip()
+        roster_key = _int(roster_id)
+        if not season_key or not roster_key:
+            return None
+        key = (season_key, roster_key)
+        if key not in states:
+            states[key] = {
+                "owner_id": str(owner_id or ""),
+                "season": season_key,
+                "roster_id": roster_key,
+                "team_name": str(team_name or ""),
+                "trades": 0,
+                "waiver_claims": 0,
+                "faab_spent": 0.0,
+                "transaction_count": 0,
+                "players_acquired": [],
+                "players_sold": [],
+                "picks_acquired": [],
+                "picks_sold": [],
+                "trade_partners": Counter(),
+                "roster_player_count": 0,
+                "qb_count": 0,
+                "rb_count": 0,
+                "pass_catcher_count": 0,
+            }
+        state = states[key]
+        if not state["team_name"] and str(team_name or ""):
+            state["team_name"] = str(team_name)
+        if not state["owner_id"] and str(owner_id or ""):
+            state["owner_id"] = str(owner_id)
+        return state
+
+    # Seed every historical roster identity, including quiet seasons with no
+    # transactions. This prevents absence of activity from looking like absent
+    # history and gives the dossier a complete denominator.
+    for _, team in teams_df.fillna("").iterrows():
+        ensure_state(team.get("season"), team.get("roster_id"), team.get("team_name"), team.get("owner_id"))
+
+    for _, trade in trades_df.fillna("").iterrows():
+        season = trade.get("season")
+        for side, other_side in (("a", "b"), ("b", "a")):
+            state = ensure_state(
+                season,
+                trade.get(f"team_{side}_roster_id"),
+                trade.get(f"team_{side}_name"),
+            )
+            if state is None:
+                continue
+            state["trades"] += 1
+            state["transaction_count"] += 1
+            partner = str(trade.get(f"team_{other_side}_name") or "").strip()
+            if partner:
+                state["trade_partners"][partner] += 1
+            state["players_acquired"].extend(_split_items(trade.get(f"team_{side}_players_received")))
+            state["players_sold"].extend(_split_items(trade.get(f"team_{other_side}_players_received")))
+            state["picks_acquired"].extend(_split_items(trade.get(f"team_{side}_picks_received")))
+            state["picks_sold"].extend(_split_items(trade.get(f"team_{other_side}_picks_received")))
+
+    for _, waiver in waivers_df.fillna("").iterrows():
+        state = ensure_state(waiver.get("season"), waiver.get("roster_id"), waiver.get("team_name"))
+        if state is None:
+            continue
+        state["waiver_claims"] += 1
+        state["transaction_count"] += 1
+        state["faab_spent"] += _numeric(waiver.get("waiver_bid"))
+        added = str(waiver.get("player_added") or "").strip()
+        dropped = str(waiver.get("player_dropped") or "").strip()
+        if added:
+            state["players_acquired"].append(added)
+        if dropped:
+            state["players_sold"].append(dropped)
+
+    for _, player in roster_players_df.fillna("").iterrows():
+        state = ensure_state(player.get("season"), player.get("roster_id"), player.get("team_name"), player.get("owner_id"))
+        if state is None:
+            continue
+        state["roster_player_count"] += 1
+        position = str(player.get("position") or "").upper()
+        if position == "QB":
+            state["qb_count"] += 1
+        elif position == "RB":
+            state["rb_count"] += 1
+        elif position in {"WR", "TE"}:
+            state["pass_catcher_count"] += 1
+
+    rows: list[dict[str, Any]] = []
+    for state in sorted(states.values(), key=lambda value: (_numeric(value["season"]), value["roster_id"])):
+        partners = "; ".join(
+            f"{name}:{count}" for name, count in state["trade_partners"].most_common(8)
+        )
+        evidence = (
+            f"season={state['season']}; roster_id={state['roster_id']}; trades={state['trades']}; "
+            f"waiver_claims={state['waiver_claims']}; faab_spent={round(state['faab_spent'], 2)}; "
+            f"roster_players={state['roster_player_count']}"
+        )
+        rows.append(
+            {
+                "owner_id": _identifier_value(state["owner_id"]),
+                "season": _identifier_value(state["season"]),
+                "roster_id": state["roster_id"],
+                "team_name": state["team_name"],
+                "trades": state["trades"],
+                "waiver_claims": state["waiver_claims"],
+                "faab_spent": round(state["faab_spent"], 2),
+                "transaction_count": state["transaction_count"],
+                "players_acquired": join_items(dict.fromkeys(state["players_acquired"])),
+                "players_sold": join_items(dict.fromkeys(state["players_sold"])),
+                "picks_acquired": join_items(dict.fromkeys(state["picks_acquired"])),
+                "picks_sold": join_items(dict.fromkeys(state["picks_sold"])),
+                "trade_partners": partners,
+                "roster_player_count": state["roster_player_count"],
+                "qb_count": state["qb_count"],
+                "rb_count": state["rb_count"],
+                "pass_catcher_count": state["pass_catcher_count"],
+                "source_trace": "teams;trades;waivers;roster_players",
+                "evidence": evidence,
+            }
+        )
+    return pd.DataFrame(rows, columns=MANAGER_SEASON_HISTORY_COLUMNS)
+
+
 def build_manager_profiles(
     teams_df: pd.DataFrame,
     trades_df: pd.DataFrame,
@@ -153,6 +314,28 @@ def _split_items(value: Any) -> list[str]:
     if value is None or pd.isna(value) or value == "":
         return []
     return [part.strip() for part in str(value).split(";") if part.strip()]
+
+
+def _numeric(value: Any) -> float:
+    try:
+        if value in ("", None) or pd.isna(value):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _identifier_value(value: Any) -> Any:
+    """Keep numeric Sleeper IDs stable across CSV, JSON, and shell rebuilds."""
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        number = int(text)
+    except (TypeError, ValueError):
+        return text
+    return number if str(number) == text else text
 
 
 def _indicator(qb_count: int, rb_count: int, pass_catcher_count: int, firsts_in: int, firsts_out: int) -> str:

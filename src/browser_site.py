@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
-from .analysis import upgrade_deterministic_article_receipts
+from .analysis import build_manager_dossier_items, upgrade_deterministic_article_receipts
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
 from .media_assets import build_media_manifest, materialize_media_assets, media_manifest_json
+from .manager_profiles import build_manager_season_history
 from .personas import reporter_lineup
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
@@ -76,6 +77,7 @@ def build_browser_site(
         "player_profile_tags": _records(processed_dir / "player_profile_tags.csv"),
         "player_opportunity_scores": _records(processed_dir / "player_opportunity_scores.csv"),
     }
+    tables["manager_season_history"] = _manager_season_history_records(processed_dir, tables)
     config = dict(config) if config is not None else load_config()
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     context = config.get("context") if isinstance(config, Mapping) and isinstance(config.get("context"), Mapping) else {}
@@ -96,6 +98,7 @@ def build_browser_site(
     if str(configured_name or "").strip():
         my_team_name = str(configured_name).strip()
     analysis = _analysis_artifacts(analysis_dir)
+    analysis = _upgrade_manager_dossier_payload(analysis, tables)
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
         analysis,
@@ -141,17 +144,20 @@ def rebuild_browser_shell(
         or app_payload.get("writerPreferences")
         or {}
     )
+    tables = app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {}
+    tables["manager_season_history"] = _manager_season_history_records(output_dir / "processed", tables)
     analysis = dict(app_payload.get("analysis") or {}) if isinstance(app_payload.get("analysis"), dict) else {}
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
         analysis,
-        app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {},
+        tables,
         my_roster_id,
         my_team_name,
         writer_preferences,
     )
+    analysis = _upgrade_manager_dossier_payload(analysis, tables)
     app_payload["analysis"] = analysis
-    tables = app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {}
+    app_payload["tables"] = tables
     shell_config = dict(config or {})
     shell_config.setdefault("current_season", app_payload.get("currentSeason") or "")
     shell_config.setdefault("current_team", {"team_name": my_team_name, "roster_id": my_roster_id})
@@ -315,6 +321,68 @@ def _records(path: Path, safe_cache_paths: bool = False) -> list[dict[str, Any]]
         for row in records:
             row["cache_path"] = _safe_cache_path(row.get("cache_path"))
     return records
+
+
+def _manager_season_history_records(
+    processed_dir: Path,
+    tables: Mapping[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Load or deterministically derive the historical manager ledger.
+
+    A source-only deploy may have preserved the canonical CSVs from before
+    this table existed. Deriving the ledger from preserved Sleeper tables keeps
+    the new dossier entry path available without refreshing facts or invoking
+    an LLM.
+    """
+
+    path = processed_dir / "manager_season_history.csv"
+    if path.exists():
+        return _records(path)
+    frames = {
+        name: pd.DataFrame(rows)
+        for name, rows in tables.items()
+        if name in {"teams", "trades", "waivers", "roster_players"}
+    }
+    history = build_manager_season_history(
+        frames.get("teams", pd.DataFrame()),
+        frames.get("trades", pd.DataFrame()),
+        frames.get("waivers", pd.DataFrame()),
+        frames.get("roster_players", pd.DataFrame()),
+    )
+    return history.to_dict(orient="records")
+
+
+def _upgrade_manager_dossier_payload(
+    analysis: dict[str, Any],
+    tables: Mapping[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Attach the current deterministic season ledger to durable dossiers.
+
+    Dossier markdown/JSON can outlive the processed CSV intermediates on the
+    durable volume. Rebuilding this deterministic envelope at shell time keeps
+    a source-only deploy from serving a shallow historical view, while leaving
+    any expensive writer workflow untouched.
+    """
+
+    if not isinstance(analysis, dict) or not analysis.get("managerDossierItems"):
+        return analysis
+    required = {"manager_profiles", "manager_cycle_profiles"}
+    if not required.issubset(tables):
+        return analysis
+    frames = {name: pd.DataFrame(rows) for name, rows in tables.items()}
+    refresh_rows = frames.get("refresh_metadata", pd.DataFrame()).to_dict(orient="records")
+    generated_at = str(refresh_rows[0].get("generated_at") or "browser-shell-migration") if refresh_rows else "browser-shell-migration"
+    try:
+        rebuilt = build_manager_dossier_items(
+            frames,
+            generated_at,
+            previous_items=analysis.get("managerDossierItems") or [],
+        )
+    except (KeyError, TypeError, ValueError):
+        return analysis
+    if rebuilt:
+        analysis["managerDossierItems"] = rebuilt
+    return analysis
 
 
 def _safe_cache_path(value: Any) -> str:
@@ -1650,7 +1718,7 @@ def _page(
       [
         'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers',
         'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'market_value_sources', 'market_consensus_values',
-        'player_market_values', 'pick_market_values', 'team_asset_inventory', 'manager_event_log', 'team_needs_matrix', 'manager_behavior_signals',
+        'player_market_values', 'pick_market_values', 'team_asset_inventory', 'manager_event_log', 'manager_season_history', 'team_needs_matrix', 'manager_behavior_signals',
         'manager_valuation_profiles', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'source_freshness', 'news_events',
         'player_news_matches', 'league_news_impact', 'news_source_freshness', 'player_projection_season',
         'player_projection_weekly', 'projection_source_freshness', 'player_signal_scores', 'breakout_candidates',
@@ -3244,7 +3312,7 @@ def _page(
           ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
           ${{entityTile('Future 1sts Owned', picks.length)}}
         </div>
-          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence">${{escapeHtml(String(row.season))}} · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} observed trades</p>`).join('')}}</div></details>` : ''}}${{tradeFits.length ? `<details class="evidence-drawer"><summary>Potential trade fits</summary><div class="brief-list">${{tradeFits.map((row, index) => briefCard({{ title: row.player_name || 'Unknown player', category: categoryFor('edge_type', row.edge_type), rank: index + 1, chips: [row.position, row.edge_type, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.confidence ? `confidence ${{row.confidence}}` : ''], summary: row.risk || 'Conversation hypothesis; verify the price.', evidence: row.evidence || 'No evidence supplied.' }})).join('')}}</div></details>` : ''}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
+          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers · ${{escapeHtml(String(row.faab_spent || 0))}} FAAB · ${{escapeHtml(String(row.roster_player_count || 0))}} roster players${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}</p>`).join('')}}</div></details>` : ''}}${{tradeFits.length ? `<details class="evidence-drawer"><summary>Potential trade fits</summary><div class="brief-list">${{tradeFits.map((row, index) => briefCard({{ title: row.player_name || 'Unknown player', category: categoryFor('edge_type', row.edge_type), rank: index + 1, chips: [row.position, row.edge_type, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.confidence ? `confidence ${{row.confidence}}` : ''], summary: row.risk || 'Conversation hypothesis; verify the price.', evidence: row.evidence || 'No evidence supplied.' }})).join('')}}</div></details>` : ''}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
         ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
         ${{tradePacket}}
         ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{

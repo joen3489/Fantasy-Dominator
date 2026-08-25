@@ -420,3 +420,21 @@ payload, and source receipt; the visible drawer separated the absence of
 article-level evidence IDs from the underlying source IDs and linked back to
 the Data Room. This is the required proof that a green health endpoint and a
 new shell revision did not leave the reader on stale or uninspectable content.
+
+## 2026-08-25 - Manager dossiers need a season ledger, not career totals
+
+The first manager dossier surface exposed useful cycle labels and trade edges,
+but its season history was effectively a list of aliases plus trade counts.
+That was not enough to distinguish a recent tendency from a six-season career
+total. The deterministic layer now emits `manager_season_history`, keyed by
+historical `season` and exact `roster_id`, with trades, waiver claims, FAAB,
+assets moved, trade partners, roster shape, evidence, and source trace. Quiet
+seasons remain represented so missing activity is not mistaken for missing
+history.
+
+The browser consumes the same ledger in manager dossiers and renders it through
+the existing team entry path. Source-only shell rebuilds derive the table from
+preserved canonical tables when the new CSV is absent, and the migration is
+type-normalized and idempotent. This is the pattern for future depth: add a
+reusable deterministic evidence object first, then let dossiers, articles, and
+the Data Room consume it without duplicating facts.

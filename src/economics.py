@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from .manager_profiles import build_manager_season_history
+
 
 PASS_CATCHERS = {"WR", "TE"}
 
@@ -22,6 +24,7 @@ def build_economic_tables(
 ) -> dict[str, pd.DataFrame]:
     inventory = build_team_asset_inventory(roster_players_df, pick_ownership_df, player_market_values_df, pick_market_values_df, config)
     event_log = build_manager_event_log(teams_df, trades_df, waivers_df)
+    season_history = build_manager_season_history(teams_df, trades_df, waivers_df, roster_players_df)
     needs = build_team_needs_matrix(teams_df, roster_players_df, pick_ownership_df)
     behavior = build_manager_behavior_signals(teams_df, trades_df, waivers_df, manager_profiles_df, roster_players_df)
     valuation_profiles = build_manager_valuation_profiles(teams_df, manager_profiles_df, roster_players_df)
@@ -31,6 +34,7 @@ def build_economic_tables(
     return {
         "team_asset_inventory": inventory,
         "manager_event_log": event_log,
+        "manager_season_history": season_history,
         "team_needs_matrix": needs,
         "manager_behavior_signals": behavior,
         "manager_valuation_profiles": valuation_profiles,
@@ -50,6 +54,7 @@ def build_manager_event_log(teams_df: pd.DataFrame, trades_df: pd.DataFrame, wai
             other_side = "b" if side == "a" else "a"
             rows.append(
                 {
+                    "season": trade.get("season", ""),
                     "event_type": "trade",
                     "week": trade.get("week", ""),
                     "created_datetime": trade.get("created_datetime", ""),
@@ -71,6 +76,7 @@ def build_manager_event_log(teams_df: pd.DataFrame, trades_df: pd.DataFrame, wai
         roster_id = _int(waiver.get("roster_id"))
         rows.append(
             {
+                "season": waiver.get("season", ""),
                 "event_type": "waiver",
                 "week": waiver.get("week", ""),
                 "created_datetime": "",
@@ -423,6 +429,7 @@ def _inventory_columns() -> list[str]:
 
 def _manager_event_columns() -> list[str]:
     return [
+        "season",
         "event_type",
         "week",
         "created_datetime",

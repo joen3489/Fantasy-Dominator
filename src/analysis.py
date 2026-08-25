@@ -101,7 +101,13 @@ def build_analysis_artifacts(
         ),
         "manager_intel": (
             manager_dossier_items[:14],
-            ["manager_dossiers", "manager_profiles", "manager_event_log", "manager_cycle_profiles"],
+            [
+                "manager_dossiers",
+                "manager_profiles",
+                "manager_event_log",
+                "manager_season_history",
+                "manager_cycle_profiles",
+            ],
         ),
     }
     article_filenames = {
@@ -268,7 +274,13 @@ def upgrade_deterministic_article_receipts(
         ),
         "manager_intel": (
             analysis_rows["manager_dossiers"][:14],
-            ["manager_dossiers", "manager_profiles", "manager_event_log", "manager_cycle_profiles"],
+            [
+                "manager_dossiers",
+                "manager_profiles",
+                "manager_event_log",
+                "manager_season_history",
+                "manager_cycle_profiles",
+            ],
             "managerIntel",
             "manager_intel.md",
         ),
@@ -864,7 +876,7 @@ def build_manager_dossiers(dataframes: dict[str, pd.DataFrame], generated_at: st
             {
                 "artifact_type": "manager_dossiers",
                 "generated_at": generated_at,
-                "source_tables": "manager_behavior_signals, manager_event_log, manager_profiles",
+                "source_tables": "manager_behavior_signals, manager_event_log, manager_season_history, manager_profiles",
                 "manager_count": len(managers),
             }
         ),
@@ -1044,6 +1056,7 @@ def build_manager_dossier_items(
     needs = _rows(dataframes.get("team_needs_matrix", pd.DataFrame()))
     valuation_profiles = _rows(dataframes.get("manager_valuation_profiles", pd.DataFrame()))
     counterparty_edges = _rows(dataframes.get("counterparty_trade_edges", pd.DataFrame()))
+    season_history_rows = _rows(dataframes.get("manager_season_history", pd.DataFrame()))
     tags_by_id: dict[str, list[dict[str, Any]]] = {}
     for tag in tags:
         tags_by_id.setdefault(str(tag.get("entity_id", "")), []).append(tag)
@@ -1062,6 +1075,7 @@ def build_manager_dossier_items(
         tag_text = ", ".join(str(tag.get("tag", "")) for tag in selected_tags if tag.get("tag"))
         evidence = str(cycle.get("evidence", ""))
         manager_events = [row for row in events if str(row.get("roster_id")) == roster_id]
+        manager_seasons = [row for row in season_history_rows if str(row.get("roster_id")) == roster_id]
         manager_assets = [row for row in inventory if str(row.get("roster_id")) == roster_id]
         manager_needs = needs_by_id.get(roster_id, {})
         manager_preferences = [row for row in valuation_profiles if str(row.get("roster_id")) == roster_id]
@@ -1072,6 +1086,7 @@ def build_manager_dossier_items(
                 "profile": profile,
                 "tags": selected_tags,
                 "events": manager_events,
+                "season_history": manager_seasons,
                 "assets": manager_assets,
                 "needs": manager_needs,
                 "preferences": manager_preferences,
@@ -1087,6 +1102,9 @@ def build_manager_dossier_items(
             "trades": _int(profile.get("total_trades")),
             "waiver_claims": _int(profile.get("number_of_waiver_claims")),
             "observed_events": len(manager_events),
+            "seasons_with_activity": sum(
+                1 for row in manager_seasons if _int(row.get("transaction_count")) > 0
+            ),
         }
         roster_construction = {
             "team_shape": manager_needs.get("team_shape", ""),
@@ -1098,6 +1116,11 @@ def build_manager_dossier_items(
             "market_value_total": round(sum(_num(row.get("market_value")) for row in manager_assets), 2),
         }
         historical_aliases = _season_history(profile)
+        # The alias parser is a compatibility fallback for older generated
+        # artifacts. New dossiers carry the full deterministic season ledger;
+        # this is what lets the UI distinguish recent behavior from a career
+        # total instead of implying that every year looked the same.
+        season_history = manager_seasons or historical_aliases
         repeated_behavior = {
             "players_acquired": _split_values(profile.get("players_acquired"), 12),
             "players_sold": _split_values(profile.get("players_sold"), 12),
@@ -1137,11 +1160,11 @@ def build_manager_dossier_items(
                 "evidence": evidence,
                 "risk": risk,
                 "confidence": cycle.get("confidence", "low"),
-                "source_trace": "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log",
+                "source_trace": "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log;manager_season_history",
                 "sample_size": sample_size,
                 "roster_construction": roster_construction,
                 "historical_aliases": historical_aliases,
-                "season_history": historical_aliases,
+                "season_history": season_history,
                 "repeated_behavior": repeated_behavior,
                 "behavior_observations": behavior_observations,
                 "trade_fits": trade_fits,
