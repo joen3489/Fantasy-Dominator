@@ -752,6 +752,12 @@ uncorroborated. This makes the cross-season comparison useful at the candidate
 level while preserving the boundary that historical preference is not intent
 or a predicted response.
 
+The authenticated production check after revision
+`2c8d2a6de187a8db50b8c472d2c6df93d4eb12bd` expanded Moose Caboose's
+cross-season drawer and showed the live split of three directly aligned fits
+and three with no direct historical lane. The six manager-fit payloads
+retained their exact keys and candidate-level evidence.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

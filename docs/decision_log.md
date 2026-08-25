@@ -763,3 +763,8 @@ unrelated candidate look supported. Each current fit now carries its own
 aligned or `no_direct_lane` comparison, lane evidence, sample count,
 confidence, and source trace. This improves the decision packet without
 turning historical preference into intent.
+
+The authenticated production reader at revision
+`2c8d2a6de187a8db50b8c472d2c6df93d4eb12bd` showed the candidate-level result
+for Moose Caboose: three aligned fits and three `no_direct_lane` fits, with
+the manager-fit keys and evidence intact.

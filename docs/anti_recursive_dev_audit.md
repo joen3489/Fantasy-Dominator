@@ -258,3 +258,6 @@ it was not. The structured evaluation now emits one alignment row per fit and
 fails to a visible `no_direct_lane` state when no matching historical lane
 exists. The adversarial analysis test covers the aligned case; future fixtures
 must cover the no-lane case rather than weakening the label.
+The production browser proof at `2c8d2a6de187a8db50b8c472d2c6df93d4eb12bd`
+showed both states in the live manager dossier: three aligned and three with
+no direct lane.
