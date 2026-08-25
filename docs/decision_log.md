@@ -674,3 +674,19 @@ the Data Room renders its coverage, identity methods, trade-direction balance,
 and bounded contract warnings. The receipt is derived from the displayed rows;
 it is not a second manually maintained status. A `partial` or `contract_error`
 state remains visible so presentation cannot overstate historical depth.
+
+## 2026-08-25 - Make saved strategy affect the My Team read
+
+The My Team page had a strategy panel that repeated profile metadata while
+explicitly saying value tags were planned. That was a shallow presentation
+seam: the deterministic pipeline already produced `team_needs_matrix`,
+`team_fit_scores`, and `action_recommendations`, but the reader did not join
+them to the active roster. The browser now uses exact `roster_id` and
+`player_id` joins to show team shape, need lanes, fit coverage, action mix,
+and the top aligned roster evidence; the roster table exposes the same fit,
+action, timeline, and liquidity fields.
+
+No new score or LLM call was added. This slice makes existing deterministic
+evidence legible and fails closed to `not_scored` when a player fit row is
+missing. The old planned-overlay copy is covered by a browser entry-path
+contract test.

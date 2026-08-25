@@ -1288,7 +1288,7 @@ def _page(
         <label>Position<select id="position-filter"></select></label>
         <label>Status<select id="status-filter"></select></label>
       </div>
-      <p class="note">Value tags are planned as a strategy overlay. For now this board uses Sleeper roster/player data only.</p>
+      <p class="note">Strategy tags are deterministic evidence labels from the selected roster's fit, need, liquidity, and action rows. Open a player dossier or the Data Room to inspect the underlying evidence.</p>
       <div id="roster-table"></div>
     </div>
     </section>
@@ -1635,7 +1635,7 @@ def _page(
       'News Heat Check': {{ market: 20, projection: 15, manager: 15, timeline: 10, news: 40 }}
     }};
 
-    const rosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'years_exp'];
+    const strategyRosterColumns = ['player_name', 'position', 'nfl_team', 'roster_status', 'age', 'strategy_fit', 'strategy_action', {{ field: 'timeline_fit_score', kind: 'score' }}, {{ field: 'liquidity_fit_score', kind: 'score' }}];
     const managerColumns = ['team_name', 'owner_id', 'seasons_covered', 'roster_ids_by_season', 'total_trades', 'future_1sts_acquired', 'future_1sts_sold', 'faab_spent_on_waivers', 'number_of_waiver_claims', 'contender_rebuilder_indicator'];
     const pickColumns = ['pick_season', 'round', 'original_team', 'current_owner', 'previous_owner', 'is_my_original_pick', 'i_currently_own_it'];
     const tradeColumns = ['week', 'created_datetime', 'team_a_name', 'team_a_players_received', 'team_a_picks_received', 'team_a_faab_received', 'team_b_name', 'team_b_players_received', 'team_b_picks_received', 'team_b_faab_received'];
@@ -2165,12 +2165,12 @@ def _page(
       document.getElementById('my-pick-alerts').innerHTML = list(myPicksAway.map(row => `${{row.pick_season}} round ${{row.round}}: ${{row.current_owner}}`));
       document.getElementById('today-priority-board').innerHTML = priorityCards(priorityRows);
       document.getElementById('team-overview-panel').innerHTML = teamOverview(activeTeam, allTeamRoster, teamTrades);
-      document.getElementById('strategy-panel').innerHTML = strategyOverlay();
+      document.getElementById('strategy-panel').innerHTML = strategyOverlay(activeTeam, allTeamRoster);
       document.getElementById('likely-traders').innerHTML = table(
         applySearch(tables.manager_profiles.slice().sort((a, b) => Number(b.total_trades) - Number(a.total_trades)).slice(0, 8)),
         managerColumns
       );
-      document.getElementById('roster-table').innerHTML = table(sortRows(roster, ['position', 'player_name']), rosterColumns);
+      document.getElementById('roster-table').innerHTML = table(sortRows(strategyRosterRows(roster), ['position', 'player_name']), strategyRosterColumns);
       document.getElementById('active-manager-profile').innerHTML = table(
         tables.manager_behavior_signals.filter(row => Number(row.roster_id) === state.teamId),
         managerSignalColumns
@@ -2600,15 +2600,75 @@ def _page(
       }}], ['team_name', 'manager', 'roster_id', 'rostered_players', 'picks_owned', 'original_picks_elsewhere', 'mapped_trades']);
     }}
 
-    function strategyOverlay() {{
+    function strategyRosterRows(rows) {{
+      const playerIds = new Set((rows || []).map(row => String(row.player_id || '')));
+      const fitRows = (tables.team_fit_scores || []).filter(row => Number(row.roster_id) === state.teamId && playerIds.has(String(row.player_id || '')));
+      const actionRows = (tables.action_recommendations || []).filter(row => Number(row.roster_id) === state.teamId && playerIds.has(String(row.player_id || '')));
+      const fitByPlayer = new Map(fitRows.map(row => [String(row.player_id || ''), row]));
+      const actionByPlayer = new Map(actionRows.map(row => [String(row.player_id || ''), row]));
+      return (rows || []).map(player => {{
+        const fit = fitByPlayer.get(String(player.player_id || '')) || {{}};
+        const action = actionByPlayer.get(String(player.player_id || '')) || {{}};
+        return {{
+          ...player,
+          strategy_fit: fit.fit_label || 'not_scored',
+          strategy_action: action.consumer_label || 'Monitor',
+          timeline_fit_score: fit.timeline_fit_score ?? '',
+          liquidity_fit_score: fit.liquidity_fit_score ?? ''
+        }};
+      }});
+    }}
+
+    function strategyOverlay(activeTeam, allTeamRoster) {{
       const profile = app.strategyProfile || {{}};
       const tracked = app.trackedPicks || [];
-      return list([
-        `Profile: ${{profile.name || 'Generic Sleeper team analysis'}}`,
-        `Direction: ${{profile.team_direction || 'not configured'}}`,
-        `Window: ${{profile.contention_window || 'not configured'}}`,
-        `Tracked picks: ${{tracked.length}}`
-      ]);
+      const rosterIds = new Set((allTeamRoster || []).map(row => String(row.player_id || '')));
+      const fits = (tables.team_fit_scores || []).filter(row => Number(row.roster_id) === state.teamId && rosterIds.has(String(row.player_id || '')));
+      const actions = (tables.action_recommendations || []).filter(row => Number(row.roster_id) === state.teamId && rosterIds.has(String(row.player_id || '')));
+      const needs = findRow(tables.team_needs_matrix, 'roster_id', state.teamId);
+      const fitCounts = fits.reduce((counts, row) => {{
+        const key = row.fit_label || 'not_scored';
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }}, {{}});
+      const actionCounts = actions.reduce((counts, row) => {{
+        const key = row.consumer_label || 'Monitor';
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }}, {{}});
+      const fitSummary = Object.entries(fitCounts)
+        .sort((left, right) => right[1] - left[1])
+        .map(([key, count]) => `${{label(key)}}: ${{count}}`)
+        .join(' · ') || 'No roster fit rows available';
+      const actionSummary = Object.entries(actionCounts)
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 4)
+        .map(([key, count]) => `${{key}}: ${{count}}`)
+        .join(' · ') || 'No roster action rows available';
+      const needSummary = [
+        `QB ${{needs.need_qb || 'unknown'}}`,
+        `RB ${{needs.need_rb || 'unknown'}}`,
+        `pass catchers ${{needs.need_pass_catcher || 'unknown'}}`,
+        `picks ${{needs.need_picks || 'unknown'}}`
+      ].join(' · ');
+      const topFits = fits.slice().sort((left, right) => (
+        (Number(right.timeline_fit_score) + Number(right.need_fit_score) + Number(right.liquidity_fit_score)) -
+        (Number(left.timeline_fit_score) + Number(left.need_fit_score) + Number(left.liquidity_fit_score))
+      )).slice(0, 3);
+      const topFitText = topFits.map(row => `${{row.player_name || 'unnamed player'}} · ${{label(row.fit_label || 'not scored')}} (timeline ${{row.timeline_fit_score ?? 'n/a'}}, need ${{row.need_fit_score ?? 'n/a'}}, liquidity ${{row.liquidity_fit_score ?? 'n/a'}})`).join('; ');
+      const profileName = profile.name || 'Generic Sleeper team analysis';
+      const direction = profile.team_direction || 'not configured';
+      const window = profile.contention_window || 'not configured';
+      return `<div class="strategy-overlay">
+        <h4>Strategy alignment</h4>
+        <div class="tile-row">${{entityTile('Profile', profileName)}}${{entityTile('Team shape', needs.team_shape || 'unknown')}}${{entityTile('Fit rows', fits.length)}}${{entityTile('Tracked picks', tracked.length)}}</div>
+        <p class="brief-card-evidence"><strong>Decision lens:</strong> ${{escapeHtml(label(direction))}} · <strong>Window:</strong> ${{escapeHtml(label(window))}}.</p>
+        <p class="brief-card-evidence"><strong>Roster needs:</strong> ${{escapeHtml(needSummary)}}.</p>
+        <p class="brief-card-evidence"><strong>Strategy fit:</strong> ${{escapeHtml(fitSummary)}}.</p>
+        <p class="brief-card-evidence"><strong>Current action mix:</strong> ${{escapeHtml(actionSummary)}}.</p>
+        ${{topFitText ? `<details class="evidence-drawer"><summary>Top aligned roster evidence</summary><p class="note">${{escapeHtml(topFitText)}}</p></details>` : '<p class="note">No exact roster fit rows are available for this strategy view.</p>'}}
+        <p class="note">These are deterministic fit and action labels for the selected roster. They are decision support, not a prediction of a trade or outcome.</p>
+      </div>`;
     }}
 
     function renderDataRoomQuestions() {{

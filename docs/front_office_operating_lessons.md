@@ -147,6 +147,13 @@ Before adding a feature or “cleaning up” an old artifact:
     is not enough if the selected shell or payload is older than the current
     reader contract.
 
+17. **A configured strategy must change the decision surface.** A saved
+    strategy profile is not useful if the UI only repeats its name and
+    direction. Join the exact active roster to deterministic fit, need,
+    liquidity, and action rows; show the resulting alignment and evidence.
+    Missing joins must say `not_scored`, never be filled with a generic value
+    tag or a name-based match.
+
 ## Current open boundary
 
 The durable-bundle migration and semantic-reader gates are closed for the
@@ -227,3 +234,13 @@ Room now renders `dataQuality.player_history_identity` from the exact history
 rows in the bundle. Freshness, join coverage, identity method, and trade
 direction balance are separate facts. A partial or contract-error receipt must
 remain visible instead of being converted into a reassuring green badge.
+
+## 2026-08-25 strategy overlay entry-path slice
+
+The My Team surface now joins the exact active roster to deterministic
+`team_needs_matrix`, `team_fit_scores`, and `action_recommendations` rows. It
+shows team shape, need lanes, fit coverage, action mix, and top aligned roster
+evidence; the roster table carries the same fit, action, timeline, and
+liquidity fields. Missing joins remain `not_scored`. A configured strategy is
+not complete until it changes the decision surface, not merely the profile
+label.

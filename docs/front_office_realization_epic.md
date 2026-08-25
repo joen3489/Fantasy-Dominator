@@ -792,3 +792,18 @@ the receipt from the same history rows the reader displays. Legacy or malformed
 rows are labeled `partial` or `contract_error`; they cannot look like verified
 historical depth. The entry-path tests cover both the partial-coverage state and
 the fail-closed contract-error state.
+
+## 2026-08-25 strategy overlay entry-path slice
+
+The My Team surface no longer describes strategy value tags as planned while
+the underlying fit tables sit unused. The browser now joins the exact active
+roster IDs to `team_fit_scores` and `action_recommendations`, displays the
+team's `team_needs_matrix` shape and need lanes, summarizes fit bands and
+current action mix, and exposes the top aligned roster evidence. The roster
+table carries the same fit/action labels and timeline/liquidity scores.
+
+This is a presentation of deterministic evidence, not a new valuation model:
+the join must be by `player_id` and selected `roster_id`, and an absent fit row
+must remain `not_scored`. The old “planned overlay” copy is covered by an
+entry-path test so a future UI change cannot silently regress to profile-only
+customization.

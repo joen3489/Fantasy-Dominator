@@ -188,3 +188,14 @@ bundle that lacks it when a deployment revision is present. Entry-path tests
 cover partial coverage, malformed rows, and a missing durable receipt. This is
 the reusable rule: a semantic gate is incomplete until its limitation is
 visible at the point of consumption.
+
+## 2026-08-25 - A configured strategy must reach the decision surface
+
+The My Team page exposed strategy metadata while explicitly leaving value tags
+as a future feature, even though deterministic fit, need, liquidity, and action
+tables already existed. That is a shallow-but-green seam: the data pipeline can
+be correct while the product remains generic. The browser now joins the exact
+active `roster_id` and `player_id` rows, renders alignment and action mix, and
+marks missing fit rows `not_scored`. The entry-path test asserts the real My
+Team surface contains these joins and no longer contains the planned-overlay
+claim.
