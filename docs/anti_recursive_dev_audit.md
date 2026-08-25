@@ -86,3 +86,16 @@ clean reload and settled page load. The check then confirmed revision
 evidence chain, and the full source-trace drawer.
 This closes the manual authenticated browser verification item; the automated
 `FRONT_OFFICE_SESSION_TOKEN` smoke remains intentionally not run.
+
+## 2026-08-25 current deployment amendment
+
+The `c91108bc` revisions noted above are historical browser observations. The
+writer-receipt diagnostic slice then had a settled signed-in owned-league
+route that reported source revision
+`831fca842aaf05be09dc9b748063fb644c68d3d0`, league
+`1313490073630547968`, and a verified exact `roster_id=2` receipt for
+`Lulu’s Potatoe’s`. The Data Room displayed the new per-article receipt
+warning and the existing `0/5 reporter articles · evidence-led fallback`
+state. Public revision smoke passed; automated authenticated smoke remains
+not run because no session token was supplied. This verifies deployment and
+identity continuity, not successful Luna publication.

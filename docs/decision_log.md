@@ -316,3 +316,9 @@ that failed or skipped sections remain deterministic fallback content. The
 operator token remains a deliberate protected write boundary; no UI change may
 turn a Clerk login or an API-key presence check into authorization to spend a
 generation call.
+
+The earlier `c91108bc` browser revision in this log is historical. The settled
+production browser check for this diagnostic slice observed source revision
+`831fca842aaf05be09dc9b748063fb644c68d3d0`, the same owned league, and the same
+verified roster receipt. It still showed the expected degraded `0/5` state,
+which is why the Luna publication gate remains open.
