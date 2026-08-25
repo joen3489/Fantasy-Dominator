@@ -322,3 +322,15 @@ production browser check for this diagnostic slice observed source revision
 `831fca842aaf05be09dc9b748063fb644c68d3d0`, the same owned league, and the same
 verified roster receipt. It still showed the expected degraded `0/5` state,
 which is why the Luna publication gate remains open.
+
+## 2026-08-25 - Homepage source receipts must use dataset identity
+
+The live homepage briefly reported `0 news rows · 0/0 news sources current`
+while the selected edition's Data Room and normalized issue carried 55 news
+signals. The facade grouped sources by the literal display label `News desk`,
+but production source receipts are named RotoWire player news and Sleeper
+trending adds/drops. Source receipts now classify news from stable source and
+dataset identity, and use the normalized league-impact count for the displayed
+row total so overlapping provider rows cannot inflate the headline. This keeps
+the media facade aligned with the data room instead of presenting a plausible
+but false empty state.

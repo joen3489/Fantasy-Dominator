@@ -1384,7 +1384,18 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         if str(row.get("status") or "").lower() in {"failed", "error"}
         or str(row.get("status_label") or "").lower() in {"failed", "error"}
     )
-    news_rows = [row for row in rows if str(row.get("label") or "").lower() == "news desk"]
+    def is_news_source(row: dict[str, Any]) -> bool:
+        label = str(row.get("label") or "").lower()
+        source = str(row.get("source") or "").lower()
+        dataset = str(row.get("dataset") or "").lower()
+        return (
+            label == "news desk"
+            or "news" in dataset
+            or "trending" in dataset
+            or source in {"rotowire_rss", "sleeper_trending"}
+        )
+
+    news_rows = [row for row in rows if is_news_source(row)]
 
     def row_count(row: dict[str, Any]) -> int:
         try:
@@ -1412,6 +1423,11 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         if isinstance(editorial, dict)
         else "Evidence-led template"
     )
+    signal_summary = editorial.get("signal_summary") if isinstance(editorial, dict) else {}
+    try:
+        news_signal_count = max(0, int((signal_summary or {}).get("news_signals")))
+    except (TypeError, ValueError):
+        news_signal_count = sum(row_count(row) for row in news_rows)
     return {
         "label": label,
         "current": current,
@@ -1420,7 +1436,9 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         "total": len(rows),
         "news_current": sum(1 for row in news_rows if is_current(row)),
         "news_total": len(news_rows),
-        "news_row_count": sum(row_count(row) for row in news_rows),
+        # Prefer the normalized league-impact count when the issue carries it;
+        # source receipt row counts can overlap across news providers.
+        "news_row_count": news_signal_count,
         "checked_at": checked_at,
         "as_of_label": str(editorial.get("as_of_label") or "Latest refresh"),
         "reporter_name": str(reporter_name or "The Front Office"),

@@ -1139,6 +1139,23 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(receipt["writer_mode"], "Evidence-led template")
         self.assertEqual(receipt["latest_news_label"], "Not recorded")
 
+    def test_source_receipt_view_groups_real_news_datasets(self) -> None:
+        receipt = _source_receipt_view(
+            {
+                "signal_summary": {"news_signals": 55},
+                "source_health": [
+                    {"label": "RotoWire · NFL player news", "source": "rotowire_rss", "dataset": "nfl_player_news", "status_label": "Current", "healthy": True, "row_count": 5},
+                    {"label": "Sleeper trending · Trending adds", "source": "sleeper_trending", "dataset": "trending_add", "status_label": "Current", "healthy": True, "row_count": 25},
+                    {"label": "Sleeper trending · Trending drops", "source": "sleeper_trending", "dataset": "trending_drop", "status_label": "Current", "healthy": True, "row_count": 25},
+                    {"label": "DynastyProcess · Player Values", "source": "dynastyprocess", "dataset": "player_values", "status_label": "Current", "healthy": True, "row_count": 788},
+                ],
+            }
+        )
+
+        self.assertEqual(receipt["news_current"], 3)
+        self.assertEqual(receipt["news_total"], 3)
+        self.assertEqual(receipt["news_row_count"], 55)
+
     def test_home_empty_state_uses_sleeper_link_form(self) -> None:
         token = self._token("user_empty_home")
 
