@@ -143,7 +143,8 @@ promises:
 - complete and verify the protected Luna publication run;
 - continue manager dossier depth with outcome-linked history and richer
   cross-season trade-fit evaluation;
-- expand the question-led data room without adding unmotivated charts;
+- continue expanding the question-led data room without adding unmotivated
+  charts;
 - expand reporter-specific and article-specific media only where it improves
   recognition or comprehension;
 - use the new reporter learning ledger to accumulate enough recorded outcomes

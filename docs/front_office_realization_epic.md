@@ -657,6 +657,18 @@ This closes the Workstream 5 acceptance gap where “no opportunity” was
 previously represented by an absent section. It still does not claim manager
 intent or a meaningful prediction rate from small samples.
 
+## 2026-08-25 question-led event pulse checkpoint
+
+The Data Room's “What changed?” answer now pairs current event volume with a
+latest recorded pulse across news, trades, and waivers. Each item carries the
+available player/team names, event detail, and timestamp in the question-led
+surface, while the copy explicitly says that a current snapshot is not a
+historical delta unless a prior receipt establishes that comparison.
+
+This is a useful first event view without inventing a previous state or
+burying the user in an unmotivated chart. The raw tables and source receipts
+remain the authoritative drill-down.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

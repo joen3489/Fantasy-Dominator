@@ -1481,6 +1481,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Unmatched Feed Items", html)
         self.assertIn("Player News Matches", html)
         self.assertIn("Data Diagnostics", html)
+        self.assertIn("Latest recorded league events", html)
+        self.assertIn("historical delta unless a prior receipt says so", html)
         self.assertIn("waiver-scope", html)
         self.assertIn("Source Freshness", html)
         self.assertIn("Player market rows", html)

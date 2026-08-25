@@ -74,6 +74,13 @@ reader or a writer to fill the gap with a manager label or invented target.
 The UI also exposes the activity sample-size fields needed to judge whether a
 tendency is well supported.
 
+## 2026-08-25 - “What changed?” must distinguish pulse from delta
+
+The Data Room now lists the latest recorded news, trade, and waiver events
+alongside aggregate volume. It does not call the list a historical change
+unless a prior receipt supports that claim. A current snapshot can show a
+useful pulse without pretending that every retained row is new.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

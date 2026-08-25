@@ -2619,6 +2619,20 @@ def _page(
       const latestNews = sortRows((tables.league_news_impact || []).slice(), ['published_at']).reverse()[0] || {{}};
       const latestTrade = sortRows((tables.trades || []).slice(), ['created_datetime']).reverse()[0] || {{}};
       const latestWaiver = sortRows((tables.waivers || []).slice(), ['created_datetime', 'week']).reverse()[0] || {{}};
+      const recentEvents = [
+        ...sortRows((tables.league_news_impact || []).slice(), ['published_at']).reverse().slice(0, 5).map(row => ({{
+          sortKey: row.published_at || '',
+          text: `News · ${{row.player_name || 'Unknown player'}}: ${{row.evidence || row.impact_type || 'signal recorded'}} · ${{row.published_at || 'time not recorded'}}`
+        }})),
+        ...sortRows((tables.trades || []).slice(), ['created_datetime']).reverse().slice(0, 5).map(row => ({{
+          sortKey: row.created_datetime || '',
+          text: `Trade · ${{row.team_a_name || 'Roster A'}} ↔ ${{row.team_b_name || 'Roster B'}}: ${{row.team_a_players_received || row.team_a_picks_received || row.team_b_players_received || row.team_b_picks_received || 'assets recorded'}} · ${{row.created_datetime || 'time not recorded'}}`
+        }})),
+        ...sortRows((tables.waivers || []).slice(), ['created_datetime', 'week']).reverse().slice(0, 5).map(row => ({{
+          sortKey: row.created_datetime || String(row.week || ''),
+          text: `Waiver · ${{row.team_name || `Roster ${{row.roster_id || 'unknown'}}`}} added ${{row.player_added || 'an unknown player'}}${{row.player_dropped ? ` and dropped ${{row.player_dropped}}` : ''}} · ${{row.created_datetime || `week ${{row.week || 'unknown'}}`}}`
+        }}))
+      ].sort((left, right) => String(right.sortKey || '').localeCompare(String(left.sortKey || ''))).slice(0, 8).map(row => row.text);
       if (question === 'matters') {{
         const composition = {{}};
         roster.forEach(row => {{ composition[row.position || 'Unknown'] = (composition[row.position || 'Unknown'] || 0) + 1; }});
@@ -2692,12 +2706,12 @@ def _page(
       }}
       return {{
         title: 'What changed?',
-        answer: `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The latest recorded news is ${{latestNews.player_name || 'not available'}}; the latest mapped trade is ${{latestTrade.created_datetime || 'not available'}}.`,
+        answer: `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The pulse below shows the latest recorded events available to this bundle; it is not a historical delta unless a prior receipt says so.`,
         visuals: [decisionVisual('Current event volume', [
           {{ label: 'News signals', value: (tables.league_news_impact || []).length, display: String((tables.league_news_impact || []).length) }},
           {{ label: 'Trades', value: (tables.trades || []).length, display: String((tables.trades || []).length) }},
           {{ label: 'Waivers', value: (tables.waivers || []).length, display: String((tables.waivers || []).length) }}
-        ], 'Counts are the current evidence snapshot, not a claim that every row is newly created.'), decisionListVisual('Latest receipts', [
+        ], 'Counts are the current evidence snapshot, not a claim that every row is newly created.'), decisionListVisual('Latest recorded league events', recentEvents.length ? recentEvents : ['No event rows are available in the current evidence bundle.']), decisionListVisual('Latest receipts', [
           `News: ${{latestNews.published_at || 'not recorded'}}`,
           `Trade: ${{latestTrade.created_datetime || 'not recorded'}}`,
           `Waiver: ${{latestWaiver.week || 'not recorded'}}`

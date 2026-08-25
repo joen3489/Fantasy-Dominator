@@ -103,6 +103,11 @@ The three product layers have distinct jobs:
     omitted card looks like a broken pipeline and encourages prose to fill the
     gap; an explicit none-supported state preserves trust.
 
+12. **A snapshot is not automatically a delta.** When the data room lacks a
+    prior comparable receipt, show the latest event pulse and say what it is.
+    Do not turn retained news, trade, or waiver rows into a claim that they
+    happened since the reader's last visit.
+
 ## Anti-recursive change protocol
 
 Before adding a feature or “cleaning up” an old artifact:
