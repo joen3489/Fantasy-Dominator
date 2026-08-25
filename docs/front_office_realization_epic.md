@@ -1077,3 +1077,14 @@ Local proof: the full 198-test suite, local data trust gate, and diff check
 passed. Production acceptance still requires the authenticated protected Luna
 run and five current reporter receipts; no production generation claim is made
 by this local checkpoint.
+
+### Production acceptance amendment — `92ae655`
+
+Public smoke passed for
+`92ae655ede886f601001101dd4c4850d332c1223`. Authenticated Chrome then loaded
+the live headquarters and verified the exact `Lulu’s Potatoe’s` identity, the
+new model-reconciliation marker, `gpt-5.6-luna`, API-key readiness, and the
+separate operator gate. The prior persisted run was reported as Luna-aligned;
+the edition remains `0/5 reporter articles · evidence-led fallback` because no
+current operator-authorized generation was performed. Release 1 therefore
+remains open at the protected publication boundary.

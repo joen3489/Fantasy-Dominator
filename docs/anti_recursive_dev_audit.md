@@ -394,3 +394,10 @@ replace the protected production proof.
 
 Local evidence: 198 tests passed, the local data trust gate passed with the
 documented optional Fantasy Nerds warning, and `git diff --check` passed.
+
+Production proof at code revision
+`92ae655ede886f601001101dd4c4850d332c1223` passed public smoke and the
+authenticated Chrome entry path. The live marker carried the exact private
+team identity and model reconciliation; the 0/5 fallback remained visible
+because the operator write gate was not authorized. This distinguishes a
+correct diagnostic from a falsely successful content run.

@@ -909,3 +909,11 @@ the number of persisted generated articles whose model differs. That state is
 diagnostic only: it does not publish old content as current and does not spend
 tokens automatically. The protected Luna run remains the authority for current
 publication.
+
+Production proof at code revision
+`92ae655ede886f601001101dd4c4850d332c1223` passed public smoke and
+authenticated Chrome verification. The live headquarters showed the exact
+Lulu’s Potatoe’s identity and reported the prior persisted run as
+`gpt-5.6-luna` aligned with the configured model. It still showed 0/5 current
+articles because the separate operator authorization was not supplied; the
+receipt is not being used to claim a fresh publication.

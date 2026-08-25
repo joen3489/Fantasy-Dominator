@@ -399,3 +399,11 @@ when a prior run needs regeneration. This keeps the cost boundary legible and
 prevents an old artifact from masquerading as current Luna output. It remains a
 receipt, not permission to rerun; the operator token and the five-article
 publication proof are still required.
+
+Production proof at code revision
+`92ae655ede886f601001101dd4c4850d332c1223` passed public smoke and
+authenticated Chrome. The live Writer Desk identified Lulu’s Potatoe’s,
+showed `gpt-5.6-luna` and API-key readiness, and reported the persisted prior
+run as model-aligned. Because the operator key was not supplied, the reader
+correctly remained at 0/5 fallback; model alignment is not the same thing as a
+fresh generation receipt.
