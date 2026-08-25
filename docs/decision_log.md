@@ -716,3 +716,13 @@ trigger shell migration from preserved facts; if recovery cannot produce a
 current bundle, the route returns the recovery state rather than silently
 serving the old interface. This is the reusable rule for every future
 user-facing capability.
+
+## 2026-08-25 - Recommendation-learning migration accepted in production
+
+Commit `375bed1368b9f2706af44138bbe6e23ee79663b8` passed public revision
+smoke and an authenticated exact-route browser check. The reader was
+`current · private`, showed Lulu’s Potatoe’s for verified `roster_id=2`, and
+rendered 25 scoped recommendation outcome controls with the four validated
+states. Data Room showed the recommendation learning lane and the 3,101-row
+historical identity receipt. The earlier stale-shell observation is retained
+as the reason for the contract, not as the current production state.

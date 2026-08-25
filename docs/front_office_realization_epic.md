@@ -822,3 +822,12 @@ This records the manager's later report; it does not infer success from a
 page view, execute a transaction, or imply that a thesis became true. The
 existing upsert key makes changing an open call to confirmed/missed replace
 the current state without duplicating history rows.
+
+### Production acceptance amendment — `375bed1`
+
+The recommendation-learning slice is live and browser-verified. The exact
+owned league route serves the current private bundle for Lulu’s Potatoe’s,
+exposes 25 decision controls with the four validated outcome states, and the
+Data Room shows the separate recommendation learning lane alongside the
+verified historical identity receipt. The durable-shell migration contract is
+now part of the acceptance gate for future reader capabilities.

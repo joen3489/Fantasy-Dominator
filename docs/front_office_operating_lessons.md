@@ -264,3 +264,16 @@ reachable. New entry-path capabilities must add a semantic shell marker to the
 reader contract, and stale durable shells must rebuild or fail closed before
 HTML is returned. The browser proof must check the exact control and the
 reader's learning summary after migration.
+
+## 2026-08-25 production verification at `375bed1`
+
+The semantic reader contract fix is deployed and verified on the authenticated
+owned route for Joanie Loves Dynasty Football. The bundle reports the full
+`375bed1368b9f2706af44138bbe6e23ee79663b8` source revision, `current · private`
+reader state, and the exact `roster_id=2` identity for Lulu’s Potatoe’s. The
+Trade Desk exposes 25 recommendation outcome controls with only `open`,
+`confirmed`, `missed`, and `unclear`; Data Room exposes the separate
+recommendation-learning ledger and the verified 3,101-row historical identity
+receipt. Public revision smoke also passed. This closes the stale-shell slice;
+future capability slices must add an equivalent semantic marker and browser
+entry proof.

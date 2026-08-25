@@ -221,3 +221,10 @@ test uses a current source revision and valid preserved payload while omitting
 those markers, proving that the route requests migration instead of returning
 the old interface. Future slices must add their entry-path marker and stale
 bundle test in the same change.
+
+The guard is now verified in production at `375bed1368b9f2706af44138bbe6e23ee79663b8`:
+public smoke matched the full revision, and the authenticated owned route
+rendered the recommendation controls, separate learning summary, exact roster
+identity, and semantic history receipt. The migration gate is closed for this
+slice; browser freshness and exact entry-path proof remain required for the
+next one.
