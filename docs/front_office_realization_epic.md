@@ -718,6 +718,13 @@ the dossier payload so the browser and future writer packet consume the same
 evidence object; the old aggregate-only manager view is no longer the only
 path to historical behavior.
 
+The authenticated production check after revision
+`e99e0e6caf0854eae85b99b5e614711a2cdda343` loaded the private Joanie Loves
+Dynasty Football edition with Lulu’s Potatoe’s as the verified active team,
+then opened the Moose Caboose manager dossier and rendered 24 event rows.
+Expanding the evidence drawer showed the event-level Sleeper trace and the
+motive/future-behavior boundary. Public revision smoke also passed.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

@@ -737,4 +737,7 @@ the next conversation. Dossiers now carry a bounded `transaction_timeline`
 with exact roster scope, event identity, timing, counterparty, asset movement,
 and source evidence. The UI labels it as observed history and keeps motive and
 future response unknown. The slice is deterministic and does not spend a Luna
-call.
+call. Revision `e99e0e6caf0854eae85b99b5e614711a2cdda343` was then verified in
+the authenticated production reader: Moose Caboose rendered 24 event rows,
+while the private edition still identified Lulu’s Potatoe’s as the active
+roster.
