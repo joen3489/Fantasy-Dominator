@@ -184,6 +184,74 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertEqual(rebuilt_masthead["variants"][0]["key"], "mobile")
             self.assertTrue((site / rebuilt_masthead["variants"][0]["path"]).is_file())
 
+    def test_shell_rebuild_migrates_legacy_fallback_receipts(self) -> None:
+        """Encodes docs/decision_log.md's rule that fallback receipts survive shell-only deploys."""
+        repo = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "new-release"}, clear=False):
+                build_browser_site(
+                    site,
+                    repo / "data" / "processed",
+                    repo / "data" / "analysis",
+                )
+
+            app_path = site / "data" / "app_bundle.json"
+            manifest_path = site / "data" / "manifest.json"
+            app_payload = json.loads(app_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            fields = {
+                "daily_brief": ("dailyGmBrief", "daily_gm_brief.md"),
+                "team_report": ("teamReport", "team_report.md"),
+                "market_watch": ("marketWatch", "market_watch.md"),
+                "trade_desk": ("tradeDeskRead", "trade_desk.md"),
+                "manager_intel": ("managerIntel", "manager_intel.md"),
+            }
+            for key, (body_field, _filename) in fields.items():
+                body = str(app_payload["analysis"][body_field])
+                app_payload["analysis"][body_field] = "\n".join(
+                    line
+                    for line in body.splitlines()
+                    if not any(line.startswith(f"{field}:") for field in (
+                        "reporter_name",
+                        "evidence_fingerprint",
+                        "fallback_reason",
+                        "article_payload_json",
+                        "source_receipt_json",
+                    ))
+                ) + "\n"
+                app_payload["analysis"]["articleReceipts"][key] = {
+                    "mode": "deterministic_template",
+                    "reporter_id": manifest["articleReceipts"][key]["reporter_id"],
+                    "structured": {},
+                }
+            manifest["sourceRevision"] = "old-release"
+            app_path.write_text(json.dumps(app_payload), encoding="utf-8")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "new-release"}, clear=False):
+                rebuild_browser_shell(site)
+
+            rebuilt_app = json.loads(app_path.read_text(encoding="utf-8"))
+            rebuilt_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            rebuilt_editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
+            for key in fields:
+                receipt = rebuilt_manifest["articleReceipts"][key]
+                self.assertTrue(receipt["evidence_fingerprint"])
+                self.assertTrue(receipt["fallback_reason"])
+                self.assertTrue(receipt["structured"])
+                self.assertTrue(receipt["source_receipt"])
+            self.assertEqual(rebuilt_manifest["sourceRevision"], "new-release")
+            self.assertEqual(len(rebuilt_editorial["publication_articles"]), 5)
+            self.assertTrue(all(article["fallback_reason"] for article in rebuilt_editorial["publication_articles"]))
+            first_bundle_revision = rebuilt_manifest["bundleRevision"]
+            with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "new-release"}, clear=False):
+                rebuild_browser_shell(site)
+            self.assertEqual(
+                json.loads(manifest_path.read_text(encoding="utf-8"))["bundleRevision"],
+                first_bundle_revision,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

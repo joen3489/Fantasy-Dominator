@@ -5,7 +5,7 @@ import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -205,6 +205,109 @@ def _decorate_deterministic_article(
     return _replace_front_matter_fields(text, fields)
 
 
+def upgrade_deterministic_article_receipts(
+    analysis_dir: Path | None,
+    analysis: dict[str, Any],
+    tables: Mapping[str, Sequence[Mapping[str, Any]]] | None,
+    roster_id: int | None,
+    team_name: str,
+    writer_preferences: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Migrate old fallback markdown without refreshing facts or invoking an LLM.
+
+    A source-only deploy may have a durable browser bundle and durable analysis
+    markdown from an older receipt contract. Keep the migration deterministic:
+    reuse the preserved article body and validated rows, write only missing
+    fallback metadata, and leave automatic-LLM articles untouched.
+    """
+
+    table_rows = {
+        str(name): [dict(row) for row in rows if isinstance(row, Mapping)]
+        for name, rows in (tables or {}).items()
+        if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes))
+    }
+    analysis_rows = {
+        "target_theses": list(analysis.get("targetTheses") or []),
+        "sell_theses": list(analysis.get("sellTheses") or []),
+        "trade_theses": list(analysis.get("tradeTheses") or []),
+        "manager_dossiers": list(analysis.get("managerDossierItems") or []),
+        "player_dossiers": list(analysis.get("playerDossierItems") or []),
+    }
+    fallback_inputs = {
+        "daily_brief": (
+            analysis_rows["target_theses"][:5]
+            + analysis_rows["sell_theses"][:5]
+            + analysis_rows["trade_theses"][:5],
+            ["target_theses", "sell_theses", "trade_theses"],
+            "dailyGmBrief",
+            "daily_gm_brief.md",
+        ),
+        "team_report": (
+            [
+                row
+                for row in (table_rows.get("player_dossiers") or analysis_rows["player_dossiers"])
+                if roster_id is None or _int(row.get("roster_id")) == _int(roster_id)
+            ],
+            ["player_dossiers", "roster_players", "player_projection_season", "player_signal_scores"],
+            "teamReport",
+            "team_report.md",
+        ),
+        "market_watch": (
+            analysis_rows["target_theses"][:12] + analysis_rows["sell_theses"][:12],
+            ["target_theses", "sell_theses", "player_opportunity_scores"],
+            "marketWatch",
+            "market_watch.md",
+        ),
+        "trade_desk": (
+            analysis_rows["trade_theses"][:12],
+            ["trade_theses", "manager_profiles", "manager_valuation_profiles", "counterparty_trade_edges"],
+            "tradeDeskRead",
+            "trade_desk.md",
+        ),
+        "manager_intel": (
+            analysis_rows["manager_dossiers"][:14],
+            ["manager_dossiers", "manager_profiles", "manager_event_log", "manager_cycle_profiles"],
+            "managerIntel",
+            "manager_intel.md",
+        ),
+    }
+    receipts = dict(analysis.get("articleReceipts") or {}) if isinstance(analysis.get("articleReceipts"), Mapping) else {}
+    for article_key, (rows, source_tables, body_field, filename) in fallback_inputs.items():
+        path = analysis_dir / filename if analysis_dir is not None else None
+        body = str(analysis.get(body_field) or "")
+        if path is not None and path.is_file():
+            try:
+                body = path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        if not body or _front_matter_text_field(body, "model_mode") not in {"", GENERATION_MODE}:
+            continue
+        if _front_matter_text_field(body, "evidence_fingerprint") and _front_matter_text_field(body, "article_payload_json"):
+            continue
+        upgraded = _decorate_deterministic_article(
+            article_key,
+            body,
+            rows,
+            source_tables,
+            roster_id,
+            team_name,
+            writer_preferences,
+        )
+        analysis[body_field] = upgraded
+        if path is not None and upgraded != body:
+            try:
+                path.write_text(upgraded, encoding="utf-8")
+            except OSError:
+                # The browser payload still receives the migrated receipt even
+                # when the durable markdown is temporarily read-only.
+                pass
+        previous_receipt = receipts.get(article_key) if isinstance(receipts.get(article_key), Mapping) else {}
+        receipts[article_key] = _article_receipt_from_text(filename, upgraded, previous_receipt)
+    if receipts:
+        analysis["articleReceipts"] = receipts
+    return analysis
+
+
 def _replace_front_matter_fields(text: str, fields: dict[str, Any]) -> str:
     if not text.startswith("---"):
         return text
@@ -220,6 +323,54 @@ def _replace_front_matter_fields(text: str, fields: dict[str, Any]) -> str:
         lines = [line for line in lines if not line.startswith(prefix)]
         lines.append(f"{key}: {value}")
     return "---\n" + "\n".join(lines) + "\n---\n" + body
+
+
+def _front_matter_text_field(text: str, key: str) -> str:
+    if not str(text or "").startswith("---"):
+        return ""
+    end = str(text).find("\n---", 3)
+    if end < 0:
+        return ""
+    prefix = f"{key}:"
+    for line in str(text)[3:end].splitlines():
+        if line.startswith(prefix):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def _front_matter_json_text(text: str, key: str) -> dict[str, Any]:
+    raw = _front_matter_text_field(text, key)
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _article_receipt_from_text(
+    filename: str,
+    text: str,
+    previous: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    receipt = dict(previous or {})
+    receipt.update(
+        {
+            "mode": _front_matter_text_field(text, "model_mode") or receipt.get("mode") or GENERATION_MODE,
+            "model": _front_matter_text_field(text, "model") or receipt.get("model") or "",
+            "reporter_id": _front_matter_text_field(text, "reporter_persona") or receipt.get("reporter_id") or "",
+            "reporter_name": _front_matter_text_field(text, "reporter_name") or receipt.get("reporter_name") or "",
+            "generated_at": _front_matter_text_field(text, "generated_at") or receipt.get("generated_at") or "",
+            "evidence_fingerprint": _front_matter_text_field(text, "evidence_fingerprint") or receipt.get("evidence_fingerprint") or "",
+            "fallback_reason": _front_matter_text_field(text, "fallback_reason") or receipt.get("fallback_reason") or "",
+            "source_receipt": _front_matter_json_text(text, "source_receipt_json") or receipt.get("source_receipt") or {},
+            "content_hash": hashlib.sha256(str(text).encode("utf-8")).hexdigest(),
+            "structured": _front_matter_json_text(text, "article_payload_json") or receipt.get("structured") or {},
+            "path": filename,
+        }
+    )
+    return receipt
 
 
 def _deterministic_source_ids(rows: list[dict[str, Any]], source_tables: list[str]) -> list[str]:

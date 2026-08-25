@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
+from .analysis import upgrade_deterministic_article_receipts
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
@@ -95,13 +96,26 @@ def build_browser_site(
     if str(configured_name or "").strip():
         my_team_name = str(configured_name).strip()
     analysis = _analysis_artifacts(analysis_dir)
+    analysis = upgrade_deterministic_article_receipts(
+        analysis_dir,
+        analysis,
+        tables,
+        my_roster_id,
+        my_team_name,
+        dict(config.get("writer_preferences") or {}),
+    )
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
     target = output_dir / "index.html"
     target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target
 
 
-def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Path:
+def rebuild_browser_shell(
+    output_dir: Path,
+    league_type: str = "dynasty",
+    analysis_dir: Path | None = None,
+    config: Mapping[str, Any] | None = None,
+) -> Path:
     """Rebuild only the generated shell from a preserved complete bundle.
 
     Durable deployments can retain the browser bundle after processed CSV
@@ -117,10 +131,68 @@ def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Pat
         raise ValueError("complete browser bundle payloads are required")
     identity = app_payload.get("identityReceipt") if isinstance(app_payload.get("identityReceipt"), dict) else {}
     my_team_name = str(app_payload.get("myTeamName") or identity.get("team_name") or "Unknown team")
+    raw_roster_id = app_payload.get("myRosterId")
+    try:
+        my_roster_id = int(raw_roster_id) if raw_roster_id not in (None, "") else None
+    except (TypeError, ValueError):
+        my_roster_id = None
+    writer_preferences = dict(
+        (config or {}).get("writer_preferences")
+        or app_payload.get("writerPreferences")
+        or {}
+    )
+    analysis = dict(app_payload.get("analysis") or {}) if isinstance(app_payload.get("analysis"), dict) else {}
+    analysis = upgrade_deterministic_article_receipts(
+        analysis_dir,
+        analysis,
+        app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {},
+        my_roster_id,
+        my_team_name,
+        writer_preferences,
+    )
+    app_payload["analysis"] = analysis
+    tables = app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {}
+    shell_config = dict(config or {})
+    shell_config.setdefault("current_season", app_payload.get("currentSeason") or "")
+    shell_config.setdefault("current_team", {"team_name": my_team_name, "roster_id": my_roster_id})
+    shell_config.setdefault("strategy_profile", app_payload.get("strategyProfile") or {})
+    shell_config.setdefault("writer_preferences", writer_preferences)
+    shell_config.setdefault("manager_trade_profiles", app_payload.get("managerTradeProfiles") or [])
+    editorial = build_editorial_issue(
+        tables,
+        analysis,
+        league_id=str(app_payload.get("leagueId") or manifest.get("leagueId") or ""),
+        my_roster_id=my_roster_id,
+        my_team_name=my_team_name,
+        config=shell_config,
+    )
+    app_payload["editorial"] = editorial
+    app_payload["reporterPersona"] = editorial.get("reporter_persona") or app_payload.get("reporterPersona") or {}
+    app_payload["reporterLineup"] = editorial.get("reporter_lineup") or app_payload.get("reporterLineup") or []
     _refresh_preserved_media(output_dir, app_payload, manifest)
+    if not isinstance(app_payload.get("mediaManifest"), dict):
+        app_payload["mediaManifest"] = build_media_manifest(
+            [],
+            user_id=identity.get("user_id"),
+            league_id=str(app_payload.get("leagueId") or manifest.get("leagueId") or ""),
+        )
     source_revision = _source_revision()
-    manifest["sourceRevision"] = source_revision
+    _clear_runtime_revisions(app_payload)
+    app_payload.pop("bundleRevision", None)
+    app_payload.pop("sourceRevision", None)
+    bundle_revision = _bundle_revision(app_payload)
+    app_payload["bundleRevision"] = bundle_revision
     app_payload["sourceRevision"] = source_revision
+    editorial["bundle_revision"] = bundle_revision
+    app_payload["mediaManifest"]["bundle_revision"] = bundle_revision
+    for asset in app_payload["mediaManifest"].get("assets", []):
+        asset["bundle_revision"] = bundle_revision
+    manifest["bundleRevision"] = bundle_revision
+    manifest["sourceRevision"] = source_revision
+    manifest["reporterPersona"] = app_payload["reporterPersona"]
+    manifest["reporterLineup"] = app_payload["reporterLineup"]
+    manifest["articleReceipts"] = analysis.get("articleReceipts") or {}
+    manifest["mediaManifest"] = app_payload.get("mediaManifest") or manifest.get("mediaManifest") or {}
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
         encoding="utf-8",
@@ -129,9 +201,30 @@ def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Pat
         json.dumps(app_payload, ensure_ascii=False).replace("</", "<\\/"),
         encoding="utf-8",
     )
+    (data_dir / "editorial_issue.json").write_text(
+        json.dumps(editorial, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
+    (data_dir / "media_manifest.json").write_text(
+        media_manifest_json(app_payload["mediaManifest"]),
+        encoding="utf-8",
+    )
     target = output_dir / "index.html"
     target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target
+
+
+def _clear_runtime_revisions(value: Any) -> None:
+    """Remove generated revision fields before hashing a preserved payload."""
+
+    if isinstance(value, dict):
+        value.pop("bundle_revision", None)
+        value.pop("bundleRevision", None)
+        for nested in value.values():
+            _clear_runtime_revisions(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _clear_runtime_revisions(nested)
 
 
 def _refresh_preserved_media(output_dir: Path, app_payload: dict[str, Any], manifest: dict[str, Any]) -> None:

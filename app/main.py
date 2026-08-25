@@ -839,6 +839,8 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
                 rebuild_browser_shell(
                     paths.site_dir,
                     league_type=str(league.get("league_type") or "dynasty"),
+                    analysis_dir=paths.analysis_dir,
+                    config=config,
                 )
                 return
             except (OSError, ValueError, TypeError):

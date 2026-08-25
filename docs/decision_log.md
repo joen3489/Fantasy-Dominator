@@ -368,3 +368,15 @@ fields separately so a source trace cannot be presented as if it were a cited
 claim. This preserves the media-to-data path in both degraded and generated
 modes and prevents a future writer change from quietly weakening the evidence
 contract.
+
+## 2026-08-25 - Source-only deploys must migrate durable receipts
+
+Changing the source revision of a preserved browser shell is not enough when
+the deploy also changes the shape of a durable article receipt. The first
+receipt-parity deploy exposed that gap: the HTML shell reported the new SHA,
+but the persisted markdown and embedded editorial payload still exposed the
+old empty receipt fields. Shell rebuilds now perform an additive, idempotent
+migration of deterministic fallback metadata from the preserved validated
+rows and rebuild the editorial payload. They do not refresh Sleeper facts or
+invoke an LLM. The regression test keeps this deployment path honest when
+processed CSV intermediates are unavailable.
