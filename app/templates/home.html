@@ -1363,6 +1363,13 @@
           const writerStatus = document.querySelector('[data-writer-status]');
           const writerToken = document.querySelector('[data-writer-token]');
           const writerSleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+          const markWriterSessionExpired = (button, allEditions = false) => {
+            writerStatus.className = 'writer-status error';
+            writerStatus.textContent = 'Your Clerk session expired. Sign in again before running the writer.';
+            resetWriterButton(button, allEditions);
+            button.dataset.reload = 'true';
+            button.textContent = 'Sign in again';
+          };
           const resetWriterButton = (button, allEditions = false) => {
             if (!button) return;
             button.disabled = false;
@@ -1378,6 +1385,10 @@
                   : '/api/operator/status?league_id=' + encodeURIComponent(leagueId);
                 const response = await fetch(statusUrl, {cache: 'no-store'});
                 const status = await response.json().catch(() => ({}));
+                if (response.status === 401) {
+                  markWriterSessionExpired(button, allEditions);
+                  return;
+                }
                 if (!response.ok) throw new Error(status.detail || 'writer status failed (' + response.status + ')');
                 if (status.state === 'running') {
                   writerStatus.textContent = allEditions ? 'The reporters are writing every enabled edition' : (status.message || 'The reporters are writing this edition');
@@ -1430,6 +1441,10 @@
               });
               const payload = await response.json().catch(() => ({}));
               if (!response.ok) {
+                if (response.status === 401) {
+                  markWriterSessionExpired(button, allEditions);
+                  return;
+                }
                 if (response.status === 403) throw new Error('This production writer control requires FRONT_OFFICE_OPERATOR_TOKEN. Enter the operator key above; your Clerk login remains read-only.');
                 throw new Error(payload.detail || 'writer request failed (' + response.status + ')');
               }

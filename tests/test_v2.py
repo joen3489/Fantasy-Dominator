@@ -903,6 +903,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-writer-all-button', html)
         self.assertIn('data-testid="writer-readiness"', html)
         self.assertIn('data-testid="writer-setup-note"', html)
+        self.assertIn("Your Clerk session expired. Sign in again before running the writer.", html)
         self.assertIn("Generate all editions", html)
         self.assertIn("'/api/operator/status?league_id=' + encodeURIComponent(leagueId)", html)
         self.assertIn("statusUrl = allEditions", html)
