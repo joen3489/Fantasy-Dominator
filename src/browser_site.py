@@ -364,7 +364,7 @@ def _upgrade_manager_dossier_payload(
     any expensive writer workflow untouched.
     """
 
-    if not isinstance(analysis, dict) or not analysis.get("managerDossierItems"):
+    if not isinstance(analysis, dict):
         return analysis
     required = {"manager_profiles", "manager_cycle_profiles"}
     if not required.issubset(tables):

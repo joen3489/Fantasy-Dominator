@@ -870,7 +870,11 @@ def _payload_has_stale_manager_dossier_fields(payload: dict[str, Any]) -> bool:
     analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
     items = analysis.get("managerDossierItems")
     if not isinstance(items, list):
-        return False
+        tables = payload.get("tables") if isinstance(payload.get("tables"), dict) else {}
+        return bool(tables.get("manager_profiles") and tables.get("manager_cycle_profiles"))
+    if not items:
+        tables = payload.get("tables") if isinstance(payload.get("tables"), dict) else {}
+        return bool(tables.get("manager_profiles") and tables.get("manager_cycle_profiles"))
     return any(
         isinstance(item, dict) and "trade_fit_evaluation" not in item
         for item in items
