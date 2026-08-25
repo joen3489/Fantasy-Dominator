@@ -375,6 +375,13 @@ provider/model configuration before a user spends a generation attempt. It
 reports only configured/missing state, never values; a failed preflight must
 remain a no-call condition.
 
+Production receipt at revision
+`f3ea7ce977ae1cd9e42523522ce9a3374f10646e`: the authenticated headquarters
+showed `openai / gpt-5.6-luna`, medium reasoning, API key ready, and the
+operator gate configured without exposing values. The visible 0/5 fallback
+is now diagnosable as “operator authorization not supplied,” rather than
+being confused with a provider outage.
+
 Production receipt: revision
 `5654d74073656cb3ae225def1572ef74b450d67f` was publicly smoke-verified and
 then refreshed through the authenticated league surface. The private

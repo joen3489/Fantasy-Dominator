@@ -891,3 +891,10 @@ operator key too easy to miss. The Writer Desk now shows provider, model,
 reasoning effort, API-key readiness, and operator-gate readiness without
 exposing secret values. This preserves the separate Clerk/read-only and
 operator/write boundaries while making the next publication attempt operable.
+
+Production acceptance amendment: revision
+`f3ea7ce977ae1cd9e42523522ce9a3374f10646e` passed public smoke and an
+authenticated headquarters reload. The rendered receipt showed OpenAI
+`gpt-5.6-luna`, medium reasoning, API key ready, and the operator gate
+configured. The article count correctly remained 0/5 because no operator key
+was supplied; this is a no-call state, not a failed provider run.

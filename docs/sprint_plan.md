@@ -922,6 +922,12 @@ and separate operator-gate readiness before a generation call. This improves
 the protected cost boundary; Release 1 remains open until the operator run
 actually produces and verifies all five current reporter receipts.
 
+Production acceptance at `f3ea7ce977ae1cd9e42523522ce9a3374f10646e` confirms
+the preflight is visible in the authenticated headquarters: OpenAI Luna is
+configured, the API key is ready, the operator gate is configured, and the
+edition remains honestly at 0/5 until authorization is supplied. The protected
+publication run is still the next acceptance boundary.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

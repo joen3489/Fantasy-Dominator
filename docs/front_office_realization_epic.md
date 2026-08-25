@@ -1053,3 +1053,13 @@ and operator-gate state. It explicitly distinguishes the Railway
 `FRONT_OFFICE_OPERATOR_TOKEN`; neither secret is rendered or persisted. This
 is an operational depth slice for the cost-incurring publication boundary,
 not a relaxation of the protected-write rule.
+
+### Production acceptance amendment — `f3ea7ce`
+
+Public smoke passed for
+`f3ea7ce977ae1cd9e42523522ce9a3374f10646e`. The authenticated headquarters
+still identified Lulu’s Potatoe’s and rendered the new preflight: provider
+`openai`, model `gpt-5.6-luna`, reasoning `medium`, API key `ready`, and
+operator gate `configured; browser key required`. The edition remains an
+honest `0/5 reporter articles · evidence-led fallback`; no writer call was
+made during this verification because the browser operator key was absent.

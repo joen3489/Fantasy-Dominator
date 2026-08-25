@@ -374,3 +374,10 @@ failures showed that the UI did not make its two-secret contract observable
 before the action. The Writer Desk now renders safe provider/model/reasoning,
 API-key, and operator-gate receipts. Tests cover the user-facing entry path;
 no secret value is returned or persisted.
+
+Production acceptance amendment: revision
+`f3ea7ce977ae1cd9e42523522ce9a3374f10646e` passed public smoke and the
+authenticated entry-path check. The browser showed the complete safe preflight
+receipt and retained the deterministic fallback because no operator key was
+provided. This verifies the gate's observability without treating a blocked
+write as a content-generation success.
