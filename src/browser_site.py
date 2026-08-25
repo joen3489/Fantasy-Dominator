@@ -2122,10 +2122,19 @@ def _page(
 
     function operatorPanel() {{
       const status = state.operatorStatus || {{ state: 'unknown', message: 'Operator status has not loaded yet.' }};
+      const articleEntries = status.articles && typeof status.articles === 'object'
+        ? Object.entries(status.articles)
+        : [];
+      const legacySuccessMessage = !articleEntries.length
+        && status.state === 'failed'
+        && /writers run/i.test(status.message || '');
+      const displayedMessage = legacySuccessMessage
+        ? 'Legacy operator record; per-article writer receipts were not retained.'
+        : (status.message || '');
       const rows = [
         {{ item: 'State', value: status.state || 'unknown' }},
         {{ item: 'Job', value: status.job || 'none' }},
-        {{ item: 'Message', value: status.message || '' }},
+        {{ item: 'Message', value: displayedMessage }},
         {{ item: 'Updated at', value: status.updated_at || status.generated_at || '' }},
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
         {{ item: 'League', value: status.league_name || manifest.leagueId || 'Current league' }},
@@ -2138,9 +2147,6 @@ def _page(
       ];
       const validation = status.validation || {{}};
       const errors = validation.errors || status.errors || [];
-      const articleEntries = status.articles && typeof status.articles === 'object'
-        ? Object.entries(status.articles)
-        : [];
       const articleRows = articleEntries.map(([key, result]) => ({{
         article: key,
         state: result?.state || 'unknown',

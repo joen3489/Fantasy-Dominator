@@ -1443,6 +1443,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Writer receipt detail", html)
         self.assertIn("No per-article writer receipts were returned", html)
         self.assertIn("Only articles marked complete or unchanged", html)
+        self.assertIn("Legacy operator record; per-article writer receipts were not retained", html)
         self.assertIn("Build Insight Packet", html)
         self.assertIn("Import Insight JSON", html)
         self.assertIn("evidence-drawer", html)
