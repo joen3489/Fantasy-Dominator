@@ -648,3 +648,18 @@ and the rendered “Cross-season valuation lanes (6)” manager section. The
 stale-reader gate is closed for this release, with browser freshness retained
 as an explicit verification precondition. The protected Luna run remains
 pending operator authorization.
+
+## 2026-08-25 - Preserve player identity in historical evidence
+
+The player-history re-audit found a depth defect behind the presentation: the
+ledger contained readable names but discarded the Sleeper IDs that should join
+events to player dossiers, and trades were represented only from the receiving
+side. Normalized trade/waiver rows now carry source player ID lists; the
+deterministic history builder emits both `acquired` and `sold` events and
+records whether identity came from a source ID or a labeled name fallback.
+
+This is a product rule, not a cosmetic field addition. A historical dossier is
+only as deep as the evidence objects it can reliably join. Current local
+refresh evidence is 3,101 rows, all `source_id`, with balanced trade direction
+(505 acquired and 505 sold). Future unresolved matches must remain visible and
+must not be silently promoted by display-name equality.

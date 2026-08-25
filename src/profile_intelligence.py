@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
+import unicodedata
 from typing import Any
 
 import pandas as pd
@@ -42,6 +44,7 @@ PLAYER_DOSSIER_COLUMNS = [
 ]
 PLAYER_HISTORY_COLUMNS = [
     "player_id",
+    "identity_method",
     "player_name",
     "event_type",
     "season",
@@ -77,7 +80,7 @@ def build_profile_intelligence_tables(
     current_season = _int((config or {}).get("current_season")) or None
     # Player dossiers are built first so the manager cycle reads can name each roster's actual
     # veteran assets instead of a fixed per-cycle string.
-    player_history = build_player_transaction_history(trades_df, waivers_df, draft_picks_df)
+    player_history = build_player_transaction_history(trades_df, waivers_df, draft_picks_df, roster_players_df)
     player_dossiers = build_player_dossiers(
         roster_players_df,
         market_consensus_df,
@@ -212,23 +215,70 @@ def build_manager_profile_tags(manager_cycles_df: pd.DataFrame, manager_profiles
     return pd.DataFrame(rows, columns=TAG_COLUMNS).sort_values(["entity_name", "score"], ascending=[True, False])
 
 
-def build_player_transaction_history(trades_df: pd.DataFrame, waivers_df: pd.DataFrame, draft_picks_df: pd.DataFrame) -> pd.DataFrame:
+def build_player_transaction_history(
+    trades_df: pd.DataFrame,
+    waivers_df: pd.DataFrame,
+    draft_picks_df: pd.DataFrame,
+    player_identity_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    name_to_ids, id_to_name = _player_identity_maps(player_identity_df)
     rows: list[dict[str, Any]] = []
     for _, trade in trades_df.fillna("").iterrows():
-        for prefix, direction in (("team_a", "acquired"), ("team_b", "acquired")):
-            for player in _split_items(trade.get(f"{prefix}_players_received", "")):
-                rows.append(_player_event("", player, "trade", trade, prefix, direction, "Sleeper trade transaction"))
+        for owner_prefix, incoming_prefix, direction in (
+            ("team_a", "team_a", "acquired"),
+            ("team_a", "team_b", "sold"),
+            ("team_b", "team_b", "acquired"),
+            ("team_b", "team_a", "sold"),
+        ):
+            players = _resolve_player_pairs(
+                trade.get(f"{incoming_prefix}_players_received", ""),
+                trade.get(f"{incoming_prefix}_player_ids_received", ""),
+                name_to_ids,
+                id_to_name,
+            )
+            for player_id, player_name, identity_method in players:
+                rows.append(
+                    _player_event(
+                        player_id,
+                        player_name,
+                        "trade",
+                        trade,
+                        owner_prefix,
+                        direction,
+                        "Sleeper trade transaction",
+                        identity_method,
+                    )
+                )
     for _, waiver in waivers_df.fillna("").iterrows():
-        if str(waiver.get("player_added", "")):
-            rows.append(_player_event("", waiver.get("player_added", ""), "waiver_add", waiver, "", "added", "Sleeper waiver transaction"))
-        if str(waiver.get("player_dropped", "")):
-            rows.append(_player_event("", waiver.get("player_dropped", ""), "waiver_drop", waiver, "", "dropped", "Sleeper waiver transaction"))
+        for field, id_field, event_type, direction in (
+            ("player_added", "player_added_ids", "waiver_add", "added"),
+            ("player_dropped", "player_dropped_ids", "waiver_drop", "dropped"),
+        ):
+            for player_id, player_name, identity_method in _resolve_player_pairs(
+                waiver.get(field, ""), waiver.get(id_field, ""), name_to_ids, id_to_name
+            ):
+                rows.append(
+                    _player_event(
+                        player_id,
+                        player_name,
+                        event_type,
+                        waiver,
+                        "",
+                        direction,
+                        "Sleeper waiver transaction",
+                        identity_method,
+                    )
+                )
     for _, pick in draft_picks_df.fillna("").iterrows():
         if str(pick.get("player_name", "")):
+            player_id, player_name, identity_method = _resolve_player_pairs(
+                pick.get("player_name", ""), pick.get("player_id", ""), name_to_ids, id_to_name
+            )[0]
             rows.append(
                 {
-                    "player_id": str(pick.get("player_id", "")),
-                    "player_name": pick.get("player_name", ""),
+                    "player_id": player_id,
+                    "identity_method": identity_method,
+                    "player_name": player_name,
                     "event_type": "draft_pick",
                     "season": pick.get("season", ""),
                     "week": "",
@@ -361,12 +411,22 @@ def build_player_profile_tags(
     return pd.DataFrame(rows, columns=TAG_COLUMNS).sort_values(["entity_name", "score"], ascending=[True, False])
 
 
-def _player_event(player_id: str, player_name: Any, event_type: str, row: pd.Series, prefix: str, direction: str, evidence: str) -> dict[str, Any]:
+def _player_event(
+    player_id: str,
+    player_name: Any,
+    event_type: str,
+    row: pd.Series,
+    prefix: str,
+    direction: str,
+    evidence: str,
+    identity_method: str,
+) -> dict[str, Any]:
     roster_id = row.get(f"{prefix}_roster_id", row.get("roster_id", ""))
     team_name = row.get(f"{prefix}_name", row.get("team_name", ""))
     other_prefix = "team_b" if prefix == "team_a" else "team_a"
     return {
         "player_id": player_id,
+        "identity_method": identity_method,
         "player_name": str(player_name),
         "event_type": event_type,
         "season": row.get("season", ""),
@@ -379,6 +439,53 @@ def _player_event(player_id: str, player_name: Any, event_type: str, row: pd.Ser
         "evidence": evidence,
         "source_trace": "trades" if event_type == "trade" else "waivers",
     }
+
+
+def _canonical_player_name(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", normalized.lower())
+
+
+def _player_identity_maps(player_identity_df: pd.DataFrame | None) -> tuple[dict[str, set[str]], dict[str, str]]:
+    name_to_ids: dict[str, set[str]] = {}
+    id_to_name: dict[str, str] = {}
+    if player_identity_df is None or player_identity_df.empty:
+        return name_to_ids, id_to_name
+    for _, row in player_identity_df.fillna("").iterrows():
+        player_id = str(row.get("player_id", "")).strip()
+        player_name = str(row.get("player_name", "")).strip()
+        if not player_id:
+            continue
+        if player_name:
+            name_to_ids.setdefault(_canonical_player_name(player_name), set()).add(player_id)
+            id_to_name.setdefault(player_id, player_name)
+    return name_to_ids, id_to_name
+
+
+def _resolve_player_pairs(
+    names_value: Any,
+    ids_value: Any,
+    name_to_ids: dict[str, set[str]],
+    id_to_name: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    names = _split_items(names_value)
+    ids = _split_items(ids_value)
+    pairs: list[tuple[str, str, str]] = []
+    for index in range(max(len(names), len(ids))):
+        player_id = ids[index] if index < len(ids) else ""
+        player_name = names[index] if index < len(names) else id_to_name.get(player_id, "")
+        if player_id:
+            pairs.append((player_id, player_name or id_to_name.get(player_id, ""), "source_id"))
+            continue
+        matches = name_to_ids.get(_canonical_player_name(player_name), set())
+        if len(matches) == 1:
+            resolved_id = next(iter(matches))
+            pairs.append((resolved_id, player_name or id_to_name.get(resolved_id, ""), "normalized_name"))
+        elif len(matches) > 1:
+            pairs.append(("", player_name, "ambiguous_name"))
+        else:
+            pairs.append(("", player_name, "unmatched_name"))
+    return pairs
 
 
 def _dynasty_cycle(row: pd.Series, need: dict[str, Any], firsts_owned: float) -> str:

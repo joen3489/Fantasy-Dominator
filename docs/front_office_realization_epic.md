@@ -25,6 +25,22 @@ the usable product and strengthen the contract needed by the next slice. Do not
 begin by adding more pages, writers, charts, or generated images without first
 connecting the existing layers at their seams.
 
+## 2026-08-25 player-history identity checkpoint
+
+The player transaction ledger now preserves Sleeper player IDs in normalized
+trade and waiver rows, records both sides of a trade as `acquired` or `sold`,
+and carries an explicit `identity_method` into player dossiers and the
+browser. Direct source IDs are preferred; a unique historical name match is
+marked `normalized_name`, while ambiguous or missing matches remain visibly
+unresolved. This prevents a long player history from looking deep while its
+rows cannot actually be joined to the player being analyzed.
+
+The lesson is structural: every historical evidence object needs a stable
+entity key and a labeled fallback path. A display name can help recover a
+legacy row, but it cannot silently become canonical identity. The next
+acceptance check is a refreshed artifact showing coverage of source IDs and
+explicit unresolved counts.
+
 ## Product north star
 
 The finished product should let one manager:

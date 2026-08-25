@@ -18,11 +18,11 @@ from src.draft_room import build_draft_room
 from src.economics import build_economic_tables, build_manager_behavior_signals
 from src.external_sources import _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
-from src.normalize import build_roster_maps, normalize_traded_picks
+from src.normalize import build_roster_maps, normalize_traded_picks, normalize_trades, normalize_waivers
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.priority_board import build_today_priority_board
-from src.profile_intelligence import build_profile_intelligence_tables
+from src.profile_intelligence import build_player_transaction_history, build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
 from src.opportunity import build_opportunity_scores, score_players_from_weekly
@@ -42,8 +42,8 @@ EXPECTED_TABLE_COLUMNS = {
     "traded_picks": ["season", "league_id", "original_roster_id", "original_team_name", "round", "pick_season", "current_owner_roster_id", "current_owner_team_name", "previous_owner_roster_id", "previous_owner_team_name", "is_my_original_pick", "is_currently_owned_by_me"],
     "transactions_raw": ["season", "league_id", "week", "transaction_id", "type", "status", "created", "raw"],
     "transactions_normalized": ["season", "league_id", "week", "transaction_id", "type", "status", "created_datetime", "roster_ids_involved", "manager_team_names_involved", "adds", "drops", "draft_picks_moved", "waiver_bid", "faab_moved", "failure_reason"],
-    "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_picks_received", "team_b_faab_received", "raw"],
-    "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_dropped", "waiver_bid", "status", "failure_reason"],
+    "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_player_ids_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_player_ids_received", "team_b_picks_received", "team_b_faab_received", "raw"],
+    "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_added_ids", "player_dropped", "player_dropped_ids", "waiver_bid", "status", "failure_reason"],
     "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
     "market_value_sources": ["source", "source_access_type", "source_player_id", "player_id", "player_name", "position", "raw_value", "normalized_value", "market_rank", "value_format", "source_confidence", "source_trace", "checked_at"],
     "market_consensus_values": ["player_id", "player_name", "position", "consensus_value", "source_count", "disagreement_score", "best_source", "confidence", "source_trace"],
@@ -83,7 +83,7 @@ EXPECTED_TABLE_COLUMNS = {
     "manager_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
     "manager_cycle_profiles": ["owner_id", "roster_id", "team_name", "dynasty_cycle", "trade_temperature", "pick_posture", "waiver_posture", "likely_needs", "likely_sells", "confidence", "evidence"],
     "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
-    "player_transaction_history": ["player_id", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
+    "player_transaction_history": ["player_id", "identity_method", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
     "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
     "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
 }
@@ -110,6 +110,47 @@ class VModelTests(unittest.TestCase):
             self.assertTrue(operator.operator_enabled())
             self.assertTrue(operator.token_valid({"x-front-office-token": "secret"}))
             self.assertFalse(operator.token_valid({"x-front-office-token": "wrong"}))
+
+    def test_normalized_transactions_preserve_sleeper_player_ids(self) -> None:
+        """Encodes docs/data_contract.md's rule that human labels cannot replace source IDs."""
+        transactions = {
+            1: [
+                {
+                    "type": "trade",
+                    "roster_ids": [1, 2],
+                    "adds": {"101": 1, "202": 2},
+                    "draft_picks": [],
+                    "waiver_budget": [],
+                    "transaction_id": "trade-1",
+                    "created": 1_700_000_000_000,
+                },
+                {
+                    "type": "waiver",
+                    "roster_ids": [1],
+                    "adds": {"303": 1},
+                    "drops": {"404": 1},
+                    "settings": {"waiver_bid": 5},
+                    "status": "complete",
+                    "transaction_id": "waiver-1",
+                    "created": 1_700_000_000_000,
+                },
+            ]
+        }
+        roster_map = {1: {"team_name": "Alpha Team"}, 2: {"team_name": "Beta Team"}}
+        players = {
+            "101": {"full_name": "Alpha Player"},
+            "202": {"full_name": "Beta Player"},
+            "303": {"full_name": "Added Player"},
+            "404": {"full_name": "Dropped Player"},
+        }
+
+        trades = normalize_trades("2026", "league", transactions, roster_map, players)
+        waivers = normalize_waivers("2026", "league", transactions, roster_map, players)
+
+        self.assertEqual(trades[0]["team_a_player_ids_received"], "101")
+        self.assertEqual(trades[0]["team_b_player_ids_received"], "202")
+        self.assertEqual(waivers[0]["player_added_ids"], "303")
+        self.assertEqual(waivers[0]["player_dropped_ids"], "404")
 
     def test_operator_packet_loop_validates_insight_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1256,6 +1297,71 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(quiet["roster_id"], 2)
         self.assertEqual(quiet["transaction_count"], 0)
         self.assertIn("roster_id=2", quiet["evidence"])
+
+    def test_player_transaction_history_preserves_ids_directions_and_resolution(self) -> None:
+        """Encodes docs/data_contract.md's stable player identity and labeled fallback rule."""
+        roster_players = pd.DataFrame(
+            [
+                {"player_id": "101", "player_name": "A.J. Brown"},
+                {"player_id": "201", "player_name": "Twin Player"},
+                {"player_id": "202", "player_name": "Twin Player"},
+                {"player_id": "999", "player_name": "Counterparty Player"},
+            ]
+        )
+        trades = pd.DataFrame(
+            [
+                {
+                    "season": "2026",
+                    "week": 4,
+                    "created_datetime": "2026-06-10",
+                    "team_a_roster_id": 1,
+                    "team_a_name": "Alpha Team",
+                    "team_a_players_received": "A.J. Brown",
+                    "team_a_player_ids_received": "101",
+                    "team_b_roster_id": 2,
+                    "team_b_name": "Beta Team",
+                    "team_b_players_received": "Counterparty Player",
+                    "team_b_player_ids_received": "999",
+                },
+                {
+                    "season": "2025",
+                    "week": 8,
+                    "created_datetime": "2025-07-10",
+                    "team_a_roster_id": 1,
+                    "team_a_name": "Alpha Team",
+                    "team_a_players_received": "A.J. Brown; Twin Player; Unknown Player",
+                    "team_b_roster_id": 2,
+                    "team_b_name": "Beta Team",
+                    "team_b_players_received": "Counterparty Player",
+                },
+            ]
+        )
+        waivers = pd.DataFrame(
+            [
+                {
+                    "season": "2026",
+                    "week": 5,
+                    "roster_id": 1,
+                    "team_name": "Alpha Team",
+                    "player_added": "A.J. Brown",
+                    "player_added_ids": "101",
+                    "player_dropped": "Unknown Player",
+                    "player_dropped_ids": "",
+                }
+            ]
+        )
+
+        history = build_player_transaction_history(trades, waivers, pd.DataFrame(), roster_players)
+        alpha_acquired = history[(history["roster_id"].astype(str) == "1") & (history["player_id"] == "101") & (history["direction"] == "acquired")]
+        beta_sold = history[(history["roster_id"].astype(str) == "2") & (history["player_id"] == "101") & (history["direction"] == "sold")]
+
+        self.assertGreaterEqual(len(alpha_acquired), 2)
+        self.assertGreaterEqual(len(beta_sold), 1)
+        self.assertTrue((alpha_acquired["identity_method"] == "source_id").any())
+        self.assertTrue(((history["player_name"] == "A.J. Brown") & (history["identity_method"] == "normalized_name")).any())
+        self.assertTrue(((history["player_name"] == "Twin Player") & (history["identity_method"] == "ambiguous_name")).any())
+        self.assertTrue(((history["player_name"] == "Unknown Player") & (history["identity_method"] == "unmatched_name")).any())
+        self.assertTrue(((history["event_type"] == "waiver_add") & (history["player_id"] == "101") & (history["identity_method"] == "source_id")).any())
 
     def test_profile_intelligence_builds_manager_cycle_and_player_tags(self) -> None:
         manager_profiles = pd.DataFrame(

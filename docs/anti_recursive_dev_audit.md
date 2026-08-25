@@ -157,3 +157,18 @@ reload, the authenticated route reported the current private bundle, exact
 entry stayed current. The initial stale navigation is retained as a
 browser-freshness warning, so future verifiers must reload or otherwise prove
 the fresh response before trusting the page.
+
+## 2026-08-25 - Historical player rows need stable identity and both directions
+
+The next audit found a different shallow seam: `player_transaction_history`
+stored player names without the Sleeper IDs available in raw `adds`/`drops`,
+and trade rows described only acquisitions. A history table could therefore
+look populated while failing to join to the player page or explain what a
+manager gave up. The normalization and profile layers now preserve source ID
+lists, emit acquired and sold events, and label every resolution path.
+
+The adversarial tests cover direct IDs, unique normalized-name recovery,
+ambiguous names, unmatched names, and the sold-side trade event. A fresh local
+refresh resolved all 3,101 rows by source ID and passed the full 188-test gate;
+the generated CSVs remain ignored artifacts, so the durable contract is the
+code, docs, and test coverage rather than an accidental checked-in snapshot.

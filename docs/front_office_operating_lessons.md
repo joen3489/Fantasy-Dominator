@@ -196,3 +196,19 @@ user receives a branded 503 recovery state instead of silently reading stale
 content. The deployed verification now closes this boundary for `acd8c3a`: a
 fresh reload and repeat direct entry both returned the current private reader,
 exact roster identity, and the rendered cross-season lane section.
+
+## 2026-08-25 player transaction identity and direction
+
+The first substantive re-audit after the reader migration found that
+`player_transaction_history.csv` had names but not the Sleeper player IDs that
+make a historical row joinable to a dossier. It also emitted only acquired
+trade rows, which made the evidence asymmetric. The normalized trade and
+waiver tables now preserve source player IDs, the history ledger emits both
+acquired and sold directions, and every row carries an `identity_method`.
+
+The current six-season refresh produced 3,101 history rows: all resolved by
+`source_id`, with 505 acquired and 505 sold trade rows. This is a local
+artifact receipt, not a claim that every future source will resolve. The
+unresolved states remain explicit as `normalized_name`, `ambiguous_name`, or
+`unmatched_name`; no display-name match is allowed to silently become a
+canonical identity.

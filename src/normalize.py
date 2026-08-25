@@ -315,6 +315,9 @@ def normalize_trades(
             def players_received(roster_id: int) -> str:
                 return join_items([player_name(players, pid) for pid, rid in adds.items() if int(rid) == roster_id])
 
+            def player_ids_received(roster_id: int) -> str:
+                return join_items([str(pid) for pid, rid in adds.items() if int(rid) == roster_id])
+
             def picks_received(roster_id: int) -> str:
                 return join_items(
                     [
@@ -337,11 +340,13 @@ def normalize_trades(
                     "team_a_roster_id": a,
                     "team_a_name": roster_map.get(a, {}).get("team_name", ""),
                     "team_a_players_received": players_received(a),
+                    "team_a_player_ids_received": player_ids_received(a),
                     "team_a_picks_received": picks_received(a),
                     "team_a_faab_received": faab_received(a),
                     "team_b_roster_id": b,
                     "team_b_name": roster_map.get(b, {}).get("team_name", ""),
                     "team_b_players_received": players_received(b),
+                    "team_b_player_ids_received": player_ids_received(b),
                     "team_b_picks_received": picks_received(b),
                     "team_b_faab_received": faab_received(b),
                     "raw": json_dumps(tx),
@@ -377,7 +382,9 @@ def normalize_waivers(
                         "roster_id": roster_id,
                         "team_name": roster_map.get(roster_id, {}).get("team_name", ""),
                         "player_added": join_items(added),
+                        "player_added_ids": join_items([str(pid) for pid, rid in adds.items() if int(rid) == roster_id]),
                         "player_dropped": join_items(dropped),
+                        "player_dropped_ids": join_items([str(pid) for pid, rid in drops.items() if int(rid) == roster_id]),
                         "waiver_bid": safe_get(tx.get("settings"), "waiver_bid", ""),
                         "status": tx.get("status", ""),
                         "failure_reason": safe_get(tx.get("metadata"), "notes", ""),

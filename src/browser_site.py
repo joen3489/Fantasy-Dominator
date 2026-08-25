@@ -1585,7 +1585,7 @@ def _page(
     const managerCycleColumns = ['team_name', 'dynasty_cycle', 'trade_temperature', 'pick_posture', 'waiver_posture', 'likely_needs', 'likely_sells', 'confidence', 'evidence'];
     const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
     const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', 'market_value', 'projected_ppg', 'projection_confidence', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
-    const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'evidence'];
+    const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'identity_method', 'evidence'];
     async function init() {{
       try {{
         app = await fetchJson(manifest.bundlePath);
@@ -2380,8 +2380,12 @@ def _page(
     }}
 
     function filteredPlayerHistory() {{
+      const teamPlayerIds = new Set(filteredPlayerDossiers().map(row => String(row.player_id)));
       const teamPlayerNames = new Set(filteredPlayerDossiers().map(row => String(row.player_name)));
-      let rows = tables.player_transaction_history.filter(row => teamPlayerNames.has(String(row.player_name)));
+      let rows = tables.player_transaction_history.filter(row => {{
+        const playerId = String(row.player_id || '');
+        return playerId ? teamPlayerIds.has(playerId) : teamPlayerNames.has(String(row.player_name));
+      }});
       return sortRows(applySearch(rows), ['season', 'created_datetime']).reverse().slice(0, 120);
     }}
 
@@ -3325,9 +3329,11 @@ def _page(
       const ownerId = num(dossier.roster_id || signal.roster_id || rosterRow.roster_id);
       const tags = topTags('player', id, 6);
       const newsRows = (tables.league_news_impact || []).filter(row => String(row.player_id ?? '') === id).slice(0, 6);
-      const history = findRows(tables.player_transaction_history, 'player_id', id).slice(0, 20);
       const insight = insightFor('player', id);
       const marketValue = dossier.market_value ?? signal.market_value ?? '';
+      const historyName = dossier.player_name || signal.player_name || rosterRow.player_name || '';
+      const normalizedHistoryName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const history = (tables.player_transaction_history || []).filter(row => String(row.player_id || '') === id || (!String(row.player_id || '') && normalizedHistoryName(row.player_name) === normalizedHistoryName(historyName))).slice(0, 20);
       const compactTrace = value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean).map(item => item.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')).filter(Boolean).slice(0, 3).join(' · ');
       const fullTraces = [...new Set([dossier.source_trace, signal.source_trace, opp.source_trace, ...newsRows.map(row => row.source_trace)].flatMap(value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean)))];
       const ownerScope = ownerId && Number(app.myRosterId) === ownerId ? 'Your roster' : ownerId ? 'Opponent roster' : 'Unrostered';
