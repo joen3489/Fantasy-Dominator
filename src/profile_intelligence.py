@@ -75,6 +75,7 @@ def build_profile_intelligence_tables(
     news_impact_df: pd.DataFrame,
     player_signal_scores_df: pd.DataFrame,
     config: dict[str, Any] | None = None,
+    team_asset_inventory_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     generated_at = datetime.now(timezone.utc).isoformat()
     current_season = _int((config or {}).get("current_season")) or None
@@ -89,6 +90,7 @@ def build_profile_intelligence_tables(
         news_impact_df,
         player_signal_scores_df,
         player_history,
+        team_asset_inventory_df,
     )
     manager_cycles = build_manager_cycle_profiles(
         manager_profiles_df,
@@ -302,11 +304,13 @@ def build_player_dossiers(
     news_impact_df: pd.DataFrame,
     player_signal_scores_df: pd.DataFrame,
     player_history_df: pd.DataFrame,
+    team_asset_inventory_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     current_roster = _current_season_frame(roster_players_df)
     market = _row_map(market_consensus_df, "player_id")
     projections = _row_map(projections_df, "player_id")
     signals = _row_map(player_signal_scores_df, "player_id")
+    inventory = _asset_map(team_asset_inventory_df)
     news = _news_by_player(news_impact_df)
     history = _history_by_player(player_history_df)
     rows: list[dict[str, Any]] = []
@@ -315,6 +319,7 @@ def build_player_dossiers(
         projection = projections.get(player_id, {})
         signal = signals.get(player_id, {})
         consensus = market.get(player_id, {})
+        asset = inventory.get((str(player.get("roster_id", "")), player_id), {})
         player_history = history.get(player_id) or history.get(str(player.get("player_name", "")).lower(), [])
         last_transaction = player_history[0].get("event_type", "") if player_history else ""
         rows.append(
@@ -326,7 +331,7 @@ def build_player_dossiers(
                 "roster_id": player.get("roster_id", ""),
                 "team_name": player.get("team_name", ""),
                 "roster_status": player.get("roster_status", ""),
-                "market_value": round(_num(consensus.get("consensus_value") or signal.get("market_value")), 2),
+                "market_value": round(_num(consensus.get("consensus_value") or signal.get("market_value") or asset.get("market_value")), 2),
                 "projected_fantasy_points": round(_num(projection.get("projected_fantasy_points")), 2),
                 "projected_ppg": round(_num(projection.get("projected_ppg")), 2),
                 "projection_confidence": projection.get("projection_confidence", signal.get("confidence", "low")),
@@ -341,6 +346,7 @@ def build_player_dossiers(
                     consensus.get("source_trace", ""),
                     projection.get("source_trace", ""),
                     signal.get("source_trace", ""),
+                    asset.get("source_trace", ""),
                     news.get(f"{player_id}:trace", ""),
                     "player_transaction_history" if player_history else "",
                 ),
@@ -582,6 +588,10 @@ def _manager_confidence(seasons: float, trades: float, waivers: float) -> str:
 
 
 def _player_confidence(row: pd.Series) -> str:
+    if "internal_proxy_player_value" in str(row.get("source_trace", "")):
+        if str(row.get("projection_confidence", "")).lower() == "low":
+            return "low"
+        return "medium"
     if str(row.get("projection_confidence", "")).lower() == "high" and _num(row.get("market_value")) > 0:
         return "high"
     if _num(row.get("projected_ppg")) > 0 or _num(row.get("market_value")) > 0:
@@ -661,6 +671,18 @@ def _history_by_player(frame: pd.DataFrame) -> dict[str, list[dict[str, Any]]]:
         if str(row.get("player_name", "")):
             history.setdefault(str(row.get("player_name")).lower(), []).append(row)
     return history
+
+
+def _asset_map(frame: pd.DataFrame | None) -> dict[tuple[str, str], dict[str, Any]]:
+    if frame is None or frame.empty:
+        return {}
+    return {
+        (str(row.get("roster_id", "")), str(row.get("asset_id", ""))): row.to_dict()
+        for _, row in frame.fillna("").iterrows()
+        if str(row.get("asset_type", "player")).lower() == "player"
+        and str(row.get("roster_id", ""))
+        and str(row.get("asset_id", ""))
+    }
 
 
 def _row_map(frame: pd.DataFrame, key: str) -> dict[Any, dict[str, Any]]:

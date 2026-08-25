@@ -860,3 +860,16 @@ Production revision
 `b0142965abe1ba10986b40ed289eea21fa3b37e9` was smoke-verified and checked
 in authenticated Chrome. Jimmy Horn's page now reports market 43 with the
 internal proxy descriptor and trace instead of the prior profile-derived 0.
+
+## 2026-08-25 - Propagate proxy market values through deterministic analysis
+
+The asset ledger had 41 internal proxy values, but downstream profile and
+signal tables still stored zero because their market join stopped at external
+consensus. That made the data room internally inconsistent and left the
+decision layer blind to economic context. The pipeline now fills missing
+external values from exact player assets, preserves
+`internal_proxy_player_value` in `source_trace`, and caps proxy confidence
+with explicit risk language. Local regeneration verified zero mismatches
+across inventory, dossiers, signals, and actions. A production league refresh
+is required to rebuild the durable private bundle before this slice is called
+live.

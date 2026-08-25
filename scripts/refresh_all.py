@@ -229,6 +229,7 @@ def main(
             config,
             dataframes["manager_valuation_profiles"],
             dataframes["player_opportunity_scores"],
+            dataframes["team_asset_inventory"],
         )
     )
     dataframes["today_priority_board"] = build_today_priority_board(
@@ -255,6 +256,7 @@ def main(
             dataframes["league_news_impact"],
             dataframes["player_signal_scores"],
             config,
+            dataframes["team_asset_inventory"],
         )
     )
     configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]

@@ -22,7 +22,7 @@ from src.normalize import build_roster_maps, normalize_traded_picks, normalize_t
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.priority_board import build_today_priority_board
-from src.profile_intelligence import build_player_transaction_history, build_profile_intelligence_tables
+from src.profile_intelligence import _player_confidence, build_player_dossiers, build_player_transaction_history, build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
 from src.opportunity import build_opportunity_scores, score_players_from_weekly
@@ -2084,6 +2084,49 @@ class VModelTests(unittest.TestCase):
         self.assertIn("player_signal_scores", tables)
         self.assertEqual(len(tables["player_signal_scores"]), 1)
         self.assertIn("evidence", tables["player_signal_scores"].columns)
+
+    def test_proxy_market_flows_into_signals_and_player_dossiers_with_receipt(self) -> None:
+        """Encodes docs/data_contract.md: proxy values are explicit fallback evidence, not zero market."""
+        projections = pd.DataFrame([
+            {"player_id": "proxy", "player_name": "Proxy WR", "position": "WR", "roster_id": 8, "team_name": "The Clapper", "projected_fantasy_points": 180, "projected_ppg": 10.6, "projection_confidence": "high", "source_trace": "projection"},
+        ])
+        roster = pd.DataFrame([
+            {"player_id": "proxy", "player_name": "Proxy WR", "position": "WR", "age": 23, "roster_id": 8, "team_name": "The Clapper", "season": "2026"},
+        ])
+        needs = pd.DataFrame([{"roster_id": 8, "team_name": "The Clapper", "need_pass_catcher": "medium", "team_shape": "balanced_or_unclear"}])
+        inventory = pd.DataFrame([
+            {"roster_id": 8, "team_name": "The Clapper", "asset_type": "player", "asset_id": "proxy", "asset_name": "Proxy WR", "market_value": 43, "source_trace": "internal_proxy_player_value"},
+        ])
+        tables = build_signal_tables(
+            projections,
+            roster,
+            pd.DataFrame(columns=["player_id", "market_value", "source_trace"]),
+            needs,
+            pd.DataFrame(columns=["roster_id"]),
+            pd.DataFrame(columns=["player_id"]),
+            {"current_team": {"roster_id": 2}, "strategy_profile": {"team_direction": "deep_rebuild"}},
+            team_asset_inventory_df=inventory,
+        )
+        signal = tables["player_signal_scores"].iloc[0]
+        action = tables["action_recommendations"].iloc[0]
+        dossiers = build_player_dossiers(
+            roster,
+            pd.DataFrame(columns=["player_id", "consensus_value", "source_trace"]),
+            projections,
+            pd.DataFrame(),
+            pd.DataFrame(),
+            tables["player_signal_scores"],
+            pd.DataFrame(),
+            inventory,
+        )
+
+        self.assertEqual(float(signal["market_value"]), 43.0)
+        self.assertEqual(float(action["market_value"]), 43.0)
+        self.assertIn("internal_proxy_player_value", str(signal["source_trace"]))
+        self.assertIn("internal proxy used", str(signal["risk"]))
+        self.assertEqual(float(dossiers.iloc[0]["market_value"]), 43.0)
+        self.assertIn("internal_proxy_player_value", str(dossiers.iloc[0]["source_trace"]))
+        self.assertEqual(_player_confidence(dossiers.iloc[0]), "medium")
 
     def test_signal_tables_create_breakouts_and_sell_candidates(self) -> None:
         projections = pd.DataFrame(

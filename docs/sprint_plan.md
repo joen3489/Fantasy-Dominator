@@ -904,6 +904,9 @@ content hashes, bundle revisions, generated-article publication cards, reuse
 gates, structured manager dossiers, read-only Trade Desk packets, question-led
 edition prompts, a versioned responsive masthead manifest, and exact-scope
 team-construction presentation reconciled to the economic asset ledger.
+The deterministic refresh path also propagates 41 internal proxy market rows
+through profiles, signals, and actions with explicit provenance; the local
+cross-table mismatch audit is zero.
 Production revision `eb9b68d96f40cffa0afec6131547be178d8f1395` passed public
 smoke and authenticated browser verification. Release 1 remains open because
 production is still in deterministic fallback mode until the

@@ -357,3 +357,12 @@ profile join instead of the exact owned asset. For rostered players, join
 `team_asset_inventory` by `roster_id + asset_id`, label proxy values, and show
 unavailable when the owned asset row is missing. Keep profile market values
 only for unrostered player-pool pages.
+
+## 2026-08-25 proxy economics must reach the decision layer
+
+Finding a proxy value in the asset ledger is not enough if dossiers, signals,
+and actions still store zero. External market values should win; missing
+values may inherit the exact asset-ledger proxy only with its source trace and
+lower-confidence risk language. After a model change, regenerate the local
+tables and compare all proxy assets across every downstream consumer before
+claiming the data room is coherent.

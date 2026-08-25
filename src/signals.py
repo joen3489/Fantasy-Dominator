@@ -18,6 +18,7 @@ def build_signal_tables(
     config: dict[str, Any],
     manager_valuation_profiles_df: pd.DataFrame | None = None,
     opportunity_scores_df: pd.DataFrame | None = None,
+    team_asset_inventory_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     scores = build_player_signal_scores(
         projections_df,
@@ -28,6 +29,7 @@ def build_signal_tables(
         news_impact_df,
         config,
         opportunity_scores_df,
+        team_asset_inventory_df,
     )
     gaps = build_projection_market_gaps(scores)
     breakouts = build_breakout_candidates(scores)
@@ -55,11 +57,12 @@ def build_player_signal_scores(
     news_impact_df: pd.DataFrame,
     config: dict[str, Any],
     opportunity_scores_df: pd.DataFrame | None = None,
+    team_asset_inventory_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if projections_df.empty:
         return pd.DataFrame([], columns=_signal_columns())
 
-    market = _player_value_map(player_market_values_df)
+    market = _market_value_map(player_market_values_df, team_asset_inventory_df)
     ages = _age_map(roster_players_df)
     needs = _row_map(team_needs_df, "roster_id")
     behavior = _row_map(manager_behavior_df, "roster_id")
@@ -452,6 +455,8 @@ def _signal_confidence(projection_confidence: str, market_record: dict[str, Any]
         return "low"
     if not market_record:
         return "medium"
+    if _is_proxy_market(market_record):
+        return "medium"
     return projection_confidence
 
 
@@ -460,6 +465,8 @@ def _risk(projection_confidence: str, market_record: dict[str, Any], sell_score:
         return "high: sparse or missing projection history"
     if not market_record:
         return "medium: external market value unavailable"
+    if _is_proxy_market(market_record):
+        return "medium: external market value unavailable; internal proxy used"
     if sell_score >= 55:
         return "medium: timing matters before value decay"
     return "medium: verify role and market price"
@@ -510,6 +517,39 @@ def _player_value_map(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
         if str(record.get("player_name", "")):
             values[str(record.get("player_name")).lower()] = record
     return values
+
+
+def _market_value_map(
+    external_frame: pd.DataFrame,
+    inventory_frame: pd.DataFrame | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Prefer external values and explicitly fill missing players from the asset ledger."""
+
+    values = _player_value_map(external_frame)
+    if inventory_frame is None or inventory_frame.empty:
+        return values
+    for _, row in inventory_frame.fillna("").iterrows():
+        if str(row.get("asset_type", "player")).lower() != "player":
+            continue
+        player_id = str(row.get("asset_id", ""))
+        player_name = str(row.get("asset_name", ""))
+        if not player_id or player_id in values or (player_name and player_name.lower() in values):
+            continue
+        record = row.to_dict()
+        record["player_id"] = player_id
+        record["player_name"] = player_name
+        record["market_source"] = "internal_proxy"
+        values[player_id] = record
+        if player_name:
+            values[player_name.lower()] = record
+    return values
+
+
+def _is_proxy_market(record: dict[str, Any]) -> bool:
+    return (
+        str(record.get("market_source", "")).lower() == "internal_proxy"
+        or str(record.get("source_trace", "")) == "internal_proxy_player_value"
+    )
 
 
 def _age_map(frame: pd.DataFrame) -> dict[str, float]:

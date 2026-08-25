@@ -1016,3 +1016,16 @@ Jimmy Horn's exact player entity page from Moose Caboose. The page rendered
 market value 43, labeled it `internal proxy value`, and exposed the
 `internal_proxy_player_value` trace; the team route still reconciled at
 835.54 and the private root remained Lulu’s Potatoe’s.
+
+## 2026-08-25 proxy market propagation checkpoint
+
+The market provenance audit found 41 current player assets with nonzero
+`internal_proxy_player_value` rows in `team_asset_inventory` but zero market
+values in `player_dossiers`, `player_signal_scores`, and
+`action_recommendations`. The deterministic pipeline now uses external market
+values first and fills only missing players from the exact asset ledger,
+carrying the proxy trace and proxy-aware risk/confidence language through
+signals, actions, and profiles. A local rebuild reduced the mismatch count to
+zero across all 41 proxy assets. Production acceptance requires a scoped
+league refresh after deployment so the durable private bundle consumes the
+newly rebuilt tables.

@@ -159,6 +159,12 @@ an unavailable market value when that scoped asset row is missing. A profile
 market value may be shown only for an unrostered player, where no owned asset
 ledger row exists.
 
+The deterministic signal and profile pipelines use the same precedence:
+external market values win, and missing player values may be filled from the
+exact player asset ledger only as `internal_proxy_player_value`. Downstream
+rows must carry that trace and lower confidence/risk language; they may not
+silently turn a proxy into an external market observation.
+
 ## Presentation Artifacts
 
 `app_bundle.json.dataRoomDelta` is a deterministic reader receipt, not a

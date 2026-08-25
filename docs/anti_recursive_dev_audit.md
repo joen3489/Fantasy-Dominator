@@ -348,3 +348,13 @@ Production proof at
 showed market 43, `Market source: internal proxy value`, and the
 `internal_proxy_player_value` trace. The same authenticated pass retained
 the team-level 835.54 reconciliation and private Lulu’s Potatoe’s identity.
+
+## 2026-08-25 - Do not leave proxy economics disconnected from decisions
+
+The cross-table audit found 41 proxy-valued assets that were present in the
+economic ledger but zeroed in profile, signal, and action tables. This was a
+disconnected-depth defect: a source existed, but the decision seam ignored it.
+The deterministic pipeline now propagates the fallback with an explicit proxy
+trace and lower-confidence risk language. Local regeneration reports zero
+mismatches. Production verification must include a scoped refresh and compare
+the rebuilt tables, not merely inspect the already-published player card.
