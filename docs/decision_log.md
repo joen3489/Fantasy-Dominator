@@ -917,3 +917,19 @@ Lulu’s Potatoe’s identity and reported the prior persisted run as
 `gpt-5.6-luna` aligned with the configured model. It still showed 0/5 current
 articles because the separate operator authorization was not supplied; the
 receipt is not being used to claim a fresh publication.
+
+## 2026-08-25 - Add observed matchup outcomes to manager dossiers
+
+The manager dossier's historical ledger now consumes an optional canonical
+`matchups` table from Sleeper. The table is one row per exact roster/week and
+retains the opponent roster ID, score state, margin, result, evidence, and
+endpoint trace. `manager_season_history` aggregates those rows into wins,
+losses, ties, points for/against, point differential, win rate, and an
+explicit outcome coverage state.
+
+The implementation deliberately distinguishes missing/offseason/unplayed
+data from a recorded losing season. The browser therefore renders `n/a` for
+matchup count when no matchup evidence exists and exposes the outcome receipt
+next to the manager dossier. This is a foundation slice for future manager
+prediction and feedback work, not a claim that observed outcomes reveal
+manager intent or that the current production bundle has been refreshed yet.

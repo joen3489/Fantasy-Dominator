@@ -1,11 +1,30 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 import pandas as pd
 
 from .players import player_field, player_name
 from .utils import epoch_ms_to_datetime, join_items, json_dumps, listify, safe_get
+
+
+MATCHUP_COLUMNS = [
+    "season",
+    "league_id",
+    "week",
+    "matchup_id",
+    "roster_id",
+    "team_name",
+    "opponent_roster_id",
+    "opponent_team_name",
+    "points_for",
+    "points_against",
+    "margin",
+    "result",
+    "source_trace",
+    "evidence",
+]
 
 
 def build_user_maps(users: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -393,8 +412,81 @@ def normalize_waivers(
     return rows
 
 
+def normalize_matchups(
+    season: str,
+    league_id: str,
+    matchups_by_week: dict[int, list[dict[str, Any]]],
+    roster_map: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Normalize one roster/week row per Sleeper matchup participant.
+
+    Sleeper exposes a row for each roster and a shared ``matchup_id``. The
+    normalized table keeps the exact roster IDs, opponent IDs, points, result,
+    and source endpoint so historical manager outcomes can be joined without
+    guessing from team names. Missing scores remain ``unplayed``.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for week, raw_rows in sorted(matchups_by_week.items(), key=lambda item: int(item[0])):
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for raw in raw_rows or []:
+            roster_id = _int_or_none(raw.get("roster_id"))
+            if roster_id is None:
+                continue
+            raw_matchup_id = raw.get("matchup_id")
+            matchup_id = "" if raw_matchup_id in (None, "", 0, "0") else str(raw_matchup_id)
+            # A missing matchup ID is not evidence that every roster played one
+            # another; isolate that row so it cannot invent an opponent.
+            group_key = matchup_id or f"unpaired:{roster_id}"
+            groups[group_key].append({"raw": raw, "roster_id": roster_id, "matchup_id": matchup_id})
+
+        source_trace = f"sleeper:league/{league_id}/matchups/{week}"
+        for group in groups.values():
+            for entry in group:
+                raw = entry["raw"]
+                roster_id = entry["roster_id"]
+                opponents = [other for other in group if other["roster_id"] != roster_id]
+                opponent = opponents[0] if opponents else {}
+                points_for = _number_or_none(raw.get("points"))
+                if points_for is None:
+                    points_for = _number_or_none(raw.get("custom_points"))
+                opponent_raw = (opponent.get("raw") or {}) if isinstance(opponent, dict) else {}
+                points_against = _number_or_none(opponent_raw.get("points"))
+                if points_against is None:
+                    points_against = _number_or_none(opponent_raw.get("custom_points"))
+                result = _matchup_result(points_for, points_against)
+                opponent_roster_id = opponent.get("roster_id", "") if opponent else ""
+                evidence = (
+                    f"week={week}; matchup_id={entry['matchup_id'] or 'not recorded'}; "
+                    f"points_for={_format_number(points_for)}; points_against={_format_number(points_against)}; "
+                    f"result={result}"
+                )
+                rows.append(
+                    {
+                        "season": season,
+                        "league_id": league_id,
+                        "week": week,
+                        "matchup_id": entry["matchup_id"],
+                        "roster_id": roster_id,
+                        "team_name": roster_map.get(roster_id, {}).get("team_name", ""),
+                        "opponent_roster_id": opponent_roster_id,
+                        "opponent_team_name": roster_map.get(opponent_roster_id, {}).get("team_name", "") if opponent_roster_id else "",
+                        "points_for": _format_number(points_for),
+                        "points_against": _format_number(points_against),
+                        "margin": _format_number(points_for - points_against) if points_for is not None and points_against is not None else "",
+                        "result": result,
+                        "source_trace": source_trace,
+                        "evidence": evidence,
+                    }
+                )
+    return rows
+
+
 def to_dataframes(tables: dict[str, list[dict[str, Any]]]) -> dict[str, pd.DataFrame]:
-    return {name: pd.DataFrame(rows) for name, rows in tables.items()}
+    return {
+        name: pd.DataFrame(rows, columns=MATCHUP_COLUMNS if name == "matchups" else None)
+        for name, rows in tables.items()
+    }
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -404,6 +496,33 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _number_or_none(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
+
+
+def _format_number(value: float | None) -> float | str:
+    if value is None:
+        return ""
+    rounded = round(float(value), 3)
+    return int(rounded) if rounded.is_integer() else rounded
+
+
+def _matchup_result(points_for: float | None, points_against: float | None) -> str:
+    if points_for is None or points_against is None:
+        return "unplayed"
+    if points_for > points_against:
+        return "win"
+    if points_for < points_against:
+        return "loss"
+    return "tie"
 
 
 def _team_name(roster_map: dict[int, dict[str, Any]], roster_id: int | None) -> str:

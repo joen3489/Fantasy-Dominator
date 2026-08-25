@@ -21,10 +21,11 @@ def build_economic_tables(
     player_market_values_df: pd.DataFrame,
     pick_market_values_df: pd.DataFrame,
     config: dict[str, Any],
+    matchups_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     inventory = build_team_asset_inventory(roster_players_df, pick_ownership_df, player_market_values_df, pick_market_values_df, config)
     event_log = build_manager_event_log(teams_df, trades_df, waivers_df)
-    season_history = build_manager_season_history(teams_df, trades_df, waivers_df, roster_players_df)
+    season_history = build_manager_season_history(teams_df, trades_df, waivers_df, roster_players_df, matchups_df)
     needs = build_team_needs_matrix(teams_df, roster_players_df, pick_ownership_df)
     behavior = build_manager_behavior_signals(teams_df, trades_df, waivers_df, manager_profiles_df, roster_players_df)
     valuation_profiles = build_manager_valuation_profiles(teams_df, manager_profiles_df, roster_players_df)

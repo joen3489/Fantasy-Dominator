@@ -1278,6 +1278,7 @@ def build_manager_dossier_items(
         manager_needs = needs_by_id.get(roster_id, {})
         manager_preferences = [row for row in valuation_profiles if str(row.get("roster_id")) == roster_id]
         manager_edges = [row for row in counterparty_edges if str(row.get("target_roster_id")) == roster_id]
+        outcome_summary = _manager_outcome_summary(manager_seasons)
         fingerprint = _fingerprint(
             {
                 "cycle": cycle,
@@ -1303,6 +1304,8 @@ def build_manager_dossier_items(
             "seasons_with_activity": sum(
                 1 for row in manager_seasons if _int(row.get("transaction_count")) > 0
             ),
+            "matchups": outcome_summary["matchups"],
+            "seasons_with_outcomes": outcome_summary["seasons_with_outcomes"],
         }
         roster_construction = {
             "team_shape": manager_needs.get("team_shape", ""),
@@ -1331,6 +1334,14 @@ def build_manager_dossier_items(
             {"label": "Pick behavior", "value": cycle.get("pick_posture", ""), "evidence": f"future_1sts_acquired={profile.get('future_1sts_acquired', 0)}; future_1sts_sold={profile.get('future_1sts_sold', 0)}"},
             {"label": "Waiver behavior", "value": cycle.get("waiver_posture", ""), "evidence": f"claims={profile.get('number_of_waiver_claims', 0)}; faab={profile.get('faab_spent_on_waivers', 0)}"},
         ]
+        if outcome_summary["status"] != "not_recorded":
+            behavior_observations.append(
+                {
+                    "label": "Season outcomes",
+                    "value": outcome_summary["record"],
+                    "evidence": outcome_summary["evidence"],
+                }
+            )
         trade_fits = [
             {
                 "player_id": row.get("player_id", ""),
@@ -1351,6 +1362,9 @@ def build_manager_dossier_items(
         trade_fit_evaluation = _manager_trade_fit_evaluation(manager_preferences, trade_fits, manager_seasons)
         trade_fit_summary = trade_fit_evaluation["summary"]
         questions = _manager_questions(cycle, profile, manager_needs, trade_fits)
+        dossier_source_trace = "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log;manager_season_history"
+        if outcome_summary["status"] != "not_recorded":
+            dossier_source_trace += ";matchups"
         items.append(
             {
                 "dossier_id": f"manager-{index:03d}",
@@ -1361,9 +1375,10 @@ def build_manager_dossier_items(
                 "evidence": evidence,
                 "risk": risk,
                 "confidence": cycle.get("confidence", "low"),
-                "source_trace": "manager_cycle_profiles;manager_profile_tags;manager_profiles;manager_event_log;manager_season_history",
+                "source_trace": dossier_source_trace,
                 "sample_size": sample_size,
                 "roster_construction": roster_construction,
+                "outcome_summary": outcome_summary,
                 "historical_aliases": historical_aliases,
                 "season_history": season_history,
                 "transaction_timeline": transaction_timeline,
@@ -1377,12 +1392,12 @@ def build_manager_dossier_items(
                 "unknowns": [
                     "Manager intent is not observed in Sleeper data.",
                     "A trade fit is a model-supported conversation hypothesis, not a predicted response.",
-                ],
+                ] + (["Season outcome rows are not recorded in this source snapshot."] if outcome_summary["status"] == "not_recorded" else []),
                 "analysis_text": (
                     f"{cycle.get('team_name', 'This manager')} profiles as {cycle.get('dynasty_cycle', 'unclear')} "
                     f"with {cycle.get('trade_temperature', 'unknown trade activity')} and {cycle.get('pick_posture', 'unclear pick posture')}. "
                     f"The profile covers {sample_size['seasons']} seasons and {sample_size['trades']} observed trades. "
-                    f"Tags: {tag_text or 'none'}. Evidence: {evidence}."
+                    f"{outcome_summary['narrative']} Tags: {tag_text or 'none'}. Evidence: {evidence}."
                 ),
                 "evidence_fingerprint": fingerprint,
                 "update_status": update_status,
@@ -1391,6 +1406,60 @@ def build_manager_dossier_items(
             }
         )
     return items
+
+
+def _manager_outcome_summary(manager_seasons: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize observed Sleeper matchup outcomes without treating absence as 0-0.
+
+    A manager dossier may outlive a source refresh. The explicit status keeps a
+    missing matchup endpoint, an offseason snapshot, and a recorded losing
+    season distinct in both the data room and the editorial layer.
+    """
+
+    outcome_rows = [
+        row
+        for row in manager_seasons
+        if str(row.get("outcome_status") or "").lower() in {"recorded", "partial"}
+    ]
+    status = "not_recorded"
+    if any(str(row.get("outcome_status") or "").lower() == "recorded" for row in outcome_rows):
+        status = "recorded"
+    elif outcome_rows:
+        status = "partial"
+    wins = sum(_int(row.get("wins")) for row in outcome_rows)
+    losses = sum(_int(row.get("losses")) for row in outcome_rows)
+    ties = sum(_int(row.get("ties")) for row in outcome_rows)
+    played = wins + losses + ties
+    points_for = sum(_num(row.get("points_for")) for row in outcome_rows if row.get("points_for") not in (None, ""))
+    points_against = sum(_num(row.get("points_against")) for row in outcome_rows if row.get("points_against") not in (None, ""))
+    points_seen = any(row.get("points_for") not in (None, "") or row.get("points_against") not in (None, "") for row in outcome_rows)
+    matchups = sum(len(_split_values(row.get("matchup_weeks"))) for row in outcome_rows)
+    seasons_with_outcomes = sum(1 for row in outcome_rows if str(row.get("outcome_status") or "").lower() == "recorded")
+    record = f"{wins}-{losses}-{ties}" if played else "not recorded"
+    points_text = f"; points {round(points_for, 2)} for / {round(points_against, 2)} against" if points_seen else ""
+    if status == "not_recorded":
+        narrative = "Season outcomes are not recorded in this source snapshot."
+        evidence = "manager_season_history; outcome_status=not_recorded"
+    else:
+        narrative = f"Observed season outcome record: {record} across {played} scored matchup weeks{points_text}."
+        evidence = f"manager_season_history; outcome_status={status}; matchups={matchups}; record={record}"
+    return {
+        "status": status,
+        "record": record,
+        "wins": wins,
+        "losses": losses,
+        "ties": ties,
+        "played": played,
+        "matchups": matchups,
+        "seasons_with_outcomes": seasons_with_outcomes,
+        "points_for": round(points_for, 2) if points_seen else "",
+        "points_against": round(points_against, 2) if points_seen else "",
+        "point_diff": round(points_for - points_against, 2) if points_seen else "",
+        "win_rate": round(wins / played, 3) if played else "",
+        "evidence": evidence,
+        "source_trace": "manager_season_history;matchups" if status != "not_recorded" else "manager_season_history",
+        "narrative": narrative,
+    }
 
 
 def _manager_transaction_timeline(

@@ -1088,3 +1088,17 @@ Before implementing any sprint after this document:
 7. Run the sprint's contradiction checklist.
 
 No sprint should start by adding UI or Codex prose before its data/source contract is clear.
+
+## 2026-08-25 manager outcome depth amendment
+
+The manager dossier foundation now includes an optional Sleeper `matchups`
+canonical table and outcome fields in `manager_season_history`. This advances
+R12's feedback/history foundation without pretending that a source gap is a
+losing record: the deterministic layer reports exact opponent and score
+evidence plus `recorded`, `partial`, or `not_recorded` coverage. The browser
+renders the receipt and keeps unavailable coverage explicit.
+
+Acceptance checks for the slice are exact roster/opponent normalization,
+unplayed and quiet-season handling, dossier source-trace propagation, and a
+browser entry-path marker. A scoped production refresh and authenticated
+coverage check remain required before counting the outcome layer as live.

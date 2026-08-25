@@ -401,3 +401,19 @@ authenticated Chrome entry path. The live marker carried the exact private
 team identity and model reconciliation; the 0/5 fallback remained visible
 because the operator write gate was not authorized. This distinguishes a
 correct diagnostic from a falsely successful content run.
+
+## 2026-08-25 matchup outcome seam audit
+
+The next depth slice found that manager dossiers had rich transaction history
+but no observed season outcome object. Adding a UI record tile alone would
+have created the same surface-level failure: no stable opponent join, no score
+provenance, and no way to distinguish an offseason from a 0-0 result. The
+refresh now preserves raw Sleeper matchup responses, normalizes exact
+roster/week rows, and aggregates them into the manager season ledger with
+explicit `recorded`, `partial`, and `not_recorded` states.
+
+Tests cover the normalizer's exact opponent and unplayed branches, the ledger's
+quiet-season behavior, dossier trace propagation, and the browser entry
+marker. The local contract is therefore wired end to end. The remaining gate
+is production-specific: refresh the private bundle and verify actual matchup
+coverage in the authenticated browser before describing the feature as live.

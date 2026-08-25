@@ -175,6 +175,51 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertEqual(item["trade_fit_evaluation"]["current_fit_count"], 0)
         self.assertTrue(any("Manager intent is not observed" in value for value in item["unknowns"]))
 
+    def test_manager_dossier_exposes_recorded_outcomes_with_trace(self) -> None:
+        """Encodes docs/data_contract.md's rule that outcome depth must remain source-backed."""
+        items = build_manager_dossier_items(
+            {
+                "manager_cycle_profiles": pd.DataFrame([{
+                    "roster_id": 4,
+                    "team_name": "Archive Team",
+                    "dynasty_cycle": "contender",
+                    "trade_temperature": "active",
+                    "pick_posture": "pick spender",
+                    "confidence": "high",
+                    "evidence": "matchup outcomes recorded",
+                }]),
+                "manager_profiles": pd.DataFrame([{
+                    "roster_id": 4,
+                    "seasons_covered": "2025",
+                    "total_trades": 1,
+                    "number_of_waiver_claims": 2,
+                }]),
+                "manager_season_history": pd.DataFrame([{
+                    "roster_id": 4,
+                    "season": "2025",
+                    "transaction_count": 1,
+                    "matchup_weeks": "1; 2",
+                    "played_weeks": "1; 2",
+                    "wins": 1,
+                    "losses": 1,
+                    "ties": 0,
+                    "points_for": 210,
+                    "points_against": 200,
+                    "outcome_status": "recorded",
+                    "source_trace": "manager_season_history;matchups",
+                }]),
+            },
+            "now",
+        )
+
+        item = items[0]
+        self.assertEqual(item["outcome_summary"]["status"], "recorded")
+        self.assertEqual(item["outcome_summary"]["record"], "1-1-0")
+        self.assertEqual(item["outcome_summary"]["point_diff"], 10)
+        self.assertEqual(item["sample_size"]["matchups"], 2)
+        self.assertIn("matchups", item["source_trace"])
+        self.assertTrue(any(row["label"] == "Season outcomes" for row in item["behavior_observations"]))
+
     def test_manager_trade_fit_evaluation_exposes_cross_season_alignment(self) -> None:
         """Encodes docs/front_office_realization_epic.md's cross-season trade-fit rule."""
         items = build_manager_dossier_items(

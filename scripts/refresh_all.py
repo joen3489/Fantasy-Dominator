@@ -29,6 +29,7 @@ from src.normalize import (
     normalize_transactions_raw,
     normalize_trades,
     normalize_waivers,
+    normalize_matchups,
     to_dataframes,
 )
 from src.pick_ownership import build_pick_ownership
@@ -39,7 +40,7 @@ from src.projection_accuracy import append_projection_accuracy_snapshot, build_p
 from src.opportunity import build_opportunity_scores
 from src.projections import _load_raw_stats, build_projection_tables
 from src.reports import build_weekly_report
-from src.sleeper_api import SleeperAPI
+from src.sleeper_api import SleeperAPI, SleeperAPIError
 from src.signals import build_signal_tables
 from src.utils import ANALYSIS_DIR, PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
 
@@ -109,8 +110,10 @@ def main(
         "transactions_normalized": [],
         "trades": [],
         "waivers": [],
+        "matchups": [],
     }
     current_my_roster_id = None
+    matchup_source_statuses: list[str] = []
 
     for season, league_id in league_ids_by_season.items():
         if not league_id:
@@ -133,6 +136,18 @@ def main(
             week: api.transactions(season, league_id, week, force=force)
             for week in range(week_start, week_end + 1)
         }
+        matchups_by_week: dict[int, list[dict]] = {}
+        matchups_available = True
+        for week in range(week_start, week_end + 1):
+            try:
+                matchups_by_week[week] = api.matchups(season, league_id, week, force=force)
+            except SleeperAPIError:
+                # Matchups are a depth source, not a reason to discard a
+                # trustworthy transaction/roster refresh. The dossier will
+                # render outcomes as not recorded when this endpoint is absent.
+                matchups_by_week[week] = []
+                matchups_available = False
+        matchup_source_statuses.append("available" if matchups_available else "unavailable")
 
         roster_map, my_roster_id = build_roster_maps(
             rosters,
@@ -160,6 +175,7 @@ def main(
         )
         all_tables["trades"].extend(normalize_trades(season, league_id, transactions_by_week, roster_map, players))
         all_tables["waivers"].extend(normalize_waivers(season, league_id, transactions_by_week, roster_map, players))
+        all_tables["matchups"].extend(normalize_matchups(season, league_id, matchups_by_week, roster_map))
 
     dataframes = to_dataframes(all_tables)
     manager_profiles = build_manager_profiles(
@@ -216,6 +232,7 @@ def main(
             dataframes["player_market_values"],
             dataframes["pick_market_values"],
             config,
+            dataframes.get("matchups", pd.DataFrame()),
         )
     )
     dataframes.update(
@@ -275,6 +292,8 @@ def main(
                 "historical_league_ids_configured": max(0, len(configured_seasons) - 1),
                 "transaction_week_start": week_start,
                 "transaction_week_end": week_end,
+                "matchups_status": ";".join(matchup_source_statuses) or "not_requested",
+                "matchup_rows": len(dataframes.get("matchups", pd.DataFrame())),
                 "source_scope": "Sleeper public API plus open/legal external sources",
                 "raw_cache_root": str((raw_dir or Path("data") / "raw").as_posix()),
                 "raw_external_cache_root": str((Path("data") / "raw_external").as_posix()),

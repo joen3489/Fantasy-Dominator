@@ -1088,3 +1088,21 @@ separate operator gate. The prior persisted run was reported as Luna-aligned;
 the edition remains `0/5 reporter articles · evidence-led fallback` because no
 current operator-authorized generation was performed. Release 1 therefore
 remains open at the protected publication boundary.
+
+## 2026-08-25 matchup outcome depth checkpoint
+
+Historical manager dossiers now have a deterministic outcome seam beneath the
+existing transaction and roster ledger. The refresh preserves Sleeper's raw
+weekly matchup payloads, normalizes one exact `roster_id` row per week with the
+opponent ID, points, margin, result, evidence, and source endpoint, and feeds
+those rows into `manager_season_history`. Dossiers can now show observed
+season records and point differential without treating a missing endpoint,
+offseason, or missing score as a 0-0 season.
+
+The browser entry path exposes the result as a receipt and uses `n/a` for
+recorded matchup count when the source state is `not_recorded`. Local tests
+cover exact opponent joins, unplayed matchups, quiet seasons, dossier
+summaries, and the generated browser marker. Production acceptance still
+requires a fresh private league refresh and authenticated verification of the
+actual preserved matchup coverage; this code/doc checkpoint does not claim
+that the current durable production bundle contains historical matchup rows.

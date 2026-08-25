@@ -154,6 +154,21 @@ class SleeperAPI:
             self._season_cache_max_age(season),
         )
 
+    def matchups(self, season: str, league_id: str, week: int, force: bool = False) -> list[dict[str, Any]]:
+        """Return Sleeper's weekly matchup rows without collapsing the raw payload.
+
+        Matchups are optional for an in-progress/offseason league, so callers
+        must preserve an empty response as "not recorded" rather than treating
+        it as a 0-0 result.
+        """
+
+        return self.get(
+            f"/league/{league_id}/matchups/{week}",
+            self.raw_dir / season / f"matchups_{league_id}_week_{week:02d}.json",
+            force,
+            self._season_cache_max_age(season),
+        )
+
     def players_nfl(self, cache_path: Path, force: bool = False) -> dict[str, Any]:
         return self.get("/players/nfl", cache_path, force, self.player_cache_max_age_seconds)
 

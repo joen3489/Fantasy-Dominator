@@ -32,6 +32,16 @@ MANAGER_SEASON_HISTORY_COLUMNS = [
     "qb_count",
     "rb_count",
     "pass_catcher_count",
+    "matchup_weeks",
+    "played_weeks",
+    "wins",
+    "losses",
+    "ties",
+    "points_for",
+    "points_against",
+    "point_diff",
+    "win_rate",
+    "outcome_status",
     "source_trace",
     "evidence",
 ]
@@ -42,6 +52,7 @@ def build_manager_season_history(
     trades_df: pd.DataFrame,
     waivers_df: pd.DataFrame,
     roster_players_df: pd.DataFrame,
+    matchups_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build an auditable manager-by-season activity ledger.
 
@@ -81,6 +92,15 @@ def build_manager_season_history(
                 "qb_count": 0,
                 "rb_count": 0,
                 "pass_catcher_count": 0,
+                "matchup_weeks": [],
+                "played_weeks": [],
+                "wins": 0,
+                "losses": 0,
+                "ties": 0,
+                "points_for": 0.0,
+                "points_against": 0.0,
+                "points_seen": False,
+                "outcome_status": "not_recorded",
             }
         state = states[key]
         if not state["team_name"] and str(team_name or ""):
@@ -150,6 +170,47 @@ def build_manager_season_history(
         elif position in {"WR", "TE"}:
             state["pass_catcher_count"] += 1
 
+    seen_matchups: set[tuple[str, int, str, str]] = set()
+    if matchups_df is not None and not matchups_df.empty:
+        for _, matchup in matchups_df.fillna("").iterrows():
+            roster_id = _int(matchup.get("roster_id"))
+            season = str(matchup.get("season") or "").strip()
+            week = _int(matchup.get("week"))
+            matchup_id = str(matchup.get("matchup_id") or "")
+            if not season or not roster_id or not week:
+                continue
+            dedupe_key = (season, roster_id, str(week), matchup_id)
+            if dedupe_key in seen_matchups:
+                continue
+            seen_matchups.add(dedupe_key)
+            state = ensure_state(season, roster_id, matchup.get("team_name"))
+            if state is None:
+                continue
+            state["matchup_weeks"].append(week)
+            result = str(matchup.get("result") or "unplayed").lower()
+            if result == "win":
+                state["wins"] += 1
+                state["played_weeks"].append(week)
+                state["outcome_status"] = "recorded"
+            elif result == "loss":
+                state["losses"] += 1
+                state["played_weeks"].append(week)
+                state["outcome_status"] = "recorded"
+            elif result == "tie":
+                state["ties"] += 1
+                state["played_weeks"].append(week)
+                state["outcome_status"] = "recorded"
+            elif state["outcome_status"] == "not_recorded":
+                state["outcome_status"] = "partial"
+            points_for = _numeric_or_none(matchup.get("points_for"))
+            points_against = _numeric_or_none(matchup.get("points_against"))
+            if points_for is not None:
+                state["points_for"] += points_for
+                state["points_seen"] = True
+            if points_against is not None:
+                state["points_against"] += points_against
+                state["points_seen"] = True
+
     rows: list[dict[str, Any]] = []
     for state in sorted(states.values(), key=lambda value: (_numeric(value["season"]), value["roster_id"])):
         partners = "; ".join(
@@ -167,8 +228,13 @@ def build_manager_season_history(
             f"season={state['season']}; roster_id={state['roster_id']}; trades={state['trades']}; "
             f"waiver_claims={state['waiver_claims']}; faab_spent={round(state['faab_spent'], 2)}; "
             f"roster_players={state['roster_player_count']}; active_weeks={join_items(active_weeks)}; "
-            f"peak_transaction_week={peak_week or 'unknown'}"
+            f"peak_transaction_week={peak_week or 'unknown'}; "
+            f"outcomes={state['outcome_status']}; record={state['wins']}-{state['losses']}-{state['ties']}; "
+            f"played_weeks={join_items(sorted(set(state['played_weeks'])))}"
         )
+        played = state["wins"] + state["losses"] + state["ties"]
+        points_for = round(state["points_for"], 2) if state["points_seen"] else ""
+        points_against = round(state["points_against"], 2) if state["points_seen"] else ""
         rows.append(
             {
                 "owner_id": _identifier_value(state["owner_id"]),
@@ -194,7 +260,17 @@ def build_manager_season_history(
                 "qb_count": state["qb_count"],
                 "rb_count": state["rb_count"],
                 "pass_catcher_count": state["pass_catcher_count"],
-                "source_trace": "teams;trades;waivers;roster_players",
+                "matchup_weeks": join_items(sorted(set(state["matchup_weeks"]))),
+                "played_weeks": join_items(sorted(set(state["played_weeks"]))),
+                "wins": state["wins"],
+                "losses": state["losses"],
+                "ties": state["ties"],
+                "points_for": points_for,
+                "points_against": points_against,
+                "point_diff": round(float(points_for) - float(points_against), 2) if state["points_seen"] else "",
+                "win_rate": round(state["wins"] / played, 3) if played else "",
+                "outcome_status": state["outcome_status"],
+                "source_trace": "teams;trades;waivers;roster_players" + (";matchups" if state["matchup_weeks"] else ""),
                 "evidence": evidence,
             }
         )
@@ -355,6 +431,16 @@ def _numeric(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number else None
 
 
 def _identifier_value(value: Any) -> Any:

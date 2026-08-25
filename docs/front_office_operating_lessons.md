@@ -407,3 +407,19 @@ showed `gpt-5.6-luna` and API-key readiness, and reported the persisted prior
 run as model-aligned. Because the operator key was not supplied, the reader
 correctly remained at 0/5 fallback; model alignment is not the same thing as a
 fresh generation receipt.
+
+## 2026-08-25 - Manager outcomes must be source-backed, not implied
+
+Manager history had transaction depth but no observed season result seam. The
+refresh now keeps Sleeper matchup payloads raw, normalizes exact weekly
+opponents and scores, and joins them into the per-season manager ledger. The
+dossier reports `recorded`, `partial`, or `not_recorded`; an empty/offseason
+source cannot become a fabricated 0-0 record. The browser also uses `n/a` for
+matchup coverage when outcomes are unavailable, so the absence remains visible
+at the point of decision.
+
+This is the reusable pattern for future analyst depth: create an evidence
+object with stable IDs, source trace, and explicit coverage first; then let
+the dossier and writers explain it. A production refresh is still required
+before claiming that the durable private bundle contains the new historical
+outcomes.

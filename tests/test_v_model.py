@@ -18,7 +18,7 @@ from src.draft_room import build_draft_room
 from src.economics import build_economic_tables, build_manager_behavior_signals
 from src.external_sources import _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
-from src.normalize import build_roster_maps, normalize_traded_picks, normalize_trades, normalize_waivers
+from src.normalize import build_roster_maps, normalize_matchups, normalize_traded_picks, normalize_trades, normalize_waivers, to_dataframes
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.priority_board import build_today_priority_board
@@ -44,6 +44,7 @@ EXPECTED_TABLE_COLUMNS = {
     "transactions_normalized": ["season", "league_id", "week", "transaction_id", "type", "status", "created_datetime", "roster_ids_involved", "manager_team_names_involved", "adds", "drops", "draft_picks_moved", "waiver_bid", "faab_moved", "failure_reason"],
     "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_player_ids_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_player_ids_received", "team_b_picks_received", "team_b_faab_received", "raw"],
     "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_added_ids", "player_dropped", "player_dropped_ids", "waiver_bid", "status", "failure_reason"],
+    "matchups": ["season", "league_id", "week", "matchup_id", "roster_id", "team_name", "opponent_roster_id", "opponent_team_name", "points_for", "points_against", "margin", "result", "source_trace", "evidence"],
     "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
     "market_value_sources": ["source", "source_access_type", "source_player_id", "player_id", "player_name", "position", "raw_value", "normalized_value", "market_rank", "value_format", "source_confidence", "source_trace", "checked_at"],
     "market_consensus_values": ["player_id", "player_name", "position", "consensus_value", "source_count", "disagreement_score", "best_source", "confidence", "source_trace"],
@@ -72,7 +73,7 @@ EXPECTED_TABLE_COLUMNS = {
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
     "manager_event_log": ["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
-    "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "first_transaction_week", "last_transaction_week", "peak_transaction_week", "active_weeks", "trade_weeks", "waiver_weeks", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "source_trace", "evidence"],
+    "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "first_transaction_week", "last_transaction_week", "peak_transaction_week", "active_weeks", "trade_weeks", "waiver_weeks", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "matchup_weeks", "played_weeks", "wins", "losses", "ties", "points_for", "points_against", "point_diff", "win_rate", "outcome_status", "source_trace", "evidence"],
     "team_needs_matrix": ["roster_id", "team_name", "qb_count", "rb_count", "wr_count", "te_count", "pass_catcher_count", "future_firsts_owned", "need_qb", "need_rb", "need_pass_catcher", "need_picks", "team_shape"],
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
     "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
@@ -85,7 +86,7 @@ EXPECTED_TABLE_COLUMNS = {
     "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
     "player_transaction_history": ["player_id", "identity_method", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
     "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
+    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "matchups_status", "matchup_rows", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
 }
 
 
@@ -151,6 +152,33 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(trades[0]["team_b_player_ids_received"], "202")
         self.assertEqual(waivers[0]["player_added_ids"], "303")
         self.assertEqual(waivers[0]["player_dropped_ids"], "404")
+
+    def test_normalized_matchups_preserve_exact_opponents_and_unplayed_state(self) -> None:
+        """Encodes docs/data_contract.md's source-ID and absence-is-not-a-result rule."""
+        roster_map = {1: {"team_name": "Alpha Team"}, 2: {"team_name": "Beta Team"}}
+        matchups = normalize_matchups(
+            "2025",
+            "league",
+            {
+                1: [
+                    {"roster_id": 1, "matchup_id": 1, "points": 120.5},
+                    {"roster_id": 2, "matchup_id": 1, "points": 100},
+                ],
+                2: [{"roster_id": 1, "matchup_id": "", "points": ""}],
+            },
+            roster_map,
+        )
+
+        alpha = next(row for row in matchups if row["week"] == 1 and row["roster_id"] == 1)
+        unplayed = next(row for row in matchups if row["week"] == 2)
+        self.assertEqual(alpha["opponent_roster_id"], 2)
+        self.assertEqual(alpha["opponent_team_name"], "Beta Team")
+        self.assertEqual(alpha["result"], "win")
+        self.assertEqual(alpha["margin"], 20.5)
+        self.assertIn("/matchups/1", alpha["source_trace"])
+        self.assertEqual(unplayed["result"], "unplayed")
+        self.assertEqual(unplayed["opponent_roster_id"], "")
+        self.assertEqual(list(to_dataframes({"matchups": []})["matchups"].columns), EXPECTED_TABLE_COLUMNS["matchups"])
 
     def test_operator_packet_loop_validates_insight_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -780,7 +808,7 @@ class VModelTests(unittest.TestCase):
                         ("target_theses.json", [{"player_id": f"{prefix.lower()}-target", "player_name": f"{prefix} Target", "analysis_text": f"{prefix} target evidence."}]),
                         ("sell_theses.json", [{"player_id": f"{prefix.lower()}-sell", "player_name": f"{prefix} Sell", "analysis_text": f"{prefix} sell evidence."}]),
                         ("trade_theses.json", [{"target_manager_roster_id": 11, "target_manager_name": f"{prefix} Manager", "analysis_text": f"{prefix} manager angle."}]),
-                        ("manager_dossiers.json", [{"roster_id": 11, "team_name": f"{prefix} Manager", "dynasty_cycle": "rebuild", "analysis_text": f"{prefix} manager evidence."}]),
+                        ("manager_dossiers.json", [{"dossier_id": "manager-001", "roster_id": 11, "team_name": f"{prefix} Manager", "dynasty_cycle": "rebuild", "analysis_text": f"{prefix} manager evidence.", "outcome_summary": {"status": "not_recorded", "record": "not recorded", "narrative": "Season outcomes are not recorded in this source snapshot.", "evidence": "manager_season_history; outcome_status=not_recorded"}, "sample_size": {"matchups": 0}}]),
                     ):
                         (paths.analysis_dir / filename).write_text(json.dumps({"items": items}), encoding="utf-8")
 
@@ -830,6 +858,9 @@ class VModelTests(unittest.TestCase):
                         league_id=league_id,
                         config=scoped_config({}, contexts[league_id]),
                     )
+                    html = (paths.site_dir / "index.html").read_text(encoding="utf-8")
+                    self.assertIn("manager-outcome-receipt", html)
+                    self.assertIn("Recorded Matchups", html)
                     bundle = json.loads((paths.site_dir / "data" / "app_bundle.json").read_text(encoding="utf-8"))
                     self.assertEqual(bundle["leagueId"], league_id)
                     self.assertEqual(bundle["myTeamName"], details["team_name"])
@@ -1275,8 +1306,14 @@ class VModelTests(unittest.TestCase):
                 {"season": "2026", "roster_id": 2, "position": "QB"},
             ]
         )
+        matchups = pd.DataFrame(
+            [
+                {"season": "2025", "week": 1, "matchup_id": "1", "roster_id": 7, "team_name": "Old Name", "points_for": 120, "points_against": 100, "result": "win"},
+                {"season": "2025", "week": 2, "matchup_id": "2", "roster_id": 7, "team_name": "Old Name", "points_for": 90, "points_against": 110, "result": "loss"},
+            ]
+        )
 
-        history = build_manager_season_history(teams, trades, waivers, roster_players)
+        history = build_manager_season_history(teams, trades, waivers, roster_players, matchups)
         old = history[(history["owner_id"] == "owner-a") & (history["season"].astype(str) == "2025")].iloc[0]
         quiet = history[(history["owner_id"] == "owner-a") & (history["season"].astype(str) == "2026")].iloc[0]
 
@@ -1294,8 +1331,22 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(old["roster_player_count"], 2)
         self.assertIn("Other:1", old["trade_partners"])
         self.assertIn("Young WR", old["players_acquired"])
+        self.assertEqual(old["matchup_weeks"], "1; 2")
+        self.assertEqual(old["played_weeks"], "1; 2")
+        self.assertEqual(old["wins"], 1)
+        self.assertEqual(old["losses"], 1)
+        self.assertEqual(old["ties"], 0)
+        self.assertEqual(old["points_for"], 210)
+        self.assertEqual(old["points_against"], 210)
+        self.assertEqual(old["point_diff"], 0)
+        self.assertEqual(old["win_rate"], 0.5)
+        self.assertEqual(old["outcome_status"], "recorded")
+        self.assertIn("matchups", old["source_trace"])
         self.assertEqual(quiet["roster_id"], 2)
         self.assertEqual(quiet["transaction_count"], 0)
+        self.assertEqual(quiet["outcome_status"], "not_recorded")
+        self.assertEqual(quiet["wins"], 0)
+        self.assertEqual(quiet["losses"], 0)
         self.assertIn("roster_id=2", quiet["evidence"])
 
     def test_player_transaction_history_preserves_ids_directions_and_resolution(self) -> None:
@@ -2531,6 +2582,9 @@ class VModelTests(unittest.TestCase):
             [{"player_id": "2", "player_name": "Young WR", "market_value": 42, "source_trace": "test"}]
         )
         pick_values = pd.DataFrame(columns=["pick_season", "round", "market_value"])
+        matchups = pd.DataFrame(
+            [{"season": "2026", "week": 1, "matchup_id": "m1", "roster_id": 2, "team_name": "Melkor Lord of Light", "points_for": 110, "points_against": 100, "result": "win"}]
+        )
 
         tables = build_economic_tables(
             teams,
@@ -2542,6 +2596,7 @@ class VModelTests(unittest.TestCase):
             player_values,
             pick_values,
             {"current_team": {"roster_id": 2}, "strategy_profile": {"team_direction": "deep_rebuild"}},
+            matchups,
         )
 
         self.assertIn("asset_market_gaps", tables)
@@ -2553,6 +2608,10 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(tables["manager_behavior_signals"].loc[tables["manager_behavior_signals"]["roster_id"] == 8, "plain_language_label"].iloc[0], "pick seller / win-now buyer")
         clapper_labels = set(tables["manager_valuation_profiles"].loc[tables["manager_valuation_profiles"]["roster_id"] == 8, "label"])
         self.assertTrue({"pick seller", "RB production buyer"}.intersection(clapper_labels))
+        manager_history = tables["manager_season_history"]
+        melkor_history = manager_history[manager_history["roster_id"] == 2].iloc[0]
+        self.assertEqual(melkor_history["outcome_status"], "recorded")
+        self.assertEqual(melkor_history["wins"], 1)
 
     def _write_minimal_processed_tables(self, processed: Path) -> None:
         pd.DataFrame(
