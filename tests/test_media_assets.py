@@ -107,6 +107,7 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn("edition-changes", html)
             self.assertIn("Evidence IDs:", html)
             self.assertIn("Open the Data Room", html)
+            self.assertIn("deterministic fallback publication", html)
             self.assertIn("cost receipt available", html)
             self.assertEqual(html.count('id="issue-publication"'), 1)
             self.assertIn('id="issue-publication-receipt"', html)

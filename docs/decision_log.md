@@ -201,3 +201,14 @@ it with a remembered or hand-edited name. If the desired Sleeper label is
 should then pick it up on refresh. This check also found that Railway was still
 serving the older bundle without the local question-led Data Room marker, so a
 signed-in page alone is not proof that the intended revision is live.
+
+## 2026-08-25 - Fallback publication still needs a receipt
+
+An evidence-led deterministic fallback is a valid degraded publication state,
+not an absence of publication. The reader must still see the reporter, fallback
+mode, source-quality/count context, and an explicit path into the Data Room.
+Hiding the receipt whenever an article has no fingerprint made the fallback
+look more complete than it was and severed the media-to-evidence path. The
+entry-path test now requires the fallback receipt marker and the Data Room link,
+and the live browser check must count receipts for all displayed sections even
+when no Luna article artifacts exist.

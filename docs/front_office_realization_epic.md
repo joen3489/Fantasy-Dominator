@@ -455,3 +455,13 @@ what is published. A bundle revision change alone does not masquerade as a
 new editorial insight. Provider usage metadata is retained with the current
 receipt when available; the UI labels pricing as unknown rather than inventing
 a cost estimate.
+
+## 2026-08-25 fallback-receipt checkpoint
+
+The browser entry path now renders a publication receipt for every displayed
+section, including deterministic fallback articles that have no article-level
+fingerprint. This keeps degraded content honest and preserves the one-click
+route from the story to the Data Room instead of making a fallback silently
+look like a complete generated article. The regression test covers the
+fallback marker, evidence limitation text, and Data Room link; the production
+gate must also verify the rendered receipt count against the visible sections.
