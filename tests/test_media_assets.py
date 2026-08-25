@@ -11,7 +11,7 @@ from collections import Counter
 from pathlib import Path
 from unittest.mock import patch
 
-from src.browser_site import build_browser_site
+from src.browser_site import build_browser_site, rebuild_browser_shell
 from src.media_assets import asset_is_current, build_media_manifest, materialize_media_assets
 
 
@@ -107,6 +107,31 @@ class MediaAssetContractTests(unittest.TestCase):
             script_path.write_text("\n".join(scripts), encoding="utf-8")
             checked = subprocess.run([node, "--check", str(script_path)], capture_output=True, text=True)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_preserved_bundle_can_rebuild_shell_without_processed_csvs(self) -> None:
+        """Encodes the deployment artifact lesson: source fixes do not require a costly data refresh."""
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            data = site / "data"
+            data.mkdir(parents=True)
+            (data / "manifest.json").write_text(
+                json.dumps({"appName": "The Front Office", "sourceRevision": "old-release"}),
+                encoding="utf-8",
+            )
+            (data / "app_bundle.json").write_text(
+                json.dumps({
+                    "myTeamName": "Lulu's Potatoes",
+                    "identityReceipt": {"team_name": "Lulu's Potatoes"},
+                }),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "new-release"}, clear=False):
+                shell = rebuild_browser_shell(site)
+
+            self.assertEqual(json.loads((data / "manifest.json").read_text(encoding="utf-8"))["sourceRevision"], "new-release")
+            html = shell.read_text(encoding="utf-8")
+            self.assertEqual(html.count('id="issue-publication"'), 1)
+            self.assertIn('id="issue-publication-receipt"', html)
 
 
 if __name__ == "__main__":

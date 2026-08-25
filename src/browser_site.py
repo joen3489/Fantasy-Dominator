@@ -14,7 +14,7 @@ from .draft_room import build_draft_room
 from .media_assets import build_media_manifest, materialize_media_assets, media_manifest_json
 from .personas import reporter_lineup
 
-from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config
+from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
 
 
 def build_browser_site(
@@ -96,6 +96,38 @@ def build_browser_site(
         my_team_name = str(configured_name).strip()
     analysis = _analysis_artifacts(analysis_dir)
     manifest = _write_data_chunks(data_dir, tables, my_roster_id, my_team_name, config, analysis, league_id)
+    target = output_dir / "index.html"
+    target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
+    return target
+
+
+def rebuild_browser_shell(output_dir: Path, league_type: str = "dynasty") -> Path:
+    """Rebuild only the generated shell from a preserved complete bundle.
+
+    Durable deployments can retain the browser bundle after processed CSV
+    intermediates have been pruned or moved. A source deploy still needs to
+    refresh the HTML and JavaScript in that case, without inventing facts or
+    starting a data refresh or LLM generation.
+    """
+
+    data_dir = output_dir / "data"
+    manifest = load_json(data_dir / "manifest.json")
+    app_payload = load_json(data_dir / "app_bundle.json")
+    if not isinstance(manifest, dict) or not isinstance(app_payload, dict):
+        raise ValueError("complete browser bundle payloads are required")
+    identity = app_payload.get("identityReceipt") if isinstance(app_payload.get("identityReceipt"), dict) else {}
+    my_team_name = str(app_payload.get("myTeamName") or identity.get("team_name") or "Unknown team")
+    source_revision = _source_revision()
+    manifest["sourceRevision"] = source_revision
+    app_payload["sourceRevision"] = source_revision
+    (data_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
+    (data_dir / "app_bundle.json").write_text(
+        json.dumps(app_payload, ensure_ascii=False).replace("</", "<\\/"),
+        encoding="utf-8",
+    )
     target = output_dir / "index.html"
     target.write_text(inject_editorial_facade(_page(my_team_name, manifest, league_type)), encoding="utf-8")
     return target

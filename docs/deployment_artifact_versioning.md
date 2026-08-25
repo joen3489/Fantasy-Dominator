@@ -21,8 +21,10 @@ runtime effects:
 - `sourceRevision` identifies the code release that generated the shell.
 - `bundleRevision` identifies the content/publication payload and its receipts.
 - Authenticated league serving must compare `sourceRevision` with the running
-  deployment SHA and rebuild a stale persisted shell from preserved processed
-  facts before serving it.
+  deployment SHA and rebuild a stale persisted shell before serving it. It
+  should use preserved processed facts when available, or rebuild only the
+  HTML/JavaScript shell from a complete preserved bundle when intermediates
+  are absent.
 - A code rebuild must not be represented as regenerated article content or
   trigger an unnecessary LLM call.
 

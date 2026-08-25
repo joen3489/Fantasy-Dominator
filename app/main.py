@@ -15,7 +15,12 @@ from pydantic import BaseModel, Field
 
 from src import operator as front_operator
 from src.attention import load_attention
-from src.browser_site import browser_bundle_is_complete, browser_bundle_missing, build_browser_site
+from src.browser_site import (
+    browser_bundle_is_complete,
+    browser_bundle_missing,
+    build_browser_site,
+    rebuild_browser_shell,
+)
 from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
@@ -796,6 +801,21 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
             and not _bundle_needs_source_rebuild(paths.site_dir)
         ):
             return
+        if (
+            browser_bundle_is_complete(paths.site_dir)
+            and (paths is candidates[0] or _bundle_matches_identity(paths, league))
+            and _bundle_needs_source_rebuild(paths.site_dir)
+        ):
+            try:
+                rebuild_browser_shell(
+                    paths.site_dir,
+                    league_type=str(league.get("league_type") or "dynasty"),
+                )
+                return
+            except (OSError, ValueError, TypeError):
+                # Fall through to the processed-facts rebuild when the
+                # preserved bundle is malformed or incomplete.
+                pass
         if not (paths.processed_dir / "refresh_metadata.csv").is_file():
             continue
         try:
