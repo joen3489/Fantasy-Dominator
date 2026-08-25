@@ -419,12 +419,18 @@ back to the remembered owned league before considering the legacy default. This
 is a continuity aid, not an identity shortcut: the selected team's roster is
 still resolved through the linked Sleeper user and exact `roster_id`.
 
-Production browser verification and the authenticated selected-league check
-remain required before calling Release 1 complete. A first decorative
-masthead, `assets/media/front-office-masthead-v1.png`, is now versioned in the
-repo and copied into each generated site through the manifest. Responsive
-variants, asset-level operator receipts, and additional reporter art remain
-Release 4 work; the masthead contains no factual text or statistics.
+The revision-aware public smoke and signed-in browser check have now been
+completed for the deployed revision. The selected owned league renders the
+current Sleeper label, five publication receipts, and the question-led Data
+Room. Release 1 remains open because Railway still reports `0/5 reporter
+articles` in deterministic fallback mode; the operator-authorized Luna run
+and its five reporter receipts still need to be completed and verified.
+
+A first decorative masthead, `assets/media/front-office-masthead-v1.png`, is
+now versioned in the repo and copied into each generated site through the
+manifest. Responsive variants, asset-level operator receipts, and additional
+reporter art remain Release 4 work; the masthead contains no factual text or
+statistics.
 ## 2026-08-25 writer and outcome checkpoint
 
 The first real Luna run completed all five section articles locally using the

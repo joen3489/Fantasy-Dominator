@@ -60,3 +60,16 @@ as `roster_id=2`, and Sleeper identified `Moose Caboose` as `roster_id=4`, but
 the live bundle did not contain the local question-led Data Room marker. The
 next deployment gate must compare the expected revision and rendered entry
 path, not only a successful login or a healthy API response.
+
+## 2026-08-25 production follow-up
+
+The revision-aware public smoke passed for commit
+`b860da7ede3c33155039dca8093ef882301b4824`. A signed-in Chrome check of the
+direct owned-league entry path rendered the current Sleeper label
+`Lulu’s Potatoe’s`, five publication receipts, the fallback marker, and the
+question-led Data Room with its Decision ledger and change-history section.
+The authenticated smoke script remained intentionally skipped because no
+`FRONT_OFFICE_SESSION_TOKEN` was supplied; the browser session is the evidence
+for the visible authenticated surface. Railway still reports `0/5 reporter
+articles` and deterministic fallback mode, so this verifies deployment and
+identity continuity—not that a production Luna generation has occurred.
