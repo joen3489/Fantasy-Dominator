@@ -438,3 +438,12 @@ preserved canonical tables when the new CSV is absent, and the migration is
 type-normalized and idempotent. This is the pattern for future depth: add a
 reusable deterministic evidence object first, then let dossiers, articles, and
 the Data Room consume it without duplicating facts.
+
+## 2026-08-25 - Manager timing must remain observed, not implied
+
+Season totals alone still hide an important decision signal: whether a manager
+acts steadily, only during waivers, or in a narrow late-season window. The
+season ledger now records Sleeper transaction weeks separately for trades and
+waivers, plus first, last, and peak observed activity week. Missing weeks stay
+blank rather than being guessed from timestamps. The dossier renders those
+fields as timing evidence, not as a claim about deadline intent.

@@ -72,7 +72,7 @@ EXPECTED_TABLE_COLUMNS = {
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
     "manager_event_log": ["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
-    "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "source_trace", "evidence"],
+    "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "first_transaction_week", "last_transaction_week", "peak_transaction_week", "active_weeks", "trade_weeks", "waiver_weeks", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "source_trace", "evidence"],
     "team_needs_matrix": ["roster_id", "team_name", "qb_count", "rb_count", "wr_count", "te_count", "pass_catcher_count", "future_firsts_owned", "need_qb", "need_rb", "need_pass_catcher", "need_picks", "team_shape"],
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
     "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
@@ -1212,6 +1212,7 @@ class VModelTests(unittest.TestCase):
             [
                 {
                     "season": "2025",
+                    "week": 3,
                     "team_a_roster_id": 7,
                     "team_a_name": "Old Name",
                     "team_a_players_received": "Young WR",
@@ -1224,7 +1225,7 @@ class VModelTests(unittest.TestCase):
             ]
         )
         waivers = pd.DataFrame(
-            [{"season": "2025", "roster_id": 7, "team_name": "Old Name", "player_added": "Depth WR", "waiver_bid": 11}]
+            [{"season": "2025", "week": 12, "roster_id": 7, "team_name": "Old Name", "player_added": "Depth WR", "waiver_bid": 11}]
         )
         roster_players = pd.DataFrame(
             [
@@ -1243,6 +1244,12 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(old["waiver_claims"], 1)
         self.assertEqual(old["faab_spent"], 11)
         self.assertEqual(old["transaction_count"], 2)
+        self.assertEqual(old["first_transaction_week"], 3)
+        self.assertEqual(old["last_transaction_week"], 12)
+        self.assertEqual(old["peak_transaction_week"], 3)
+        self.assertEqual(old["active_weeks"], "3; 12")
+        self.assertEqual(old["trade_weeks"], "3")
+        self.assertEqual(old["waiver_weeks"], "12")
         self.assertEqual(old["roster_player_count"], 2)
         self.assertIn("Other:1", old["trade_partners"])
         self.assertIn("Young WR", old["players_acquired"])

@@ -99,3 +99,15 @@ warning and the existing `0/5 reporter articles · evidence-led fallback`
 state. Public revision smoke passed; automated authenticated smoke remains
 not run because no session token was supplied. This verifies deployment and
 identity continuity, not successful Luna publication.
+
+## 2026-08-25 timing and migration follow-up
+
+The manager-season depth slice found a new instance of the anti-recursive
+failure pattern: enriching an old durable dossier changed its receipt status
+from `updated` to `unchanged` on the second source-only shell rebuild. The
+first run looked correct, but the bundle was not idempotent. The migration now
+preserves the prior dossier receipt state because it is not a new analytical
+refresh, and `test_shell_rebuild_migrates_legacy_fallback_receipts` asserts the
+bundle revision is stable on the second rebuild. The manager ledger also
+records observed transaction weeks separately from any interpretation of
+manager intent.

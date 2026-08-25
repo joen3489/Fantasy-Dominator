@@ -17,6 +17,12 @@ MANAGER_SEASON_HISTORY_COLUMNS = [
     "waiver_claims",
     "faab_spent",
     "transaction_count",
+    "first_transaction_week",
+    "last_transaction_week",
+    "peak_transaction_week",
+    "active_weeks",
+    "trade_weeks",
+    "waiver_weeks",
     "players_acquired",
     "players_sold",
     "picks_acquired",
@@ -63,6 +69,9 @@ def build_manager_season_history(
                 "waiver_claims": 0,
                 "faab_spent": 0.0,
                 "transaction_count": 0,
+                "transaction_weeks": Counter(),
+                "trade_weeks": Counter(),
+                "waiver_weeks": Counter(),
                 "players_acquired": [],
                 "players_sold": [],
                 "picks_acquired": [],
@@ -98,6 +107,10 @@ def build_manager_season_history(
                 continue
             state["trades"] += 1
             state["transaction_count"] += 1
+            week = _int(trade.get("week"))
+            if week:
+                state["transaction_weeks"][week] += 1
+                state["trade_weeks"][week] += 1
             partner = str(trade.get(f"team_{other_side}_name") or "").strip()
             if partner:
                 state["trade_partners"][partner] += 1
@@ -112,6 +125,10 @@ def build_manager_season_history(
             continue
         state["waiver_claims"] += 1
         state["transaction_count"] += 1
+        week = _int(waiver.get("week"))
+        if week:
+            state["transaction_weeks"][week] += 1
+            state["waiver_weeks"][week] += 1
         state["faab_spent"] += _numeric(waiver.get("waiver_bid"))
         added = str(waiver.get("player_added") or "").strip()
         dropped = str(waiver.get("player_dropped") or "").strip()
@@ -138,10 +155,19 @@ def build_manager_season_history(
         partners = "; ".join(
             f"{name}:{count}" for name, count in state["trade_partners"].most_common(8)
         )
+        active_weeks = sorted(state["transaction_weeks"])
+        trade_weeks = sorted(state["trade_weeks"])
+        waiver_weeks = sorted(state["waiver_weeks"])
+        peak_week = (
+            min(state["transaction_weeks"], key=lambda week: (-state["transaction_weeks"][week], week))
+            if state["transaction_weeks"]
+            else ""
+        )
         evidence = (
             f"season={state['season']}; roster_id={state['roster_id']}; trades={state['trades']}; "
             f"waiver_claims={state['waiver_claims']}; faab_spent={round(state['faab_spent'], 2)}; "
-            f"roster_players={state['roster_player_count']}"
+            f"roster_players={state['roster_player_count']}; active_weeks={join_items(active_weeks)}; "
+            f"peak_transaction_week={peak_week or 'unknown'}"
         )
         rows.append(
             {
@@ -153,6 +179,12 @@ def build_manager_season_history(
                 "waiver_claims": state["waiver_claims"],
                 "faab_spent": round(state["faab_spent"], 2),
                 "transaction_count": state["transaction_count"],
+                "first_transaction_week": active_weeks[0] if active_weeks else "",
+                "last_transaction_week": active_weeks[-1] if active_weeks else "",
+                "peak_transaction_week": peak_week,
+                "active_weeks": join_items(active_weeks),
+                "trade_weeks": join_items(trade_weeks),
+                "waiver_weeks": join_items(waiver_weeks),
                 "players_acquired": join_items(dict.fromkeys(state["players_acquired"])),
                 "players_sold": join_items(dict.fromkeys(state["players_sold"])),
                 "picks_acquired": join_items(dict.fromkeys(state["picks_acquired"])),

@@ -595,3 +595,8 @@ adversarial shell-rebuild test proves that this migration does not change the
 bundle on a second rebuild. This closes one important “metrics list versus
 dossier” gap; it does not yet claim that manager intent is known or that the
 Trade Desk has a guaranteed response model.
+
+The ledger now also exposes observed transaction timing: active weeks, first,
+last, and peak activity week, with trade and waiver weeks kept separate. This
+adds the timing dimension required by the dossier contract without turning a
+week number into a story about motive or deadline strategy.
