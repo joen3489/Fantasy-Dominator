@@ -896,7 +896,7 @@ def _serve_league_file(
             if target.is_dir():
                 target = (target / "index.html").resolve()
             if target.exists() and target.is_file():
-                return FileResponse(target)
+                return FileResponse(target, headers=_browser_file_headers(target))
             readiness = _edition_readiness(int(user["id"]), league)
             response = templates.TemplateResponse(
                 request,
@@ -907,7 +907,18 @@ def _serve_league_file(
             response.headers["Retry-After"] = "15"
             return response
         raise HTTPException(status_code=404, detail="league file not found")
-    return FileResponse(target)
+    return FileResponse(target, headers=_browser_file_headers(target))
+
+
+def _browser_file_headers(target: Path) -> dict[str, str]:
+    """Prevent a private generated shell/data bundle from surviving a deploy in cache."""
+
+    if target.name == "index.html" or target.suffix.lower() == ".json":
+        return {
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+        }
+    return {}
 
 
 def _context_for_league(user_id: int, league: dict[str, Any]):

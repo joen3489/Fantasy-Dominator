@@ -241,3 +241,14 @@ calls these “potential assets from our roster to discuss (not a generated
 offer).” This is evidence of a historical lane, not proof of current intent,
 a quote, or a predicted response. The system remains read-only and the human
 manager makes the final decision.
+
+## 2026-08-25 - Revision checks must include browser cache behavior
+
+Railway can serve the expected source revision while an already-open browser
+continues to display an older generated `index.html` from cache. A server-side
+source-revision receipt is necessary but not sufficient for a truthful visual
+verification. Private generated HTML and JSON bundle files now send
+`Cache-Control: no-store, max-age=0` and `Pragma: no-cache`; the deployment
+check must inspect the rendered entry path after a fresh load and confirm the
+expected shell marker. This protects the user's personal edition from looking
+stale after a successful deploy.

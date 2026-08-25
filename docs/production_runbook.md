@@ -49,7 +49,10 @@ migration when explicitly configured.
    current Clerk user → linked Sleeper user → league → exact managed roster.
    Refresh the page and repeat after logout/login. Confirm that the selected
    team name, roster ID receipt, strategy profile, articles, and dossiers all
-   belong to the same league/team.
+   belong to the same league/team. The generated HTML and JSON bundle should
+   be `no-store`; if an already-open tab still shows the prior shell, perform
+   one clean reload and treat a missing expected shell marker as a deployment
+   verification failure rather than trusting the server revision alone.
 5. Trigger a writer action only after source freshness and identity are green.
    Confirm the receipt records the selected reporter, provider, model, and
    reasoning effort.

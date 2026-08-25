@@ -1127,6 +1127,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(accepted.status_code, 200)
 
     def test_league_serving_requires_owner_rejects_traversal_and_serves_index(self) -> None:
+        """Private generated shells must not remain cached after a source deploy."""
         own_token = self._token("user_owner")
         other_token = self._token("user_other")
         self.client.get("/", cookies={"__session": own_token})
@@ -1141,11 +1142,15 @@ class FastAPIClerkAppTests(unittest.TestCase):
         other_response = self.client.get("/league/league-a/", cookies={"__session": other_token})
         traversal = self.client.get("/league/league-a/%2e%2e/%2e%2e/outside.txt", cookies={"__session": own_token})
         index = self.client.get("/league/league-a/", cookies={"__session": own_token})
+        bundle = self.client.get("/league/league-a/data/app_bundle.json", cookies={"__session": own_token})
 
         self.assertEqual(other_response.status_code, 404)
         self.assertEqual(traversal.status_code, 404)
         self.assertEqual(index.status_code, 200)
         self.assertIn("Alpha", index.text)
+        self.assertEqual(bundle.status_code, 200)
+        self.assertIn("no-store", index.headers["cache-control"])
+        self.assertIn("no-store", bundle.headers["cache-control"])
 
     def test_league_serving_uses_legacy_bundle_when_private_root_is_incomplete(self) -> None:
         token = self._token("user_migration_fallback")
