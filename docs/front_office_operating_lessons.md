@@ -366,3 +366,11 @@ values may inherit the exact asset-ledger proxy only with its source trace and
 lower-confidence risk language. After a model change, regenerate the local
 tables and compare all proxy assets across every downstream consumer before
 claiming the data room is coherent.
+
+Production receipt: revision
+`5654d74073656cb3ae225def1572ef74b450d67f` was publicly smoke-verified and
+then refreshed through the authenticated league surface. The private
+identity remained Lulu’s Potatoe’s; team construction showed 30/30 market
+coverage at 835.54; Jimmy Horn showed the 43-point internal proxy with its
+trace. The repeatable lesson is to verify the refreshed private bundle, not
+only the deployed code revision.

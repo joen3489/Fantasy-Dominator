@@ -358,3 +358,11 @@ The deterministic pipeline now propagates the fallback with an explicit proxy
 trace and lower-confidence risk language. Local regeneration reports zero
 mismatches. Production verification must include a scoped refresh and compare
 the rebuilt tables, not merely inspect the already-published player card.
+
+Production acceptance amendment: revision
+`5654d74073656cb3ae225def1572ef74b450d67f` passed public smoke, an
+authenticated scoped refresh, and the entry path from the private home to
+the exact league/team/player routes. The refreshed production team showed
+30/30 market rows and the Jimmy Horn player evidence showed proxy value 43
+with its source trace. This closes the prior disconnected-production-data
+finding; it does not make proxy economics equivalent to external consensus.

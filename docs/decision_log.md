@@ -873,3 +873,11 @@ with explicit risk language. Local regeneration verified zero mismatches
 across inventory, dossiers, signals, and actions. A production league refresh
 is required to rebuild the durable private bundle before this slice is called
 live.
+
+Production acceptance amendment: revision
+`5654d74073656cb3ae225def1572ef74b450d67f` passed public smoke and an
+authenticated scoped refresh. The private home retained Lulu’s Potatoe’s,
+the team route reconciled 30/30 market rows at 835.54, and Jimmy Horn's
+player route showed market 43 with the internal proxy descriptor and trace.
+The source is now connected through the decision layer in production; the
+proxy remains explicitly lower-confidence when projection evidence is absent.

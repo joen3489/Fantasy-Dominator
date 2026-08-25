@@ -908,7 +908,10 @@ The deterministic refresh path also propagates 41 internal proxy market rows
 through profiles, signals, and actions with explicit provenance; the local
 cross-table mismatch audit is zero.
 Production revision `eb9b68d96f40cffa0afec6131547be178d8f1395` passed public
-smoke and authenticated browser verification. Release 1 remains open because
+smoke and authenticated browser verification. Revision
+`5654d74073656cb3ae225def1572ef74b450d67f` then passed public smoke and an
+authenticated scoped league refresh; the private team/player surfaces now
+show the proxy market evidence. Release 1 remains open because
 production is still in deterministic fallback mode until the
 operator-authorized Luna run is completed and its reporter receipts are
 verified.

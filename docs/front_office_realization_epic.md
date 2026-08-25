@@ -1029,3 +1029,15 @@ signals, actions, and profiles. A local rebuild reduced the mismatch count to
 zero across all 41 proxy assets. Production acceptance requires a scoped
 league refresh after deployment so the durable private bundle consumes the
 newly rebuilt tables.
+
+### Production acceptance amendment — `5654d74`
+
+Public smoke passed for
+`5654d74073656cb3ae225def1572ef74b450d67f`. The authenticated production
+home identified the linked manager as Lulu’s Potatoe’s, the exact league
+edition remained ready, and the scoped league refresh rebuilt the durable
+bundle. The team route reconciled 30/30 market rows at 835.54, and Jimmy
+Horn's player route showed market 43 with `Market source: internal proxy
+value` and the `internal_proxy_player_value` trace. Because Jimmy lacks
+projection support, the decision surface correctly remains low confidence
+with sparse-projection risk.
