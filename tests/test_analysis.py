@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.analysis import build_analysis_artifacts, build_manager_intel, build_team_report
+from src.analysis import build_analysis_artifacts, build_manager_dossier_items, build_manager_intel, build_team_report
 
 
 class DeterministicArticleTests(unittest.TestCase):
@@ -172,7 +172,75 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertIn("questions_to_ask", item)
         self.assertEqual(item["trade_fit_status"], "none_supported")
         self.assertIn("No supported trade fit", item["trade_fit_summary"])
+        self.assertEqual(item["trade_fit_evaluation"]["current_fit_count"], 0)
         self.assertTrue(any("Manager intent is not observed" in value for value in item["unknowns"]))
+
+    def test_manager_trade_fit_evaluation_exposes_cross_season_alignment(self) -> None:
+        """Encodes docs/front_office_realization_epic.md's cross-season trade-fit rule."""
+        items = build_manager_dossier_items(
+            {
+                "manager_cycle_profiles": pd.DataFrame([
+                    {
+                        "roster_id": 4,
+                        "team_name": "Archive Team",
+                        "dynasty_cycle": "contender",
+                        "trade_temperature": "active",
+                        "pick_posture": "pick spender",
+                        "confidence": "high",
+                        "evidence": "seasons=2; trades=4",
+                    }
+                ]),
+                "manager_profiles": pd.DataFrame([
+                    {
+                        "roster_id": 4,
+                        "team_name": "Archive Team",
+                        "seasons_covered": "2025; 2026",
+                        "total_trades": 4,
+                        "number_of_waiver_claims": 8,
+                        "contender_rebuilder_indicator": "possible contender",
+                    }
+                ]),
+                "manager_season_history": pd.DataFrame([
+                    {"roster_id": 4, "season": "2025", "transaction_count": 2, "trades": 1},
+                    {"roster_id": 4, "season": "2026", "transaction_count": 3, "trades": 3},
+                ]),
+                "manager_valuation_profiles": pd.DataFrame([
+                    {
+                        "roster_id": 4,
+                        "position_group": "PASS_CATCHER",
+                        "label": "pass-catcher accumulator",
+                        "preference_score": 82,
+                        "recency_weighted_score": 88,
+                        "evidence_count": 6,
+                        "confidence": "high",
+                        "evidence": "pass catchers acquired across two seasons",
+                    }
+                ]),
+                "counterparty_trade_edges": pd.DataFrame([
+                    {
+                        "target_roster_id": 4,
+                        "player_id": "p1",
+                        "player_name": "Target WR",
+                        "position": "WR",
+                        "edge_type": "mutual_fit",
+                        "trade_edge_score": 62,
+                        "market_consensus_value": 50,
+                        "estimated_owner_value_score": 48,
+                        "evidence": "current edge",
+                        "risk": "medium",
+                        "confidence": "medium",
+                        "source_trace": "edge",
+                    }
+                ]),
+            },
+            "now",
+        )
+
+        evaluation = items[0]["trade_fit_evaluation"]
+        self.assertEqual(items[0]["trade_fit_status"], "supported")
+        self.assertEqual(evaluation["aligned_position_groups"], ["PASS_CATCHER"])
+        self.assertIn("overlap", evaluation["summary"])
+        self.assertEqual(evaluation["historical_seasons"], 2)
 
 
 if __name__ == "__main__":

@@ -926,6 +926,78 @@ def _need_summary(needs: dict[str, Any]) -> str:
     return ", ".join(known) if known else "not available"
 
 
+def _manager_trade_fit_evaluation(
+    manager_preferences: list[dict[str, Any]],
+    trade_fits: list[dict[str, Any]],
+    manager_seasons: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare current edge rows with observed historical valuation lanes.
+
+    This is a prioritization aid, not a response model. The preference rows are
+    aggregated from observed manager activity, while the fit rows are current
+    market/roster edges. Keeping both sides explicit prevents a historical
+    label from becoming an invented claim about what a manager wants today.
+    """
+
+    lanes = sorted(
+        manager_preferences,
+        key=lambda row: (
+            _num(row.get("recency_weighted_score")),
+            _num(row.get("preference_score")),
+            _int(row.get("evidence_count")),
+        ),
+        reverse=True,
+    )
+    historical_lanes = [
+        {
+            "position_group": row.get("position_group", ""),
+            "label": row.get("label", ""),
+            "preference_score": row.get("preference_score", ""),
+            "recency_weighted_score": row.get("recency_weighted_score", ""),
+            "evidence_count": row.get("evidence_count", ""),
+            "confidence": row.get("confidence", ""),
+            "evidence": row.get("evidence", ""),
+        }
+        for row in lanes[:8]
+    ]
+    lane_groups = {str(row.get("position_group") or "") for row in historical_lanes if row.get("position_group")}
+    fit_groups = {
+        _asset_position_group({"position": row.get("position")})
+        for row in trade_fits
+        if row.get("position")
+    }
+    aligned_groups = sorted(group for group in fit_groups if group in lane_groups)
+    seasons = len(manager_seasons)
+    fit_count = len(trade_fits)
+    if not fit_count:
+        summary = (
+            "No supported trade fit is present in the current edge rows. Historical valuation lanes are shown as context only; "
+            "do not manufacture a target from manager labels alone."
+        )
+    elif aligned_groups:
+        summary = (
+            f"{fit_count} current trade fit{'s' if fit_count != 1 else ''} overlap "
+            f"{len(aligned_groups)} observed valuation lane{'s' if len(aligned_groups) != 1 else ''} "
+            f"across {seasons} historical season{'s' if seasons != 1 else ''}: {', '.join(aligned_groups)}. "
+            "This narrows the next conversation; it does not predict a response."
+        )
+    else:
+        summary = (
+            f"{fit_count} current trade fit{'s' if fit_count != 1 else ''} are present, but none aligns directly "
+            f"with the ranked historical lanes across {seasons} season{'s' if seasons != 1 else ''}. "
+            "Treat the current edge as a price question, not proof of manager preference."
+        )
+    return {
+        "historical_lanes": historical_lanes,
+        "current_fit_count": fit_count,
+        "aligned_position_groups": aligned_groups,
+        "historical_seasons": seasons,
+        "summary": summary,
+        "confidence": "high" if historical_lanes and aligned_groups else "medium" if historical_lanes else "low",
+        "source_trace": "manager_valuation_profiles;counterparty_trade_edges;manager_season_history",
+    }
+
+
 def build_daily_gm_brief(
     active_roster_id: int | None,
     active_team_name: str,
@@ -1247,11 +1319,8 @@ def build_manager_dossier_items(
             for row in sorted(manager_edges, key=lambda value: _num(value.get("trade_edge_score")), reverse=True)[:6]
         ]
         trade_fit_status = "supported" if trade_fits else "none_supported"
-        trade_fit_summary = (
-            f"{len(trade_fits)} evidence-backed trade fit{'s' if len(trade_fits) != 1 else ''} are supported by the current counterparty edge rows."
-            if trade_fits
-            else "No supported trade fit is present in the current counterparty edge rows; do not manufacture a target from manager labels alone."
-        )
+        trade_fit_evaluation = _manager_trade_fit_evaluation(manager_preferences, trade_fits, manager_seasons)
+        trade_fit_summary = trade_fit_evaluation["summary"]
         questions = _manager_questions(cycle, profile, manager_needs, trade_fits)
         items.append(
             {
@@ -1273,6 +1342,7 @@ def build_manager_dossier_items(
                 "trade_fits": trade_fits,
                 "trade_fit_status": trade_fit_status,
                 "trade_fit_summary": trade_fit_summary,
+                "trade_fit_evaluation": trade_fit_evaluation,
                 "questions_to_ask": questions,
                 "unknowns": [
                     "Manager intent is not observed in Sleeper data.",

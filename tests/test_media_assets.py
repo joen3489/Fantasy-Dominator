@@ -153,6 +153,8 @@ class MediaAssetContractTests(unittest.TestCase):
             self.assertIn("reporterRowsById", html)
             self.assertIn("receipt?.mode", html)
             self.assertIn("Receipt state unavailable", html)
+            self.assertIn("trade_fit_evaluation", html)
+            self.assertIn("Cross-season valuation lanes", html)
             self.assertIn("Since the last edition", html)
             self.assertIn("edition-changes", html)
             self.assertIn("Evidence IDs:", html)

@@ -3291,10 +3291,15 @@ def _page(
       const summary = dossier?.trade_fit_summary || (tradeFits.length
         ? `${{tradeFits.length}} evidence-backed trade fit${{tradeFits.length === 1 ? '' : 's'}} are supported by the current edge rows.`
         : 'No supported trade fit is present in the current counterparty edge rows; do not manufacture a target from manager labels alone.');
+      const evaluation = dossier?.trade_fit_evaluation || {{}};
+      const lanes = evaluation.historical_lanes || [];
       const fitCards = tradeFits.length
         ? `<div class="brief-list">${{tradeFits.map((row, index) => briefCard({{ title: row.player_name || 'Unknown player', category: categoryFor('edge_type', row.edge_type), rank: index + 1, chips: [row.position, row.edge_type, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.confidence ? `confidence ${{row.confidence}}` : ''], summary: row.risk || 'Conversation hypothesis; verify the price.', evidence: row.evidence || 'No evidence supplied.' }})).join('')}}</div>`
         : '<p class="note">No fit card is shown because the current evidence does not support one.</p>';
-      return `<details class="evidence-drawer manager-trade-fit"><summary>Trade-fit status · ${{escapeHtml(status === 'supported' ? 'supported' : 'none supported')}}</summary><p class="brief-card-evidence">${{escapeHtml(summary)}}</p>${{fitCards}}</details>`;
+      const laneMarkup = lanes.length
+        ? `<details class="evidence-drawer"><summary>Cross-season valuation lanes (${{lanes.length}})</summary><p class="brief-card-evidence">These lanes summarize observed activity across ${{escapeHtml(String(evaluation.historical_seasons ?? 0))}} season${{Number(evaluation.historical_seasons || 0) === 1 ? '' : 's'}}. They help prioritize a conversation; they do not establish intent.</p><div class="brief-list">${{lanes.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(row.label || row.position_group || 'Observed lane')}}</strong> · ${{escapeHtml(row.position_group || 'group unavailable')}} · score ${{escapeHtml(String(row.recency_weighted_score ?? row.preference_score ?? 'n/a'))}} · evidence ${{escapeHtml(String(row.evidence_count ?? 0))}} · confidence ${{escapeHtml(row.confidence || 'unknown')}}</p>`).join('')}}</div></details>`
+        : '<p class="note">No historical valuation lane is available for this manager.</p>';
+      return `<details class="evidence-drawer manager-trade-fit"><summary>Trade-fit status · ${{escapeHtml(status === 'supported' ? 'supported' : 'none supported')}}</summary><p class="brief-card-evidence">${{escapeHtml(summary)}}</p>${{fitCards}}${{laneMarkup}}</details>`;
     }}
 
     function backLink() {{

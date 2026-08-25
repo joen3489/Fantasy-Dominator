@@ -129,6 +129,12 @@ Before adding a feature or “cleaning up” an old artifact:
 - run local gates independently and record when authenticated production
   verification was not possible.
 
+14. **A manager dossier needs the fit comparison, not just the fit card.** A
+    current counterparty edge should be compared with the manager's
+    recency-weighted historical valuation lanes and the number of seasons in
+    scope. Show overlap and non-overlap explicitly; historical preference is
+    a conversation prioritizer, never proof of intent or a predicted response.
+
 ## Current open boundary
 
 The durable-bundle migration gate was closed on 2026-08-25 after a clean

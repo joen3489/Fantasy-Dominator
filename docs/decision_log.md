@@ -16,11 +16,13 @@ exact roster identity, evidence/source separation, bounded LLM use, optional
 generated media, and revision-aware browser verification are now explicit
 working rules rather than assumptions left in chat history.
 
-The playbook also records the remaining realization boundary: the protected
-Luna publication, deeper historical manager intelligence, consistently
-two-sided Trade Desk packets, and a measured learning loop are still work to
-execute. Future status claims should be amended with the implementation that
-changes them.
+At the time this playbook was adopted, the remaining realization boundary was
+the protected Luna publication, deeper historical manager intelligence,
+two-sided Trade Desk packets, and a measured learning loop. The Trade Desk,
+manager dossier entry path, event pulse, and reporter coverage seam have since
+been implemented and are recorded in later checkpoints below. The remaining
+open boundary is protected Luna publication plus the accumulation of enough
+explicit outcomes to evaluate the newsroom honestly.
 
 ## 2026-08-25 - Self-healing publication migration verified
 
@@ -577,3 +579,11 @@ Receipt presentation must also use the actual receipt schema: fallback
 publication receipts expose their mode as `mode`, while durable database rows
 use writer-mode fields. If the UI cannot read a mode, it must say that receipt
 state is unavailable rather than implying the article is unlinked.
+
+## 2026-08-25 - Compare current fits with historical valuation lanes
+
+Manager dossiers now compare current counterparty edge rows with each
+manager's recency-weighted historical valuation lanes and show the number of
+seasons in scope. The browser distinguishes alignment, non-alignment, and no
+current fit. This is a prioritization aid grounded in observed rows, not a
+claim about manager intent or a predicted response.
