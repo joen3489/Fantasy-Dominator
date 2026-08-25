@@ -217,6 +217,9 @@ EDITORIAL_STYLE = r"""
     .publication-card { background: #fffdf7; border: 1px solid var(--line); border-radius: 16px; padding: 18px; box-shadow: 0 8px 22px rgba(19, 35, 27, .05); }
     .publication-card h3 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 24px; }
     .publication-card .publication-meta { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+    .publication-media { margin: 0 0 14px; overflow: hidden; border-radius: 10px; background: #e8ece5; }
+    .publication-media img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; }
+    .publication-media figcaption { padding: 6px 9px; color: var(--muted); background: #f1f3ed; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .publication-card .publication-receipt { margin-top: 14px; color: var(--muted); font-size: 12px; }
     .publication-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
     .publication-actions button { border: 1px solid var(--line); border-radius: 999px; background: #f7f8f3; color: var(--accent); padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; }
@@ -378,6 +381,7 @@ EDITORIAL_JS = r"""
       const hero = document.querySelector('[data-media-slot="masthead"]');
       const assets = (app && app.mediaManifest && app.mediaManifest.assets) || [];
       const asset = assets.find(item => String(item.asset_type || '') === 'masthead');
+      const sectionAssets = assets.filter(item => String(item.asset_type || '') === 'section_art');
       const receipt = document.getElementById('media-ledger-body');
       const safePath = value => {
         const path = String(value || '').trim();
@@ -407,14 +411,42 @@ EDITORIAL_JS = r"""
       hero.classList.add('has-masthead');
       hero.dataset.mediaStatus = asset.status || 'available';
       if (receipt) {
-        receipt.innerHTML = `<p class="note"><strong>${escapeHtml(asset.asset_id || 'Masthead')}</strong> · ${escapeHtml(asset.status || 'available')} · ${variants.length} responsive variant${variants.length === 1 ? '' : 's'}. Decorative only; no factual claims are carried by this artwork.</p><p class="note">Alt text: ${escapeHtml(asset.alt_text || 'Not supplied')} · Prompt hash: ${escapeHtml(String(asset.prompt_hash || 'not recorded').slice(0, 16))}…</p>`;
+        const sectionReceipt = sectionAssets.length
+          ? `<p class="note"><strong>Desk art:</strong> ${sectionAssets.map(item => `${escapeHtml(item.article_key || 'section')} · ${escapeHtml(item.status || 'unavailable')} · ${escapeHtml(item.reporter_id || 'unassigned')}`).join(' · ')}</p>`
+          : '<p class="note">No article-specific desk art is configured.</p>';
+        receipt.innerHTML = `<p class="note"><strong>${escapeHtml(asset.asset_id || 'Masthead')}</strong> · ${escapeHtml(asset.status || 'available')} · ${variants.length} responsive variant${variants.length === 1 ? '' : 's'}. Decorative only; no factual claims are carried by this artwork.</p><p class="note">Alt text: ${escapeHtml(asset.alt_text || 'Not supplied')} · Prompt hash: ${escapeHtml(String(asset.prompt_hash || 'not recorded').slice(0, 16))}…</p>${sectionReceipt}`;
       }
+    }
+
+    function publicationMediaPath(value) {
+      const path = String(value || '').trim();
+      return path && !path.includes('://') && !path.startsWith('//') && !path.includes('..') ? path : '';
+    }
+
+    function publicationMediaAsset(articleKey) {
+      const assets = (app && app.mediaManifest && app.mediaManifest.assets) || [];
+      return assets.find(item => String(item.asset_type || '') === 'section_art'
+        && String(item.article_key || '') === String(articleKey || '')
+        && ['available', 'published'].includes(String(item.status || '').toLowerCase())
+        && publicationMediaPath(item.path)) || null;
+    }
+
+    function publicationMediaMarkup(articleKey) {
+      const asset = publicationMediaAsset(articleKey);
+      if (!asset) return '';
+      const variants = Array.isArray(asset.variants)
+        ? asset.variants.filter(item => ['available', 'published'].includes(String(item.status || '').toLowerCase()) && publicationMediaPath(item.path))
+        : [];
+      const sources = variants.map(item => `<source media="${escapeHtml(item.media || '')}" srcset="${escapeHtml(publicationMediaPath(item.path))}" sizes="${escapeHtml(item.sizes || asset.sizes || '100vw')}">`).join('');
+      return `<figure class="publication-media" data-media-asset="${escapeHtml(asset.asset_id || articleKey || 'section-art')}">${sources}<img src="${escapeHtml(publicationMediaPath(asset.path))}" alt="${escapeHtml(asset.alt_text || 'Decorative editorial artwork')}" loading="${escapeHtml(asset.loading || 'lazy')}" fetchpriority="${escapeHtml(asset.fetchpriority || 'auto')}" decoding="async"${asset.width ? ` width="${escapeHtml(String(asset.width))}"` : ''}${asset.height ? ` height="${escapeHtml(String(asset.height))}"` : ''}><figcaption>Desk atmosphere · decorative only</figcaption></figure>`;
     }
 
     function publicationArticleMarkup(article) {
       const mode = String(article.mode || 'deterministic_template');
       const reporter = article.reporter_name || article.reporter_id || 'The Front Office';
       const structured = article.structured || {};
+      const mediaAsset = publicationMediaAsset(article.key);
+      const mediaMarkup = publicationMediaMarkup(article.key);
       const summary = [
         structured.lede ? `<p>${escapeHtml(structured.lede)}</p>` : '',
         structured.thesis ? `<p><strong>Thesis:</strong> ${escapeHtml(structured.thesis)}</p>` : '',
@@ -437,12 +469,15 @@ EDITORIAL_JS = r"""
         const visualDirection = structured.visual_brief
           ? `<p><strong>Visual direction:</strong> ${escapeHtml(structured.visual_brief)}</p>`
           : '';
+        const mediaReceipt = mediaAsset
+          ? `<p><strong>Media:</strong> ${escapeHtml(mediaAsset.asset_id || 'section art')} · ${escapeHtml(mediaAsset.scope || 'article')} scope · ${escapeHtml(mediaAsset.status || 'available')}. Decorative only.</p>`
+          : '';
         const fallbackReason = article.fallback_reason ? ` Fallback: ${escapeHtml(article.fallback_reason)}` : '';
-        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${visualDirection}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
+        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${visualDirection}${mediaReceipt}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
       })();
       const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
       const outcome = `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`;
-      return `<article class="publication-card" data-article-key="${escapeHtml(article.key || '')}"><div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}${outcome}</article>`;
+      return `<article class="publication-card" data-article-key="${escapeHtml(article.key || '')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}${outcome}</article>`;
     }
 
     function editorialStoryMarkup(story, isLead) {

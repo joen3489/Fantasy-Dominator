@@ -512,3 +512,14 @@ thesis, change boundary, counter-signal, action question, and non-factual
 visual brief. These fields describe evidence scope and uncertainty; they do
 not create events, motives, or outcomes. The migration upgrades older fallback
 payloads once and preserves their evidence fingerprint.
+
+## 2026-08-25 - Article media must be scoped and optional
+
+The publication now carries four section-specific generated illustrations,
+keyed to the daily brief, team report, market watch, and trade desk reporter
+assignments. The media manifest records the article scope, reporter ID,
+prompt/model metadata, content hash, dimensions, alt text, and publication
+status. The reader only renders a valid site-relative asset and labels it as
+decorative; the article, evidence receipt, and Data Room remain usable when an
+image is missing or fails to load. This keeps generated artwork from becoming
+a second fact channel or a deployment dependency.

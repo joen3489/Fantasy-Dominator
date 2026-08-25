@@ -135,14 +135,17 @@ Before calling a slice complete, verify all of the following:
 As of this review, the repository has the foundation for structured receipts,
 question-led presentation, exact roster identity, manager/trade evidence,
 learning signals, responsive masthead media, and deterministic fallback
-parity. The following remain explicit next work rather than implied promises:
+parity. The first article-specific media slice is now also wired for the daily
+brief, team report, market watch, and trade desk; it remains decorative and
+optional by design. The following remain explicit next work rather than implied
+promises:
 
 - complete and verify the protected Luna publication run;
 - deepen manager dossiers with season history, sample sizes, and supported
   trade-fit questions;
 - make Trade Desk packets consistently two-sided and read-only;
 - expand the question-led data room without adding unmotivated charts;
-- add reporter-specific and article-specific media only where it improves
+- expand reporter-specific and article-specific media only where it improves
   recognition or comprehension;
 - use recorded outcomes to evaluate usefulness and prediction quality.
 
@@ -166,4 +169,3 @@ The implementation contracts remain authoritative in:
 - [`production_runbook.md`](production_runbook.md)
 - [`anti_recursive_dev_audit.md`](anti_recursive_dev_audit.md)
 - [`decision_log.md`](decision_log.md)
-

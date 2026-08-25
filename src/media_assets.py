@@ -79,9 +79,11 @@ def build_media_manifest(
                 "asset_id": str(item.get("asset_id") or ""),
                 "asset_type": str(item.get("asset_type") or "illustration"),
                 "purpose": str(item.get("purpose") or "editorial decoration"),
+                "scope": str(item.get("scope") or ("article" if item.get("article_key") else "global")),
                 "user_id": str(item.get("user_id") or user_id or ""),
                 "league_id": str(item.get("league_id") or league_id or ""),
                 "article_key": str(item.get("article_key") or ""),
+                "reporter_id": str(item.get("reporter_id") or ""),
                 "bundle_revision": str(item.get("bundle_revision") or bundle_revision or ""),
                 "prompt_hash": str(item.get("prompt_hash") or _hash_text(prompt)),
                 "model": str(item.get("model") or ""),
@@ -119,7 +121,7 @@ def asset_is_current(previous: Mapping[str, Any] | None, current: Mapping[str, A
         return False
     return all(
         str(previous.get(field) or "") == str(current.get(field) or "")
-        for field in ("asset_id", "prompt_hash", "content_hash", "article_key", "league_id")
+        for field in ("asset_id", "prompt_hash", "content_hash", "article_key", "reporter_id", "scope", "league_id")
     ) and _variant_signature(previous.get("variants")) == _variant_signature(current.get("variants"))
 
 

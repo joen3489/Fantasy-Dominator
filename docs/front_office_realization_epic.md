@@ -637,3 +637,15 @@ The authenticated smoke contract now also checks all five publication receipt
 objects and their structured story fields, including fallback visual direction.
 This prevents a future green revision check from accepting a shallow shell
 with missing or stale editorial payloads.
+
+## 2026-08-25 article-specific media slice
+
+The first controlled newsroom-art slice is now in the repository: versioned,
+non-factual illustrations for the Look Ahead, Team Report, Market Watch, and
+Trade Desk sections. Each asset is keyed to an `article_key` and `reporter_id`,
+has a scoped media receipt, dimensions, alt text, prompt/model metadata, and
+fails closed to text when unavailable. The publication renders the matching
+desk art above each article and repeats its decorative-only status in the
+publication receipt. This is a recognition and reading aid, not evidence; the
+masthead remains the only hero asset. Future art should extend this contract
+only when it improves comprehension or section recognition.

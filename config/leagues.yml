@@ -79,6 +79,107 @@ media_assets:
         height: 1536
         sizes: 100vw
         status: published
+  - asset_id: front-office-team-report-v1
+    asset_type: section_art
+    scope: article
+    article_key: team_report
+    reporter_id: topline_tony
+    purpose: Team Report visual identity
+    path: assets/media/front-office-team-report-v1.png
+    prompt: >-
+      Atmospheric editorial illustration of a football strategy workspace with
+      a generic depth-chart board and blank player cards; no readable text,
+      logos, names, numbers, statistics, or factual claims.
+    model: gpt-image-2
+    quality: high
+    size: 1536x1024
+    format: png
+    generated_at: 2026-08-25T18:00:00Z
+    alt_text: Decorative illustration of a football roster strategy desk with a blank depth chart.
+    credit: AI-generated editorial artwork
+    moderation_status: not_run
+    status: published
+    loading: lazy
+    fetchpriority: auto
+    sizes: "(max-width: 720px) 100vw, 50vw"
+    width: 1536
+    height: 1024
+  - asset_id: front-office-market-watch-v1
+    asset_type: section_art
+    scope: article
+    article_key: market_watch
+    reporter_id: waiver_wire_waverly
+    purpose: Market Watch visual identity
+    path: assets/media/front-office-market-watch-v1.png
+    prompt: >-
+      Atmospheric editorial illustration of a football market research board
+      with generic rising and falling arrows and unmarked tokens; no readable
+      text, logos, names, numbers, statistics, or factual claims.
+    model: gpt-image-2
+    quality: high
+    size: 1536x1024
+    format: png
+    generated_at: 2026-08-25T18:00:00Z
+    alt_text: Decorative illustration of a football market board with abstract rising and falling signals.
+    credit: AI-generated editorial artwork
+    moderation_status: not_run
+    status: published
+    loading: lazy
+    fetchpriority: auto
+    sizes: "(max-width: 720px) 100vw, 50vw"
+    width: 1536
+    height: 1024
+  - asset_id: front-office-trade-desk-v1
+    asset_type: section_art
+    scope: article
+    article_key: trade_desk
+    reporter_id: trade_desk_talia
+    purpose: Trade Desk visual identity
+    path: assets/media/front-office-trade-desk-v1.png
+    prompt: >-
+      Atmospheric editorial illustration of a football trade negotiation desk
+      with balanced trays of generic unmarked tokens and a brass scale; no
+      readable text, logos, names, numbers, statistics, or factual claims.
+    model: gpt-image-2
+    quality: high
+    size: 1536x1024
+    format: png
+    generated_at: 2026-08-25T18:00:00Z
+    alt_text: Decorative illustration of a balanced football trade desk with unmarked asset tokens.
+    credit: AI-generated editorial artwork
+    moderation_status: not_run
+    status: published
+    loading: lazy
+    fetchpriority: auto
+    sizes: "(max-width: 720px) 100vw, 50vw"
+    width: 1536
+    height: 1024
+  - asset_id: front-office-look-ahead-v1
+    asset_type: section_art
+    scope: article
+    article_key: daily_brief
+    reporter_id: look_ahead_lonnie
+    purpose: Look Ahead visual identity
+    path: assets/media/front-office-look-ahead-v1.png
+    prompt: >-
+      Atmospheric editorial illustration of a football long-range planning
+      desk at dawn with a blank season calendar and an abstract path toward a
+      field horizon; no readable text, logos, names, numbers, statistics, or
+      factual claims.
+    model: gpt-image-2
+    quality: high
+    size: 1536x1024
+    format: png
+    generated_at: 2026-08-25T18:00:00Z
+    alt_text: Decorative illustration of a long-range football planning desk at dawn.
+    credit: AI-generated editorial artwork
+    moderation_status: not_run
+    status: published
+    loading: lazy
+    fetchpriority: auto
+    sizes: "(max-width: 720px) 100vw, 50vw"
+    width: 1536
+    height: 1024
 strategy_profile:
   name: Melkor rebuild
   team_direction: deep_rebuild
