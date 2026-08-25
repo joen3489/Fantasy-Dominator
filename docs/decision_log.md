@@ -458,3 +458,14 @@ status now reports the safe writer preflight (`openai`, `gpt-5.6-luna`, reasonin
 effort, key variable name, and configured boolean) without returning a secret.
 The browser uses that preflight for the cost gate, while the publication
 receipt remains the authority for whether articles were actually written.
+
+## 2026-08-25 - Fallback articles need a story spine, not empty metadata
+
+The deterministic publication previously had valid evidence IDs but blank
+lede, thesis, and change fields. The reader therefore saw a raw report and a
+receipt, but not a useful editorial frame while the protected Luna run was
+pending. Fallback articles now carry a versioned, article-specific lede,
+thesis, change boundary, counter-signal, action question, and non-factual
+visual brief. These fields describe evidence scope and uncertainty; they do
+not create events, motives, or outcomes. The migration upgrades older fallback
+payloads once and preserves their evidence fingerprint.

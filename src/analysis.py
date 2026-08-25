@@ -16,6 +16,7 @@ from .utils import ANALYSIS_DIR
 ANALYSIS_VERSION = "analysis_v1"
 GENERATION_MODE = "deterministic_template"
 PROMPT_VERSION = "analysis_prompt_contract_v1"
+FALLBACK_ARTICLE_SCHEMA_VERSION = "deterministic_fallback_v2"
 BANNED_CLAIMS = ("sent", "accepted", "executed", "submitted", "messaged", "offered")
 
 
@@ -176,14 +177,19 @@ def _decorate_deterministic_article(
     source_quality = (
         "multi_source" if len(source_ids) > 1 else "single_source" if source_ids else "unattributed"
     )
+    editorial_fields = _deterministic_fallback_editorial_fields(
+        article_key,
+        reporter["name"],
+        evidence_rows,
+        evidence_ids,
+        source_ids,
+        roster_id,
+        team_name,
+    )
     structured = {
+        "fallback_schema_version": FALLBACK_ARTICLE_SCHEMA_VERSION,
         "headline": _article_headline(text, article_key),
-        "dek": f"{reporter['name']} fallback read from validated league evidence; open the receipt before acting.",
-        "lede": "",
-        "thesis": "",
-        "what_changed": "",
-        "counter_evidence": "No LLM counter-signal is stored for this fallback; review the Data Room's source limits.",
-        "action": "Open the evidence and make the final decision yourself.",
+        **editorial_fields,
         "risk": "Deterministic fallback content is not a newly generated analyst article.",
         "confidence": confidence,
         "related_entities": related_entities,
@@ -205,6 +211,7 @@ def _decorate_deterministic_article(
     fields = {
         "reporter_persona": reporter["persona_id"],
         "reporter_name": reporter["name"],
+        "fallback_schema_version": FALLBACK_ARTICLE_SCHEMA_VERSION,
         "evidence_fingerprint": fingerprint,
         "fallback_reason": "No current LLM artifact; deterministic fallback from validated evidence.",
         "article_payload_json": json.dumps(structured, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
@@ -296,7 +303,11 @@ def upgrade_deterministic_article_receipts(
                 pass
         if not body or _front_matter_text_field(body, "model_mode") not in {"", GENERATION_MODE}:
             continue
-        if _front_matter_text_field(body, "evidence_fingerprint") and _front_matter_text_field(body, "article_payload_json"):
+        existing_payload = _front_matter_json_text(body, "article_payload_json")
+        if (
+            _front_matter_text_field(body, "evidence_fingerprint")
+            and existing_payload.get("fallback_schema_version") == FALLBACK_ARTICLE_SCHEMA_VERSION
+        ):
             continue
         upgraded = _decorate_deterministic_article(
             article_key,
@@ -320,6 +331,93 @@ def upgrade_deterministic_article_receipts(
     if receipts:
         analysis["articleReceipts"] = receipts
     return analysis
+
+
+def _deterministic_fallback_editorial_fields(
+    article_key: str,
+    reporter_name: str,
+    evidence_rows: list[dict[str, Any]],
+    evidence_ids: list[str],
+    source_ids: list[str],
+    roster_id: int | None,
+    team_name: str,
+) -> dict[str, str]:
+    """Give fallback publications a useful story spine without adding facts.
+
+    These sentences describe the evidence scope and the decision boundary; they
+    do not claim a new event, a manager motive, or a recommendation outcome.
+    The protected writer can replace them with a richer lens while retaining
+    the same structured fields and evidence receipt.
+    """
+
+    count = len(evidence_ids)
+    source_count = len(source_ids)
+    lead = next(
+        (
+            str(row.get("player_name") or row.get("target_manager_name") or row.get("team_name") or row.get("name") or "")
+            for row in evidence_rows
+            if str(row.get("player_name") or row.get("target_manager_name") or row.get("team_name") or row.get("name") or "").strip()
+        ),
+        "the lead evidence row",
+    )
+    scope = f"{count} evidence anchor{'s' if count != 1 else ''} across {source_count} source receipt{'s' if source_count != 1 else ''}"
+    changed = (
+        f"No prior-edition change is asserted in this fallback; the current receipt covers {scope}. "
+        "Use the publication change ledger to distinguish new evidence from a new shell."
+    )
+    counter = (
+        "No LLM counter-signal is stored. Review the row-level risk, freshness, and source receipt "
+        "before treating the read as actionable."
+    )
+    if article_key == "team_report":
+        return {
+            "dek": f"{reporter_name} reads {team_name or 'the selected roster'} through its current market, projection, and role evidence.",
+            "lede": f"{team_name or 'The selected roster'} has {scope} in view. Start with {lead}, then compare the roster's strongest holds with its price-discovery candidates.",
+            "thesis": "The useful roster decision is where market value, projected production, and team need disagree; this report frames the queue rather than making the move.",
+            "what_changed": changed,
+            "counter_evidence": counter,
+            "action": "Open the cornerstone and shop-candidate evidence, then decide whether the return clears the selected roster's need.",
+            "visual_brief": "Use a ranked roster rail with one market-versus-projection comparison; keep all factual values in accessible HTML.",
+        }
+    if article_key == "market_watch":
+        return {
+            "dek": f"{reporter_name} scans market disagreement and opportunity signals for price discovery, not automatic action.",
+            "lede": f"The market watch opens on {lead} and {scope}. The signal is a question about price, role, and timing—not a verdict.",
+            "thesis": "Investigate the gaps where projected opportunity or roster context has not clearly been reflected in the market value.",
+            "what_changed": changed,
+            "counter_evidence": counter,
+            "action": "Check role, source freshness, and the live market before turning a ranked signal into a conversation.",
+            "visual_brief": "Use a diverging market-versus-model bar for the lead read; do not place statistics inside artwork.",
+        }
+    if article_key == "trade_desk":
+        return {
+            "dek": f"{reporter_name} turns observed roster needs and valuation lanes into read-only conversation shortlists.",
+            "lede": f"The desk starts with {lead} and {scope}. Each fit is a hypothesis bounded by owned assets, observed preferences, and price guardrails.",
+            "thesis": "The best trade conversation begins where a counterparty's observed lane overlaps a real need on the selected roster.",
+            "what_changed": changed,
+            "counter_evidence": "The packet does not observe intent or predict a response; inspect the historical evidence and do-not-chase conditions.",
+            "action": "Open the two-sided packet, test the offer band against the current market, and keep the shortlist read-only.",
+            "visual_brief": "Use a two-column selected-roster versus counterparty comparison with an evidence drawer below.",
+        }
+    if article_key == "manager_intel":
+        return {
+            "dek": f"{reporter_name} profiles observed manager behavior across exact roster identities and historical seasons.",
+            "lede": f"The manager room begins with {lead} and {scope}. Timing, roster shape, and repeated behavior are evidence; motive remains unknown.",
+            "thesis": "Historical manager behavior is most useful when it narrows the next question without pretending to know how an opponent will respond.",
+            "what_changed": changed,
+            "counter_evidence": "Manager intent is not observed in Sleeper data; confidence and sample size should travel with every tendency.",
+            "action": "Open a dossier, inspect season timing and trade fits, then choose the question you want to ask that manager.",
+            "visual_brief": "Use a season timeline with roster-label changes and a separate two-sided trade-fit panel.",
+        }
+    return {
+        "dek": f"{reporter_name} looks ahead through the selected league's validated signals and decision queues.",
+        "lede": f"{team_name or 'The selected roster'} has {scope} in the daily read. The first name to investigate is {lead}.",
+        "thesis": "Use the strongest cross-source signals to decide what deserves attention today, then open the underlying evidence before acting.",
+        "what_changed": changed,
+        "counter_evidence": counter,
+        "action": "Open the evidence for the lead read and make the final decision yourself.",
+        "visual_brief": "Lead with one ranked decision rail, followed by compact evidence and source-health indicators.",
+    }
 
 
 def _replace_front_matter_fields(text: str, fields: dict[str, Any]) -> str:

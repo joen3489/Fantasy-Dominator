@@ -569,6 +569,17 @@ fallback articles expose their new receipt metadata. Release 1 is still open
 only for the protected Luna run; the deterministic publication itself is no
 longer silently missing its evidence receipt.
 
+## 2026-08-25 deterministic fallback story-spine checkpoint
+
+Fallback articles now expose a versioned structured story spine: article-
+specific lede, thesis, honest change boundary, counter-signal, action
+question, and non-factual visual brief. This keeps the media facade useful
+while a protected writer run is pending and gives Luna the same fields to
+replace rather than creating a second presentation contract. A source-only
+bundle migration upgrades older fallback payloads once and retains its
+evidence fingerprint; it does not claim that deterministic text is writer
+output.
+
 ## 2026-08-25 canonical fallback evidence checkpoint
 
 The deterministic publication now carries row-level evidence IDs in the same

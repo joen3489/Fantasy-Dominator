@@ -104,6 +104,13 @@ class DeterministicArticleTests(unittest.TestCase):
                 self.assertIn("evidence_fingerprint:", text)
                 self.assertIn("fallback_reason:", text)
                 self.assertIn("article_payload_json:", text)
+                payload_line = next(line for line in text.splitlines() if line.startswith("article_payload_json: "))
+                payload = json.loads(payload_line.split(": ", 1)[1])
+                self.assertEqual(payload["fallback_schema_version"], "deterministic_fallback_v2")
+                self.assertTrue(payload["lede"])
+                self.assertTrue(payload["thesis"])
+                self.assertTrue(payload["what_changed"])
+                self.assertTrue(payload["action"])
 
     def test_manager_intel_exposes_profile_evidence(self) -> None:
         dataframes = {
