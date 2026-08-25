@@ -149,16 +149,15 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-The durable-bundle migration gate is open again as of the latest production
-verification on 2026-08-25. Public smoke reported the expected deployment
-revision `0c7b052`, but a clean signed-in manager route still embedded the
-previous reader revision `99b39f6` and did not expose the current
-`trade_fit_evaluation` / “Cross-season valuation lanes” contract. This proves
-that a healthy endpoint and current deployment SHA do not prove that the
-authenticated route selected or served the current durable reader bundle.
-The exact selected-root failure is still to be diagnosed; the next gate must
-expose safe bundle-selection/migration status or refuse to serve the stale
-reader after a failed migration attempt.
+The durable-bundle migration gate is now closed for deployment
+`acd8c3ab3b1bf69581cd8fa95b8c7c9f45994683`. The first signed-in navigation
+after rollout still surfaced the prior `99b39f6` manifest until the browser
+performed a fresh reload; the subsequent clean entry and repeat entry both
+served the current private bundle. The authenticated reader receipt reported
+`current · private`, the current source revision, exact `roster_id=2` for
+Lulu’s Potatoe’s, and the dossier’s rendered “Cross-season valuation lanes
+(6)” section. This closes the specific stale-reader incident while keeping
+browser freshness as an explicit deployment precondition.
 
 The protected Luna publication is a separate open boundary: deterministic
 fallback remains the honest reader state until the operator-authorized run
@@ -168,11 +167,12 @@ authority boundary, not a reason to weaken the receipt contract.
 The article-specific media slice was previously verified on `e830e05`: the
 signed-in edition loaded four 1536px desk illustrations, kept the exact
 `roster_id=2` identity for Lulu’s Potatoe’s, and exposed media metadata beside
-the evidence receipt. That prior proof does not close the current reader
-selection issue. Lazy artwork must be checked after it enters the viewport;
-an initial DOM presence check is not proof that the browser loaded the asset.
+the evidence receipt. That media proof is a separate acceptance slice from
+reader-bundle selection. Lazy artwork must be checked after it enters the
+viewport; an initial DOM presence check is not proof that the browser loaded
+the asset.
 
-## 2026-08-25 production reader selection checkpoint
+## 2026-08-25 production reader selection checkpoint at `0c7b052`
 
 The stale-private-root regression test is now in the code path and the
 current-bundle preference fix is deployed as `0c7b052`. The live browser
@@ -180,9 +180,11 @@ result shows why this seam needs a stronger receipt: `/healthz` can report the
 new source revision while the authenticated league route still serves an old
 embedded manifest and old shell markers. Bundle selection, migration outcome,
 and the final served revision therefore belong in one observable contract.
-Until that contract is proven, do not run an expensive newsroom generation
-cycle or call the release fully propagated. Preserve the old bundle as a
-recoverable migration candidate, but never present it as current content.
+The contract is now proven on the later `acd8c3a` deployed signed-in route.
+Preserve the old
+bundle as a recoverable migration candidate, but never present it as current
+content; a browser reload is part of verification when an earlier cached
+navigation reports an old embedded revision.
 
 ## 2026-08-25 reader-serving gate implementation
 
@@ -191,5 +193,6 @@ served revision, contract booleans, and bounded reason codes. After recovery,
 the route rechecks completeness, exact identity, shell markers, and the
 current durable payload before returning HTML. If the old shell remains, the
 user receives a branded 503 recovery state instead of silently reading stale
-content. This is the implementation of the gate; production verification is
-still required before calling the boundary closed.
+content. The deployed verification now closes this boundary for `acd8c3a`: a
+fresh reload and repeat direct entry both returned the current private reader,
+exact roster identity, and the rendered cross-season lane section.

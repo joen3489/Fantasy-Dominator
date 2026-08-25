@@ -636,3 +636,15 @@ leaves the bundle stale no longer returns its existing `index.html`; it shows
 the recovery page with HTTP 503. This closes the silent-success code seam,
 while the production gate remains open until a deployed signed-in route proves
 the receipt and current reader together.
+
+## 2026-08-25 - Reader migration verified after a fresh authenticated entry
+
+Deployment `acd8c3ab3b1bf69581cd8fa95b8c7c9f45994683` passed public smoke. The
+first signed-in browser navigation still showed the prior embedded `99b39f6`
+manifest until a fresh reload; the reload and a repeat direct entry then
+reported the current revision, `current · private` reader receipt, exact
+`roster_id=2` / `Lulu’s Potatoe’s` identity, all five publication receipt keys,
+and the rendered “Cross-season valuation lanes (6)” manager section. The
+stale-reader gate is closed for this release, with browser freshness retained
+as an explicit verification precondition. The protected Luna run remains
+pending operator authorization.

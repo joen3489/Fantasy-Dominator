@@ -727,11 +727,10 @@ individual viewport entry, while preserving the authenticated `roster_id=2`
 receipt for Lulu’s Potatoe’s. This closes the first media entry-path slice;
 the protected Luna publication remains the separate open boundary.
 
-## 2026-08-25 current production boundary
+## 2026-08-25 production boundary observed at `0c7b052`
 
-The prior migration-gate closure is historical, not a current release claim.
-After `0c7b052`, public smoke reported the expected deployment revision, but a
-clean signed-in manager entry still exposed the older embedded reader revision
+At this checkpoint, public smoke reported the expected deployment revision, but
+a clean signed-in manager entry still exposed the older embedded reader revision
 `99b39f6` and omitted the current cross-season manager dossier contract. The
 serving path therefore still needs an observable bundle-selection and
 migration receipt, followed by a fail-closed response when it cannot produce a
@@ -746,5 +745,17 @@ rechecks the final bundle after migration. Incomplete, wrong-identity, stale,
 or contract-incomplete bundles cannot be returned as a successful reader;
 they produce the branded recovery state instead. Local adversarial tests cover
 the failed-recovery path and the absence of filesystem details. The remaining
-acceptance check is a deployed signed-in browser proof at the exact league
-route.
+acceptance check at this implementation checkpoint was a deployed signed-in
+browser proof at the exact league route; that proof is recorded below.
+
+## 2026-08-25 reader-serving gate verified in production
+
+After deployment `acd8c3ab3b1bf69581cd8fa95b8c7c9f45994683`, public smoke and
+the signed-in Chrome path were checked independently. A fresh reload served
+the current private bundle and the repeat entry remained current. The
+embedded receipt proved `roster_id=2` for Lulu’s Potatoe’s, all five article
+receipt keys, `current · private` reader state, and the rendered
+“Cross-season valuation lanes (6)” manager dossier section. The first stale
+navigation before reload is retained as evidence that browser freshness is a
+real precondition, not discarded as noise. The migration slice is accepted;
+the protected Luna publication remains the next cost-gated boundary.

@@ -150,6 +150,10 @@ unchanged and no paid generation should be used to mask this serving defect.
 
 The implementation now does both: authenticated status/readiness exposes the
 safe receipt, and the league route fails closed with a recovery response when
-the post-migration bundle is still stale. A production browser check remains
-the required evidence that the deployed process is actually running this
-contract.
+the post-migration bundle is still stale. The production browser evidence is
+now present for `acd8c3ab3b1bf69581cd8fa95b8c7c9f45994683`: after a fresh
+reload, the authenticated route reported the current private bundle, exact
+`roster_id=2` identity, and the cross-season dossier marker; a repeat direct
+entry stayed current. The initial stale navigation is retained as a
+browser-freshness warning, so future verifiers must reload or otherwise prove
+the fresh response before trusting the page.
