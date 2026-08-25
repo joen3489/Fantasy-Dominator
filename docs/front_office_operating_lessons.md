@@ -171,7 +171,7 @@ Before adding a feature or “cleaning up” an old artifact:
 ## Current open boundary
 
 The durable-bundle migration and semantic-reader gates are closed for the
-current deployment `b58fd3b96d66525df71b01c270be0679024b02ed`. A fresh,
+current deployment `eb9b68d96f40cffa0afec6131547be178d8f1395`. A fresh,
 authenticated direct entry served the current private bundle for exact
 `roster_id=2` / Lulu’s Potatoe’s, rendered the Data Room's “Historical
 identity receipt,” and reported 3,101 history rows, 3,101 resolved joins, zero
@@ -343,3 +343,8 @@ retains. The reader should reconcile totals across surfaces and label proxy
 coverage instead of silently dropping values or pretending a proxy is an
 external observation. This is a data-contract issue, not a cosmetic card
 choice.
+
+Production proof at `eb9b68d96f40cffa0afec6131547be178d8f1395` confirmed the
+repair in Chrome: Moose Caboose's Team construction and Manager dossier both
+showed 835.54, while the construction evidence showed 30/30 market rows and
+four internal proxy values.

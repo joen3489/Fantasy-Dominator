@@ -984,3 +984,14 @@ distinction.
 
 The entry-path test requires the inventory source and proxy receipt markers;
 the production amendment will be recorded after the deployed browser check.
+
+### Production acceptance amendment — `eb9b68d`
+
+Public smoke passed for
+`eb9b68d96f40cffa0afec6131547be178d8f1395`. Authenticated Chrome re-entered
+the private edition, opened Moose Caboose's exact roster-4 entity page, and
+verified that Team construction and Manager dossier both reported market
+value 835.54. The construction receipt showed 30/30 market rows, four
+internal proxy values, 30 projection rows, 30 action rows, and the exact
+`team_asset_inventory` source trace. Lulu’s Potatoe’s remained the private
+edition identity at the root.

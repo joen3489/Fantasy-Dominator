@@ -839,3 +839,9 @@ continues to come from `player_dossiers`; missing inventory joins remain
 unavailable. A market number is not trustworthy merely because it is
 available, so the UI must expose whether it is externally sourced or proxy
 valued.
+
+Production revision
+`eb9b68d96f40cffa0afec6131547be178d8f1395` was smoke-verified and checked
+in authenticated Chrome. The two dossier surfaces now agree at 835.54; the
+team construction receipt reports 30/30 market rows and four internal proxy
+values, with the canonical inventory source visible.

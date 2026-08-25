@@ -325,3 +325,10 @@ separate, and exposes `market_proxy_rows` plus the source table in the
 construction evidence. The browser entry-path test protects the source
 selection; production verification must check reconciliation, not only the
 presence of a panel.
+
+Production proof at
+`eb9b68d96f40cffa0afec6131547be178d8f1395` verified the repair: the exact
+roster-4 Team construction route showed 835.54 in both construction and the
+manager dossier, `market_rows=30`, `market_proxy_rows=4`, and the canonical
+`team_asset_inventory` trace. This is stronger evidence than a marker-only
+entry check because it tests the disputed value across both consumers.

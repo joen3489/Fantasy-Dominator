@@ -904,7 +904,7 @@ content hashes, bundle revisions, generated-article publication cards, reuse
 gates, structured manager dossiers, read-only Trade Desk packets, question-led
 edition prompts, a versioned responsive masthead manifest, and exact-scope
 team-construction presentation reconciled to the economic asset ledger.
-Production revision `b58fd3b96d66525df71b01c270be0679024b02ed` passed public
+Production revision `eb9b68d96f40cffa0afec6131547be178d8f1395` passed public
 smoke and authenticated browser verification. Release 1 remains open because
 production is still in deterministic fallback mode until the
 operator-authorized Luna run is completed and its reporter receipts are
