@@ -1063,3 +1063,17 @@ still identified Lulu’s Potatoe’s and rendered the new preflight: provider
 operator gate `configured; browser key required`. The edition remains an
 honest `0/5 reporter articles · evidence-led fallback`; no writer call was
 made during this verification because the browser operator key was absent.
+
+## 2026-08-25 writer model reconciliation checkpoint
+
+The first API run may predate a model configuration change. The headquarters
+now compares persisted generated article receipts with the currently configured
+model and reports the last model plus the count that needs regeneration. A prior
+model can therefore never look like current Luna output merely because an old
+artifact exists in the durable database. The comparison is informational and
+does not bypass the operator gate or trigger generation.
+
+Local proof: the full 198-test suite, local data trust gate, and diff check
+passed. Production acceptance still requires the authenticated protected Luna
+run and five current reporter receipts; no production generation claim is made
+by this local checkpoint.

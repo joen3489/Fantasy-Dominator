@@ -1482,6 +1482,7 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
             if publication_receipt.get("manifest_present")
             else None,
             current_bundle_revision=str(publication_receipt.get("bundle_revision") or ""),
+            expected_model=writer_api_configuration().get("model", ""),
         )
         if user_id is not None
         else {}
@@ -1824,6 +1825,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             if publication_receipt.get("manifest_present")
             else None,
             current_bundle_revision=str(publication_receipt.get("bundle_revision") or ""),
+            expected_model=writer_config.get("model", ""),
         )
         return status | {
             "league_id": str(league["league_id"]),

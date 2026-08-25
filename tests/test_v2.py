@@ -1855,11 +1855,19 @@ class FastAPIClerkAppTests(unittest.TestCase):
             model="gpt-5.6-luna",
             generation_metadata={"usage": {"total_tokens": 1234}, "cost_known": False},
         )
-        partial = db.content_artifact_status(user_id, "content-league", "2026")
+        partial = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            expected_model="gpt-5.6-luna",
+        )
         self.assertEqual(partial["state"], "partial")
         self.assertEqual(partial["label"], "1/5 reporter articles")
         self.assertEqual(partial["generated_keys"], ["team_report"])
         self.assertTrue(partial["last_generated_at"])
+        self.assertEqual(partial["last_generated_model"], "gpt-5.6-luna")
+        self.assertEqual(partial["model_mismatch_count"], 0)
+        self.assertEqual(partial["model_reconciliation"], "prior runs match configured model")
 
         stale_bundle = db.content_artifact_status(
             user_id,
@@ -1919,6 +1927,31 @@ class FastAPIClerkAppTests(unittest.TestCase):
         changed = db.list_content_artifact_changes(user_id, "content-league", "2026")
         self.assertEqual(changed[0]["change_type"], "updated")
         self.assertEqual(changed[0]["prior_evidence_fingerprint"], "evidence-1")
+
+        db.record_content_artifact(
+            user_id,
+            "content-league",
+            "2026",
+            "article",
+            "market_watch",
+            "market_watch.md",
+            source={"mode": "automatic_llm"},
+            evidence_fingerprint="evidence-old-model",
+            bundle_revision="bundle-old-model",
+            content_hash="content-old-model",
+            reporter_id="waiver_wire_waverly",
+            writer_mode="automatic_llm",
+            model="legacy-writer-model",
+        )
+        mismatched = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            expected_model="gpt-5.6-luna",
+        )
+        self.assertEqual(mismatched["last_generated_model"], "legacy-writer-model")
+        self.assertEqual(mismatched["model_mismatch_count"], 1)
+        self.assertEqual(mismatched["model_reconciliation"], "prior run needs regeneration")
 
     def test_content_feedback_is_explicit_and_scoped_to_the_verified_roster(self) -> None:
         """Encodes docs/front_office_realization_epic.md Workstream 9 and AGENTS.md privacy rules."""

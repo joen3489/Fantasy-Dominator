@@ -389,3 +389,13 @@ identity remained Lulu’s Potatoe’s; team construction showed 30/30 market
 coverage at 835.54; Jimmy Horn showed the 43-point internal proxy with its
 trace. The repeatable lesson is to verify the refreshed private bundle, not
 only the deployed code revision.
+
+## 2026-08-25 prior writer runs need model reconciliation
+
+A run completed before the configured model changed is historical evidence, not
+proof that the current model was used. The Writer Desk now compares the
+persisted, user-scoped article receipts with the configured model and reports
+when a prior run needs regeneration. This keeps the cost boundary legible and
+prevents an old artifact from masquerading as current Luna output. It remains a
+receipt, not permission to rerun; the operator token and the five-article
+publication proof are still required.

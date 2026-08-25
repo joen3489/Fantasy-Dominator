@@ -16,6 +16,11 @@ The app should help a dynasty manager understand:
 - which news items create trade windows
 - what the analyst layer thinks, with evidence and confidence
 
+Current writer gate note (2026-08-25): the headquarters reconciles persisted
+article models against the configured `gpt-5.6-luna` model before a paid run.
+An older run is labeled as requiring regeneration; it is not counted as current
+publication without matching bundle receipts.
+
 ## Current implementation note (2026-08-24)
 
 The writing layer is now provider-neutral through `src/llm.py`. OpenAI

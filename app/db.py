@@ -1031,6 +1031,7 @@ def content_artifact_status(
     artifact_type: str = "article",
     current_receipts: dict[str, dict[str, Any]] | None = None,
     current_bundle_revision: str = "",
+    expected_model: str = "",
 ) -> dict[str, Any]:
     """Return a safe, user-scoped receipt for generated writer output.
 
@@ -1045,7 +1046,7 @@ def content_artifact_status(
         rows = conn.execute(
             """
             SELECT artifact_key, status, generated_at, updated_at, content_hash,
-                   reporter_id, writer_mode, evidence_fingerprint, bundle_revision
+                   reporter_id, writer_mode, evidence_fingerprint, bundle_revision, model
             FROM content_artifacts
             WHERE user_id = ? AND league_id = ? AND season = ? AND artifact_type = ?
             """,
@@ -1080,6 +1081,26 @@ def content_artifact_status(
         for row in rows
         if str(row[2] or row[3] or "") and is_current_generated(row)
     ]
+    generated_rows = [row for row in rows if str(row[1] or "").lower() == "generated"]
+    latest_generated_row = max(
+        generated_rows,
+        key=lambda row: str(row[3] or row[2] or ""),
+        default=None,
+    )
+    last_generated_model = str(latest_generated_row[9] or "") if latest_generated_row else ""
+    model_mismatch_count = (
+        sum(1 for row in generated_rows if str(row[9] or "") != str(expected_model))
+        if expected_model
+        else 0
+    )
+    if not generated_rows:
+        model_reconciliation = "no prior writer run"
+    elif expected_model and model_mismatch_count:
+        model_reconciliation = "prior run needs regeneration"
+    elif expected_model:
+        model_reconciliation = "prior runs match configured model"
+    else:
+        model_reconciliation = "configured model not supplied"
     generated_count = len(generated_keys)
     expected_count = len(expected_keys)
     if generated_count == expected_count:
@@ -1098,6 +1119,10 @@ def content_artifact_status(
         "expected_count": expected_count,
         "generated_keys": sorted(generated_keys),
         "last_generated_at": max(timestamps, default=""),
+        "last_generated_model": last_generated_model,
+        "expected_model": str(expected_model or ""),
+        "model_mismatch_count": model_mismatch_count,
+        "model_reconciliation": model_reconciliation,
         "bundle_revision": str(current_bundle_revision or ""),
         "receipt_verified": current_receipts is not None,
     }

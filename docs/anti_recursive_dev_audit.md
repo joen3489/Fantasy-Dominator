@@ -381,3 +381,16 @@ authenticated entry-path check. The browser showed the complete safe preflight
 receipt and retained the deterministic fallback because no operator key was
 provided. This verifies the gate's observability without treating a blocked
 write as a content-generation success.
+
+## 2026-08-25 model-drift seam audit
+
+The anti-recursive pass found a temporal ambiguity at the cost seam: a current
+model configuration and an older durable article run could both be true, while
+the UI only showed the former. The content receipt now compares the configured
+model against persisted generated artifacts, reports the last generated model,
+and exposes a regeneration-needed count. The entry-path contract remains
+fail-closed: this diagnostic does not call the provider, alter content, or
+replace the protected production proof.
+
+Local evidence: 198 tests passed, the local data trust gate passed with the
+documented optional Fantasy Nerds warning, and `git diff --check` passed.

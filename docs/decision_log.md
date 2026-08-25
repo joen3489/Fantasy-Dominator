@@ -898,3 +898,14 @@ authenticated headquarters reload. The rendered receipt showed OpenAI
 `gpt-5.6-luna`, medium reasoning, API key ready, and the operator gate
 configured. The article count correctly remained 0/5 because no operator key
 was supplied; this is a no-call state, not a failed provider run.
+
+## 2026-08-25 - Reconcile prior writer models before a paid rerun
+
+The first API run can be valid historical output while still being wrong for
+the current configured model. A configured-model badge alone does not answer
+whether the durable article receipts were produced by that model. The scoped
+content receipt now reports the last generated model, the configured model, and
+the number of persisted generated articles whose model differs. That state is
+diagnostic only: it does not publish old content as current and does not spend
+tokens automatically. The protected Luna run remains the authority for current
+publication.

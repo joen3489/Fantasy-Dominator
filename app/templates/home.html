@@ -982,6 +982,10 @@
             <span>API key: <strong>{{ "ready" if writer_api_configured else "missing" }}</strong></span>
             <span>Operator gate: <strong>{{ "configured; browser key required" if operator_status and operator_status.operator_enabled else "not configured" }}</strong></span>
           </div>
+          {% set writer_reconciliation = (featured_league.content_status or {}) %}
+          {% if writer_reconciliation.last_generated_model %}
+            <p class="writer-note" data-testid="writer-model-reconciliation">Previous writer model: <strong>{{ writer_reconciliation.last_generated_model }}</strong> · {{ writer_reconciliation.model_reconciliation }}{% if writer_reconciliation.model_mismatch_count %} ({{ writer_reconciliation.model_mismatch_count }} article{{ "s" if writer_reconciliation.model_mismatch_count != 1 else "" }}){% endif %}.</p>
+          {% endif %}
           <p class="writer-note" data-testid="writer-setup-note">The API key (<code>{{ writer_api_key_env }}</code>) stays in Railway. The operator key is a separate deployment secret, entered only in this browser field to authorize the write.</p>
           {% if operator_status and operator_status.operator_enabled %}
             <p class="writer-note" data-testid="writer-operator-note">Production writer controls are protected by <code>FRONT_OFFICE_OPERATOR_TOKEN</code>. Enter that operator key above; your Clerk login remains read-only.</p>
