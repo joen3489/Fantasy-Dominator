@@ -40,6 +40,8 @@ editorial written in distinct voices.
   verification procedure.
 - `docs/anti_recursive_dev_audit.md`: dated audit rubric for development
   failure classes and the current evidence-backed findings.
+- `docs/front_office_operating_lessons.md`: compact durable memory of the
+  product model, evidence/editorial boundaries, and anti-recursive guardrails.
 - `docs/decision_log.md`: regression lessons and decisions that should not be
   rediscovered by future work.
 - `config/leagues.yml`: legacy/default seed and strategy configuration; it is

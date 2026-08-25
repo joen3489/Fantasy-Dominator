@@ -111,3 +111,16 @@ refresh, and `test_shell_rebuild_migrates_legacy_fallback_receipts` asserts the
 bundle revision is stable on the second rebuild. The manager ledger also
 records observed transaction weeks separately from any interpretation of
 manager intent.
+
+## 2026-08-25 story-spine migration follow-up
+
+The fallback story-spine implementation is present in source and local bundle
+tests, but the first production verification after revision
+`3ca2e6b4925e5eccee9ededb4137b0d6bc4c6bbc` found a preserved user-scoped
+payload still exposing the older empty `lede`, `thesis`, and `what_changed`
+fields. The browser reported the current source revision, so this is not a
+source/deploy mismatch; it is an incomplete durable-artifact migration or
+serving-path defect. The gate remains open until a clean authenticated reader
+load proves the current fallback schema or a current Luna receipt. Do not
+weaken the receipt assertions or treat the health endpoint as proof of content
+propagation.

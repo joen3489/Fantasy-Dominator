@@ -611,3 +611,14 @@ The ledger now also exposes observed transaction timing: active weeks, first,
 last, and peak activity week, with trade and waiver weeks kept separate. This
 adds the timing dimension required by the dossier contract without turning a
 week number into a story about motive or deadline strategy.
+
+## 2026-08-25 production migration gate remains open
+
+The fallback story-spine code and local migration tests are in place, but the
+first authenticated production check after revision
+`3ca2e6b4925e5eccee9ededb4137b0d6bc4c6bbc` still found an older durable
+user-scoped article payload: the source revision was current while the
+embedded fallback `lede`, `thesis`, and `what_changed` remained empty. This is
+the exact class of seam defect this epic is intended to prevent. Release
+claims must remain scoped until a clean reader entry path proves the migrated
+payload (or a current Luna receipt) in production.

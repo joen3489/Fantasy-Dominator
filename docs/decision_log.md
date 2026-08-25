@@ -22,6 +22,25 @@ two-sided Trade Desk packets, and a measured learning loop are still work to
 execute. Future status claims should be amended with the implementation that
 changes them.
 
+## 2026-08-25 - Preserve the operating lessons in-repo
+
+The compact product and development memory now lives in
+`docs/front_office_operating_lessons.md`. The durable model is a private
+personal context layer over a deterministic data room over bounded editorial
+lenses. Depth must come from reusable evidence objects—season ledgers,
+transaction timing, roster construction, counterparties, projections, and
+outcomes—rather than from longer generic prose. A media surface must explain
+what changed and open the underlying evidence; generated imagery is optional
+atmosphere with its own receipt and never a source of facts.
+
+The most important deployment lesson is also recorded there: a current source
+revision does not prove that a preserved user-scoped bundle or article payload
+has migrated. The authenticated reader must be checked at the entry path for
+exact roster identity, durable payload schema, story/fallback state, revision,
+and freshness. Until the current production bundle visibly exposes the new
+fallback story-spine schema or a current Luna receipt, production remains an
+open migration gate.
+
 ## 2026-08-25 - Adopt the Front Office realization epic
 
 The project is now treated as a personal front-office publication backed by a
