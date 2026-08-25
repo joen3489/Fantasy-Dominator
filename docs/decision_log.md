@@ -447,3 +447,14 @@ season ledger now records Sleeper transaction weeks separately for trades and
 waivers, plus first, last, and peak observed activity week. Missing weeks stay
 blank rather than being guessed from timestamps. The dossier renders those
 fields as timing evidence, not as a claim about deadline intent.
+
+## 2026-08-25 - Writer preflight must be visible before a paid run
+
+The Data Room previously displayed provider and model values only when the
+last operator record happened to contain them. A legacy or failed record could
+therefore make a correctly configured Luna deployment look unconfigured, or
+hide the missing API key until after a button press. The league-scoped operator
+status now reports the safe writer preflight (`openai`, `gpt-5.6-luna`, reasoning
+effort, key variable name, and configured boolean) without returning a secret.
+The browser uses that preflight for the cost gate, while the publication
+receipt remains the authority for whether articles were actually written.

@@ -1379,7 +1379,16 @@ class FastAPIClerkAppTests(unittest.TestCase):
             "reporter_persona": {"persona_id": "scout"},
         }
 
-        with patch("app.main.front_operator.status", return_value=status_payload) as status:
+        with patch("app.main.front_operator.status", return_value=status_payload) as status, patch(
+            "app.main.writer_api_configuration",
+            return_value={
+                "provider": "openai",
+                "model": "gpt-5.6-luna",
+                "reasoning_effort": "max",
+                "api_key_env": "OPENAI_API_KEY",
+                "configured": True,
+            },
+        ):
             response = self.client.get(
                 "/api/operator/status?league_id=status-league",
                 cookies={"__session": token},
@@ -1391,6 +1400,11 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(payload["league_id"], "status-league")
         self.assertEqual(payload["league_name"], "Status League")
         self.assertEqual(payload["reporter_persona"]["persona_id"], "scout")
+        self.assertTrue(payload["writer_api_configured"])
+        self.assertEqual(payload["writer_provider"], "openai")
+        self.assertEqual(payload["writer_model"], "gpt-5.6-luna")
+        self.assertEqual(payload["writer_reasoning_effort"], "max")
+        self.assertEqual(payload["writer_api_key_env"], "OPENAI_API_KEY")
         self.assertNotIn("packet_path", payload)
         self.assertNotIn("output_path", payload)
         self.assertNotIn("validated_path", payload)

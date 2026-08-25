@@ -1524,6 +1524,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         status = _safe_operator_status(
             front_operator.status(_private_paths(user_id, str(league["league_id"])))
         )
+        writer_config = writer_api_configuration()
         publication_receipt = _load_publication_receipt(user_id, league)
         content_status = db.content_artifact_status(
             user_id,
@@ -1537,6 +1538,11 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         return status | {
             "league_id": str(league["league_id"]),
             "league_name": league.get("name", ""),
+            "writer_api_configured": writer_config["configured"],
+            "writer_provider": writer_config["provider"],
+            "writer_model": writer_config["model"],
+            "writer_reasoning_effort": writer_config["reasoning_effort"],
+            "writer_api_key_env": writer_config["api_key_env"],
             "publication_receipt": publication_receipt,
             "content_status": content_status,
         }

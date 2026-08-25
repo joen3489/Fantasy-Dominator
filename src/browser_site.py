@@ -2316,9 +2316,10 @@ def _page(
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
         {{ item: 'League', value: status.league_name || manifest.leagueId || 'Current league' }},
         {{ item: 'Evidence count', value: status.evidence_count || '' }},
-        {{ item: 'Writer provider', value: status.provider || '' }},
-        {{ item: 'Writer model', value: status.model || '' }},
-        {{ item: 'Reasoning effort', value: status.reasoning_effort || '' }},
+        {{ item: 'Writer API', value: status.writer_api_configured ? `configured (${{status.writer_api_key_env || 'secret'}})` : `missing ${{status.writer_api_key_env || 'writer key'}}` }},
+        {{ item: 'Writer provider', value: status.writer_provider || status.provider || '' }},
+        {{ item: 'Writer model', value: status.writer_model || status.model || '' }},
+        {{ item: 'Reasoning effort', value: status.writer_reasoning_effort || status.reasoning_effort || '' }},
         {{ item: 'Publication', value: (status.content_status || {{}}).label || 'No publication receipt' }},
         {{ item: 'Bundle revision', value: (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }}
       ];
