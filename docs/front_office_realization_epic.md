@@ -41,6 +41,12 @@ legacy row, but it cannot silently become canonical identity. The next
 acceptance check is a refreshed artifact showing coverage of source IDs and
 explicit unresolved counts.
 
+The local trust gate now reports that coverage instead of treating the history
+CSV as opaque. It fails on unsupported identity methods, a missing ID under a
+resolved method, missing source traces, or invalid trade direction, and warns
+when legitimate legacy name matches remain unresolved or trade direction is
+asymmetric.
+
 ## Product north star
 
 The finished product should let one manager:

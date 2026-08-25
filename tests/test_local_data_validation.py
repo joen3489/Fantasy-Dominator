@@ -107,6 +107,52 @@ class LocalDataValidationTests(unittest.TestCase):
         self.assertEqual(audit["freshness_margin_hours"], 2.0)
         self.assertTrue(any("freshness margin" in warning for warning in audit["warnings"]))
 
+    def test_player_history_identity_receipt_reports_resolution_and_trade_balance(self) -> None:
+        """Encodes docs/data_contract.md's player identity and acquired/sold contract."""
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            history_path = processed / "player_transaction_history.csv"
+            fields = ["player_id", "identity_method", "player_name", "event_type", "direction", "source_trace"]
+            with history_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(
+                    [
+                        {"player_id": "101", "identity_method": "source_id", "player_name": "Alpha", "event_type": "trade", "direction": "acquired", "source_trace": "trades"},
+                        {"player_id": "101", "identity_method": "source_id", "player_name": "Alpha", "event_type": "trade", "direction": "sold", "source_trace": "trades"},
+                        {"player_id": "", "identity_method": "unmatched_name", "player_name": "Legacy Player", "event_type": "waiver_add", "direction": "added", "source_trace": "waivers"},
+                    ]
+                )
+
+            audit = audit_local_data(
+                processed,
+                analysis,
+                now=datetime(2026, 8, 22, 13, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertTrue(audit["ok"])
+        self.assertEqual(audit["player_history_identity"]["resolved_rows"], 2)
+        self.assertEqual(audit["player_history_identity"]["unresolved_rows"], 1)
+        self.assertEqual(audit["player_history_identity"]["trade_direction_counts"], {"acquired": 1, "sold": 1})
+        self.assertTrue(any("unresolved name matches" in warning for warning in audit["warnings"]))
+
+    def test_player_history_identity_contradiction_fails_closed(self) -> None:
+        """A source_id row without an ID is a contract failure, not a recoverable label."""
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            history_path = processed / "player_transaction_history.csv"
+            fields = ["player_id", "identity_method", "player_name", "event_type", "direction", "source_trace"]
+            with history_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerow({"player_id": "", "identity_method": "source_id", "player_name": "Broken", "event_type": "trade", "direction": "received", "source_trace": "trades"})
+
+            audit = audit_local_data(processed, analysis, now=datetime(2026, 8, 22, 13, 0, tzinfo=timezone.utc))
+
+        self.assertFalse(audit["ok"])
+        self.assertTrue(any("without player_id" in error for error in audit["errors"]))
+        self.assertTrue(any("invalid trade direction" in error for error in audit["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()

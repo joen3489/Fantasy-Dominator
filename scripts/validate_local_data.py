@@ -29,6 +29,7 @@ REQUIRED_TABLES = {
 
 REQUIRED_ANALYSIS = "analysis_validation.json"
 CURRENT_STATUSES = {"refreshed", "cached"}
+PLAYER_HISTORY_IDENTITY_METHODS = {"source_id", "normalized_name", "ambiguous_name", "unmatched_name"}
 
 
 def audit_local_data(
@@ -60,6 +61,10 @@ def audit_local_data(
             errors.append(f"{table}.csv is missing columns: {', '.join(missing)}")
         if not rows:
             errors.append(f"{table}.csv has no rows")
+
+    player_history_identity = _audit_player_history(processed_dir / "player_transaction_history.csv", errors, warnings)
+    if player_history_identity is not None:
+        table_counts["player_transaction_history"] = player_history_identity["row_count"]
 
     metadata = (tables.get("refresh_metadata") or [{}])[0]
     generated_at = str(metadata.get("generated_at") or "")
@@ -155,6 +160,7 @@ def audit_local_data(
         else None,
         "freshness_warning_floor_hours": round(max_age_hours * 0.25, 2),
         "table_counts": table_counts,
+        "player_history_identity": player_history_identity,
         "news_event_count": len(news_rows),
         "source_summary": source_summary,
         "analysis": analysis,
@@ -171,6 +177,74 @@ def _read_csv(path: Path) -> tuple[list[dict[str, str]], str | None]:
             return list(csv.DictReader(handle)), None
     except (OSError, csv.Error) as exc:
         return [], f"could not read {path.name}: {exc}"
+
+
+def _audit_player_history(path: Path, errors: list[str], warnings: list[str]) -> dict[str, Any] | None:
+    """Check the join seam that makes a historical player dossier trustworthy."""
+
+    if not path.is_file():
+        return None
+    rows, read_error = _read_csv(path)
+    if read_error:
+        errors.append(read_error)
+        return None
+    required = {"player_id", "identity_method", "player_name", "event_type", "direction", "source_trace"}
+    missing = sorted(required - set(rows[0].keys() if rows else ()))
+    if missing:
+        errors.append(f"player_transaction_history.csv is missing columns: {', '.join(missing)}")
+        return {"row_count": len(rows), "valid": False, "identity_method_counts": {}, "trade_direction_counts": {}}
+    if not rows:
+        warnings.append("player_transaction_history.csv has no rows; player dossiers have no historical transaction evidence")
+        return {"row_count": 0, "valid": True, "identity_method_counts": {}, "trade_direction_counts": {}}
+
+    identity_method_counts: dict[str, int] = {}
+    trade_direction_counts: dict[str, int] = {}
+    resolved_rows = 0
+    unresolved_rows = 0
+    for row in rows:
+        method = str(row.get("identity_method") or "").strip()
+        player_id = str(row.get("player_id") or "").strip()
+        event_type = str(row.get("event_type") or "").strip()
+        direction = str(row.get("direction") or "").strip()
+        identity_method_counts[method] = identity_method_counts.get(method, 0) + 1
+        if method not in PLAYER_HISTORY_IDENTITY_METHODS:
+            errors.append(f"player_transaction_history.csv has unsupported identity_method: {method or 'blank'}")
+        if method in {"source_id", "normalized_name"}:
+            resolved_rows += 1
+            if not player_id:
+                errors.append(
+                    f"player_transaction_history.csv marks {method} without player_id for {row.get('player_name') or 'unnamed player'}"
+                )
+        else:
+            unresolved_rows += 1
+        if event_type == "trade":
+            trade_direction_counts[direction] = trade_direction_counts.get(direction, 0) + 1
+            if direction not in {"acquired", "sold"}:
+                errors.append(
+                    f"player_transaction_history.csv has invalid trade direction: {direction or 'blank'}"
+                )
+        if not str(row.get("player_name") or "").strip():
+            errors.append("player_transaction_history.csv contains a row without player_name")
+        if not str(row.get("source_trace") or "").strip():
+            errors.append("player_transaction_history.csv contains a row without source_trace")
+
+    if unresolved_rows:
+        warnings.append(
+            f"player_transaction_history.csv has {unresolved_rows}/{len(rows)} unresolved name matches; inspect identity_method before relying on history"
+        )
+    if trade_direction_counts and trade_direction_counts.get("acquired", 0) != trade_direction_counts.get("sold", 0):
+        warnings.append(
+            "player_transaction_history.csv trade directions are asymmetric; source transactions may be incomplete"
+        )
+    return {
+        "row_count": len(rows),
+        "valid": not any("player_transaction_history.csv" in error for error in errors),
+        "identity_method_counts": dict(sorted(identity_method_counts.items())),
+        "resolved_rows": resolved_rows,
+        "unresolved_rows": unresolved_rows,
+        "unresolved_rate": round(unresolved_rows / len(rows), 4) if rows else 0.0,
+        "trade_direction_counts": dict(sorted(trade_direction_counts.items())),
+    }
 
 
 def _age_hours(value: str, *, now: datetime | None = None) -> float | None:
@@ -197,6 +271,14 @@ def _format_report(audit: dict[str, Any]) -> str:
         f"News rows: {audit.get('news_event_count', 0)}",
         f"Analysis: {'valid' if audit.get('analysis', {}).get('valid') else 'invalid or missing'}",
     ]
+    history = audit.get("player_history_identity") or {}
+    if history:
+        lines.append(
+            "Player history: "
+            f"{history.get('row_count', 0)} rows; "
+            f"{history.get('resolved_rows', 0)} resolved; "
+            f"{history.get('unresolved_rows', 0)} unresolved"
+        )
     for error in audit.get("errors", []):
         lines.append(f"ERROR: {error}")
     for warning in audit.get("warnings", []):

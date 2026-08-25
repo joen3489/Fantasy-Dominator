@@ -172,3 +172,8 @@ ambiguous names, unmatched names, and the sold-side trade event. A fresh local
 refresh resolved all 3,101 rows by source ID and passed the full 188-test gate;
 the generated CSVs remain ignored artifacts, so the durable contract is the
 code, docs, and test coverage rather than an accidental checked-in snapshot.
+
+The local trust gate now audits this contract directly. This prevents a
+future refactor from preserving the column names while dropping IDs, changing
+trade direction semantics, or erasing source traces; unresolved legacy names
+remain a visible warning rather than a silent pass.

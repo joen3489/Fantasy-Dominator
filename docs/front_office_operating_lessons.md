@@ -212,3 +212,8 @@ artifact receipt, not a claim that every future source will resolve. The
 unresolved states remain explicit as `normalized_name`, `ambiguous_name`, or
 `unmatched_name`; no display-name match is allowed to silently become a
 canonical identity.
+
+The local validator now carries a compact identity receipt for this seam:
+method counts, resolved and unresolved rows, unresolved rate, and acquired vs
+sold trade counts. A green freshness check without this semantic receipt is
+not enough to call historical player depth trustworthy.
