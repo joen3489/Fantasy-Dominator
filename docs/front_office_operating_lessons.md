@@ -149,17 +149,37 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-The durable-bundle migration gate was closed on 2026-08-25 after a clean
-authenticated production entry path exposed source revision `a69e7fd`, the
-verified `roster_id=2` receipt for Lulu’s Potatoe’s, the v2 fallback story
-spine, and the visual-direction receipt. The remaining open boundary is the
-protected Luna publication: deterministic fallback remains the honest reader
-state until the operator-authorized run produces current per-article writer
-receipts. This is an explicit cost and authority boundary, not a reason to
-weaken the receipt contract.
+The durable-bundle migration gate is open again as of the latest production
+verification on 2026-08-25. Public smoke reported the expected deployment
+revision `0c7b052`, but a clean signed-in manager route still embedded the
+previous reader revision `99b39f6` and did not expose the current
+`trade_fit_evaluation` / “Cross-season valuation lanes” contract. This proves
+that a healthy endpoint and current deployment SHA do not prove that the
+authenticated route selected or served the current durable reader bundle.
+The exact selected-root failure is still to be diagnosed; the next gate must
+expose safe bundle-selection/migration status or refuse to serve the stale
+reader after a failed migration attempt.
 
-The article-specific media slice is live on `e830e05`: the signed-in edition
-loaded four 1536px desk illustrations, kept the exact `roster_id=2` identity
-for Lulu’s Potatoe’s, and exposed media metadata beside the evidence receipt.
-Lazy artwork must be checked after it enters the viewport; an initial DOM
-presence check is not proof that the browser loaded the asset.
+The protected Luna publication is a separate open boundary: deterministic
+fallback remains the honest reader state until the operator-authorized run
+produces current per-article writer receipts. This is an explicit cost and
+authority boundary, not a reason to weaken the receipt contract.
+
+The article-specific media slice was previously verified on `e830e05`: the
+signed-in edition loaded four 1536px desk illustrations, kept the exact
+`roster_id=2` identity for Lulu’s Potatoe’s, and exposed media metadata beside
+the evidence receipt. That prior proof does not close the current reader
+selection issue. Lazy artwork must be checked after it enters the viewport;
+an initial DOM presence check is not proof that the browser loaded the asset.
+
+## 2026-08-25 production reader selection checkpoint
+
+The stale-private-root regression test is now in the code path and the
+current-bundle preference fix is deployed as `0c7b052`. The live browser
+result shows why this seam needs a stronger receipt: `/healthz` can report the
+new source revision while the authenticated league route still serves an old
+embedded manifest and old shell markers. Bundle selection, migration outcome,
+and the final served revision therefore belong in one observable contract.
+Until that contract is proven, do not run an expensive newsroom generation
+cycle or call the release fully propagated. Preserve the old bundle as a
+recoverable migration candidate, but never present it as current content.

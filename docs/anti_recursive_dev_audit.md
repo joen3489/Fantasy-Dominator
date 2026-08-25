@@ -136,3 +136,14 @@ revision. The stale durable payload was therefore a real migration seam, not
 a permanent production data loss; the new guard and entry-path tests now cover
 it. The protected Luna run remains separate and is still pending operator
 authorization.
+
+## 2026-08-25 - Current reader verification reopens the serving seam
+
+The next deployment, `0c7b052`, passed public smoke at its expected revision,
+but the clean signed-in manager route still embedded `99b39f6` and omitted the
+new manager dossier entry markers. This is a fresh instance of the same
+anti-recursive failure class: deployment health was treated as a proxy for the
+actual user-facing artifact. The migration gate is therefore open until the
+route exposes a safe selected-bundle/migration receipt or refuses to serve a
+stale shell after recovery fails. The protected Luna boundary remains
+unchanged and no paid generation should be used to mask this serving defect.

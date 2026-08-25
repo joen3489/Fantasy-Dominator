@@ -21,8 +21,10 @@ the protected Luna publication, deeper historical manager intelligence,
 two-sided Trade Desk packets, and a measured learning loop. The Trade Desk,
 manager dossier entry path, event pulse, and reporter coverage seam have since
 been implemented and are recorded in later checkpoints below. The remaining
-open boundary is protected Luna publication plus the accumulation of enough
-explicit outcomes to evaluate the newsroom honestly.
+open boundary at that checkpoint was protected Luna publication plus the
+accumulation of enough explicit outcomes to evaluate the newsroom honestly.
+The latest production reader check reopened a separate serving-path boundary;
+see the current reader-selection checkpoint below.
 
 ## 2026-08-25 - Self-healing publication migration verified
 
@@ -607,3 +609,18 @@ the source and shell contract checks. That allowed an older user-scoped shell
 to win over a current legacy migration bundle. Selection now prefers a bundle
 only after identity and freshness/schema checks pass; stale roots remain
 eligible only as recovery candidates for the migration path.
+
+## 2026-08-25 - A healthy deploy is not proof of the authenticated reader
+
+After `0c7b052` deployed, public smoke reported the expected revision, but a
+clean signed-in manager route still embedded revision `99b39f6` and lacked the
+current manager dossier markers for `trade_fit_evaluation` and “Cross-season
+valuation lanes.” The code and local migration tests are not enough to call
+this resolved: the route must prove which bundle root it selected, whether a
+migration was attempted and succeeded, and which revision was finally served.
+
+This reopens the production migration gate without discarding the prior
+historical verification. The next implementation slice is a safe diagnostic
+and fail-closed serving contract for that seam. It must not expose filesystem
+paths, session tokens, or private payloads, and it must not trigger paid Luna
+generation.

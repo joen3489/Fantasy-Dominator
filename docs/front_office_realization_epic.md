@@ -726,3 +726,14 @@ The production browser check after `e830e05` loaded all four desk images after
 individual viewport entry, while preserving the authenticated `roster_id=2`
 receipt for Lulu’s Potatoe’s. This closes the first media entry-path slice;
 the protected Luna publication remains the separate open boundary.
+
+## 2026-08-25 current production boundary
+
+The prior migration-gate closure is historical, not a current release claim.
+After `0c7b052`, public smoke reported the expected deployment revision, but a
+clean signed-in manager entry still exposed the older embedded reader revision
+`99b39f6` and omitted the current cross-season manager dossier contract. The
+serving path therefore still needs an observable bundle-selection and
+migration receipt, followed by a fail-closed response when it cannot produce a
+current reader. This is the next required slice before protected Luna content
+is generated or the release is described as fully propagated.
