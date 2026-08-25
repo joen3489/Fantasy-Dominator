@@ -684,6 +684,8 @@ def _publication_articles(
                 "reporter_persona": reporter,
                 "generated_at": _text(receipt.get("generated_at")),
                 "evidence_fingerprint": _text(receipt.get("evidence_fingerprint")),
+                "fallback_reason": _text(receipt.get("fallback_reason")),
+                "source_receipt": dict(receipt.get("source_receipt") or {}) if isinstance(receipt.get("source_receipt"), Mapping) else {},
                 "content_hash": _text(receipt.get("content_hash")),
                 "model": _text(receipt.get("model")),
                 "structured": dict(receipt.get("structured") or {}) if isinstance(receipt.get("structured"), Mapping) else {},

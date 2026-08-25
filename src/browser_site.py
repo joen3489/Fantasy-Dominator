@@ -313,6 +313,8 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             "reporter_name": _front_matter_field(path, "reporter_name"),
             "generated_at": _front_matter_field(path, "generated_at"),
             "evidence_fingerprint": _front_matter_field(path, "evidence_fingerprint"),
+            "fallback_reason": _front_matter_field(path, "fallback_reason"),
+            "source_receipt": _front_matter_json(path, "source_receipt_json"),
             "content_hash": content_hash,
             "structured": _front_matter_json(path, "article_payload_json"),
             "path": filename,

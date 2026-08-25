@@ -576,7 +576,9 @@ class VModelTests(unittest.TestCase):
             "narrative_markdown": "## Cornerstones\nHis role sent his value climbing.\n\n## Shop Candidates\nSome names.",
             "cited_evidence_ids": ["player:1:1"],
         }
-        self.assertTrue(operator.validate_article_output(good, evidence_ids, headers)["valid"])
+        good_validation = operator.validate_article_output(good, evidence_ids, headers)
+        self.assertTrue(good_validation["valid"])
+        self.assertEqual(good_validation["evidence_ids"], ["player:1:1"])
 
         forbidden = {
             "narrative_markdown": "## Cornerstones\nThe trade was sent and accepted.\n\n## Shop Candidates\nx.",

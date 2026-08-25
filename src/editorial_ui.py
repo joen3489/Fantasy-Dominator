@@ -423,14 +423,19 @@ EDITORIAL_JS = r"""
         structured.counter_evidence ? `<p><strong>Counter-signal:</strong> ${escapeHtml(structured.counter_evidence)}</p>` : ''
       ].filter(Boolean).join('');
       const receipt = (() => {
+        const evidenceIds = Array.isArray(structured.evidence_ids) ? structured.evidence_ids.filter(Boolean).map(value => String(value)) : [];
         const sourceIds = Array.isArray(structured.source_ids) ? structured.source_ids.filter(Boolean).map(value => String(value)) : [];
         const fingerprint = article.evidence_fingerprint
           ? `Evidence fingerprint: ${escapeHtml(String(article.evidence_fingerprint).slice(0, 16))}…`
           : 'No article fingerprint recorded; this is the deterministic fallback publication.';
+        const evidenceTrace = evidenceIds.length
+          ? `<p><strong>Evidence IDs:</strong> ${evidenceIds.map(value => escapeHtml(value)).join(' · ')}</p>`
+          : '<p>No article-level evidence IDs were recorded for this fallback. The deterministic read is still linked to the source receipt below.</p>';
         const sourceTrace = sourceIds.length
-          ? `<p><strong>Evidence IDs:</strong> ${sourceIds.map(value => escapeHtml(value)).join(' · ')}</p>`
-          : '<p>No article-level evidence IDs were recorded. Open the deterministic Data Room tables and source receipts before treating this as a conclusion.</p>';
-        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).</p>${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
+          ? `<p><strong>Source IDs:</strong> ${sourceIds.map(value => escapeHtml(value)).join(' · ')}</p>`
+          : '<p>No source IDs were recorded.</p>';
+        const fallbackReason = article.fallback_reason ? ` Fallback: ${escapeHtml(article.fallback_reason)}` : '';
+        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
       })();
       const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
       const outcome = `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`;

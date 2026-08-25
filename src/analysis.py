@@ -78,6 +78,50 @@ def build_analysis_artifacts(
         "trade_desk.md": build_trade_desk(trade_theses, active_team_name, generated_at, writer_preferences),
         "manager_intel.md": build_manager_intel(dataframes, generated_at, writer_preferences),
     }
+    fallback_inputs = {
+        "daily_brief": (
+            target_theses[:5] + sell_theses[:5] + trade_theses[:5],
+            ["target_theses", "sell_theses", "trade_theses"],
+        ),
+        "team_report": (
+            [
+                row
+                for row in _rows(dataframes.get("player_dossiers", pd.DataFrame()))
+                if _int(row.get("roster_id")) == _int(active_roster_id)
+            ],
+            ["player_dossiers", "roster_players", "player_projection_season", "player_signal_scores"],
+        ),
+        "market_watch": (
+            target_theses[:12] + sell_theses[:12],
+            ["target_theses", "sell_theses", "player_opportunity_scores"],
+        ),
+        "trade_desk": (
+            trade_theses[:12],
+            ["trade_theses", "manager_profiles", "manager_valuation_profiles", "counterparty_trade_edges"],
+        ),
+        "manager_intel": (
+            manager_dossier_items[:14],
+            ["manager_dossiers", "manager_profiles", "manager_event_log", "manager_cycle_profiles"],
+        ),
+    }
+    article_filenames = {
+        "daily_brief": "daily_gm_brief.md",
+        "team_report": "team_report.md",
+        "market_watch": "market_watch.md",
+        "trade_desk": "trade_desk.md",
+        "manager_intel": "manager_intel.md",
+    }
+    for article_key, (rows, source_tables) in fallback_inputs.items():
+        filename = article_filenames[article_key]
+        markdown_artifacts[filename] = _decorate_deterministic_article(
+            article_key,
+            markdown_artifacts[filename],
+            rows,
+            source_tables,
+            active_roster_id,
+            active_team_name,
+            writer_preferences,
+        )
     for filename, text in markdown_artifacts.items():
         (analysis_dir / filename).write_text(text, encoding="utf-8")
 
@@ -96,6 +140,137 @@ def build_analysis_artifacts(
         "validation_error_count": len(validations["errors"]),
         "source_tables": _source_tables(),
     }
+
+
+def _decorate_deterministic_article(
+    article_key: str,
+    text: str,
+    evidence_rows: list[dict[str, Any]],
+    source_tables: list[str],
+    roster_id: int | None,
+    team_name: str,
+    writer_preferences: dict[str, Any] | None,
+) -> str:
+    """Give deterministic fallback articles the same inspectable receipt shape as LLM output."""
+
+    reporter = persona_metadata(writer_preferences, article_key)
+    source_ids = _deterministic_source_ids(evidence_rows, source_tables)
+    related_entities = _deterministic_related_entities(evidence_rows)
+    confidence = _deterministic_confidence(evidence_rows)
+    fingerprint = _fingerprint(
+        {
+            "article_key": article_key,
+            "roster_id": roster_id,
+            "team_name": team_name,
+            "source_tables": source_tables,
+            "rows": _without_generated_at(evidence_rows),
+        }
+    )
+    source_quality = (
+        "multi_source" if len(source_ids) > 1 else "single_source" if source_ids else "unattributed"
+    )
+    structured = {
+        "headline": _article_headline(text, article_key),
+        "dek": f"{reporter['name']} fallback read from validated league evidence; open the receipt before acting.",
+        "lede": "",
+        "thesis": "",
+        "what_changed": "",
+        "counter_evidence": "No LLM counter-signal is stored for this fallback; review the Data Room's source limits.",
+        "action": "Open the evidence and make the final decision yourself.",
+        "risk": "Deterministic fallback content is not a newly generated analyst article.",
+        "confidence": confidence,
+        "related_entities": related_entities,
+        "visual_brief": "",
+        "evidence_ids": [],
+        "source_ids": source_ids,
+        "source_count": len(source_ids),
+        "source_quality": source_quality,
+        "source_tables": source_tables,
+    }
+    source_receipt = {
+        "source_ids": source_ids,
+        "source_count": len(source_ids),
+        "quality": source_quality,
+        "scope": "deterministic_validated_evidence",
+        "tables": source_tables,
+    }
+    fields = {
+        "reporter_persona": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "evidence_fingerprint": fingerprint,
+        "fallback_reason": "No current LLM artifact; deterministic fallback from validated evidence.",
+        "article_payload_json": json.dumps(structured, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        "source_receipt_json": json.dumps(source_receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+    }
+    return _replace_front_matter_fields(text, fields)
+
+
+def _replace_front_matter_fields(text: str, fields: dict[str, Any]) -> str:
+    if not text.startswith("---"):
+        return text
+    marker = "\n---"
+    end = text.find(marker, 3)
+    if end < 0:
+        return text
+    front = text[3:end].strip("\n")
+    body = text[end + len(marker):].lstrip("\n")
+    lines = front.splitlines()
+    for key, value in fields.items():
+        prefix = f"{key}:"
+        lines = [line for line in lines if not line.startswith(prefix)]
+        lines.append(f"{key}: {value}")
+    return "---\n" + "\n".join(lines) + "\n---\n" + body
+
+
+def _deterministic_source_ids(rows: list[dict[str, Any]], source_tables: list[str]) -> list[str]:
+    values: list[str] = []
+    for row in rows:
+        for key in ("source_trace", "source_ids", "source_id", "source"):
+            raw = row.get(key) if isinstance(row, dict) else ""
+            parts = raw if isinstance(raw, (list, tuple, set)) else re.split(r"[;,|]", str(raw or ""))
+            for part in parts:
+                value = str(part).strip()
+                if value and value not in values:
+                    values.append(value)
+    return values[:16]
+
+
+def _deterministic_related_entities(rows: list[dict[str, Any]]) -> list[str]:
+    values: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        value = row.get("player_name") or row.get("target_manager_name") or row.get("team_name") or row.get("name")
+        value = str(value or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return values[:8]
+
+
+def _deterministic_confidence(rows: list[dict[str, Any]]) -> str:
+    levels = {str(row.get("confidence") or "").strip().lower() for row in rows if isinstance(row, dict)}
+    if "low" in levels:
+        return "low"
+    if "medium" in levels:
+        return "medium"
+    if levels and levels <= {"high"}:
+        return "high"
+    return "medium"
+
+
+def _article_headline(text: str, article_key: str) -> str:
+    for line in str(text or "").splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return article_key.replace("_", " ").title()
+
+
+def _without_generated_at(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _without_generated_at(item) for key, item in value.items() if key != "generated_at"}
+    if isinstance(value, list):
+        return [_without_generated_at(item) for item in value]
+    return value
 
 
 def build_context_packets(

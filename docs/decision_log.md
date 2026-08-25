@@ -350,3 +350,21 @@ fallback ID as missing, then resolves the assigned newsroom persona; real LLM
 receipts retain the known reporter that actually generated the artifact. Tests
 assert both the markdown entry path and the publication receipt remain
 `reporter_id`, `reporter_name`, and `reporter_persona` coherent.
+
+## 2026-08-25 - Deterministic fallback receipts must be inspectable too
+
+An evidence-led fallback is still a published product state. It cannot be
+treated as a special case that skips the metadata needed to understand what
+the reader is seeing. Deterministic fallback articles now carry a stable
+`evidence_fingerprint`, reporter identity, explicit `fallback_reason`, a
+structured article payload, and a source receipt alongside their markdown.
+
+The receipt contract also distinguishes article-level `evidence_ids` from
+`source_ids`. Evidence IDs identify the validated evidence objects an article
+cites; source IDs identify the underlying source traces used to build the
+context. A fallback with no persisted article-level citations must say so,
+while still exposing its source traces and source tables. The UI labels those
+fields separately so a source trace cannot be presented as if it were a cited
+claim. This preserves the media-to-data path in both degraded and generated
+modes and prevents a future writer change from quietly weakening the evidence
+contract.

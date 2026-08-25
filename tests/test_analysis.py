@@ -100,6 +100,10 @@ class DeterministicArticleTests(unittest.TestCase):
             for filename, reporter_id in expected.items():
                 text = (analysis_dir / filename).read_text(encoding="utf-8")
                 self.assertIn(f"reporter_persona: {reporter_id}", text)
+                self.assertIn("reporter_name:", text)
+                self.assertIn("evidence_fingerprint:", text)
+                self.assertIn("fallback_reason:", text)
+                self.assertIn("article_payload_json:", text)
 
     def test_manager_intel_exposes_profile_evidence(self) -> None:
         dataframes = {

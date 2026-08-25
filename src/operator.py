@@ -721,6 +721,7 @@ def validate_article_output(
         "warnings": warnings,
         "narrative": narrative,
         "structured": structured,
+        "evidence_ids": sorted(valid_citations),
         "source_ids": sorted({
             str(source_id)
             for packet in (evidence_packets or [])
@@ -747,6 +748,7 @@ def _structured_article_payload(output: dict[str, Any] | None, headers: tuple[st
         "confidence": str(output.get("confidence") or "medium").lower(),
         "related_entities": [str(item) for item in (output.get("related_entities") or []) if str(item).strip()],
         "visual_brief": str(output.get("visual_brief") or ""),
+        "evidence_ids": [str(item) for item in (output.get("cited_evidence_ids") or []) if str(item).strip()],
     }
 
 
@@ -867,6 +869,7 @@ def generate_articles_workflow(
                         evidence_fingerprint,
                         model,
                         validation["structured"] | {
+                            "evidence_ids": validation.get("evidence_ids") or [],
                             "source_ids": validation.get("source_ids") or [],
                             "source_count": len(validation.get("source_ids") or []),
                             "source_quality": (
