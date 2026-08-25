@@ -328,3 +328,7 @@ construction snapshot: position mix, market/projection coverage, need lanes,
 and action mix. Those values must come from the current-season `roster_id`
 scope and retain an evidence drawer. Missing joins stay unavailable; a
 neighboring team must never fill the blank merely to make the card look rich.
+
+Production proof at revision
+`db6c71e34eb18c7069f7cd35361c83be65d39f48` rendered the panel for Moose
+Caboose roster 4 while the authenticated edition remained Lulu’s Potatoe’s.

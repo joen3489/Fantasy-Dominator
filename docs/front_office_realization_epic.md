@@ -948,3 +948,23 @@ exposes 25 decision controls with the four validated outcome states, and the
 Data Room shows the separate recommendation learning lane alongside the
 verified historical identity receipt. The durable-shell migration contract is
 now part of the acceptance gate for future reader capabilities.
+
+## 2026-08-25 team construction entry-path checkpoint
+
+The team entity page now has a deterministic Team construction panel for the
+selected current season and exact `roster_id`. It presents roster count,
+position mix, market-value and projected-PPG coverage, future firsts, need
+lanes, recommendation mix, and a construction evidence drawer. Missing joins
+remain `n/a` or unavailable; the panel is a roster snapshot, not a lineup or
+valuation recommendation. The semantic `Team construction` shell marker and
+browser entry-path test protect this surface from a stale durable shell.
+
+### Production acceptance amendment — `db6c71e`
+
+Public smoke passed at the full revision
+`db6c71e34eb18c7069f7cd35361c83be65d39f48`. Authenticated Chrome opened the
+private Joanie Loves Dynasty Football edition, then the Moose Caboose entity
+page. The panel rendered exact roster ID 4 with 30 roster players, position
+mix QB 6 / RB 9 / TE 2 / WR 13, market value 720.54, projected PPG 258.7,
+recommendation mix, and the Construction evidence drawer. The private edition
+continued to identify Lulu’s Potatoe’s as the signed-in manager’s team.

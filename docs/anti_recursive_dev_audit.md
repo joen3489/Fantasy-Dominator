@@ -306,3 +306,10 @@ coverage and need/action evidence, and leaves missing joins unavailable. The
 entry-path test requires the panel and evidence drawer, while the reader shell
 contract adds its semantic marker so a stale durable shell cannot pass as the
 current interface.
+
+Production evidence at
+`db6c71e34eb18c7069f7cd35361c83be65d39f48`: public smoke passed, and the
+authenticated Moose Caboose route rendered the Team construction marker,
+position mix, need lanes, recommendation mix, and Construction evidence for
+roster ID 4. The root edition still identified Lulu’s Potatoe’s, so the new
+surface did not cross the private identity boundary.

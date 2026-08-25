@@ -812,3 +812,18 @@ The authenticated production reader at revision
 `2c8d2a6de187a8db50b8c472d2c6df93d4eb12bd` showed the candidate-level result
 for Moose Caboose: three aligned fits and three `no_direct_lane` fits, with
 the manager-fit keys and evidence intact.
+
+## 2026-08-25 - Record team construction in the entity dossier
+
+The team page now makes deterministic roster construction legible before the
+reader reaches the long player list. It is scoped by the selected current
+season and exact `roster_id`, aggregates position mix, market/projection
+coverage, need lanes, future firsts, and action mix, and exposes its source
+tables in an evidence drawer. It does not infer a lineup or let neighboring
+rosters fill missing joins.
+
+Production revision
+`db6c71e34eb18c7069f7cd35361c83be65d39f48` was smoke-verified and then
+authenticated in Chrome. Moose Caboose rendered the exact-scope panel with
+30 players and the expected position, market, projection, action, and
+evidence values while the private edition remained Lulu’s Potatoe’s.
