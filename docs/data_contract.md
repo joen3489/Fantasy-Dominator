@@ -152,6 +152,15 @@ the current event pulse remains useful but must not be described as historical
 change. This receipt is not allowed to infer importance, intent, or a manager
 decision from row presence alone.
 
+Team entity pages may present a bounded construction snapshot from the exact
+current-season `roster_players` rows for the selected `roster_id`, joined to
+`player_dossiers`, `team_needs_matrix`, and roster-scoped
+`action_recommendations`. Position mix, market/projection coverage, need
+lanes, and action mix are presentation aggregates with an evidence drawer;
+they are not a new valuation model or a lineup recommendation. A missing join
+must remain `n/a` or explicitly unavailable rather than being filled from a
+display-name or another roster.
+
 | Artifact | Owner | Purpose | Rule |
 | --- | --- | --- | --- |
 | `data/site/index.html` | Browser generation code | Primary browser workflow | Presentation only; reads processed tables |

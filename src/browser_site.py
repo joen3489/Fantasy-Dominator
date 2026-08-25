@@ -3821,6 +3821,34 @@ def _page(
         .sort((a, b) => b.market - a.market)
         .slice(0, 30);
       const picks = (tables.pick_ownership || []).filter(row => Number(row.current_owner_roster_id) === rid && String(row.round) === '1');
+      const needs = (tables.team_needs_matrix || []).find(row => Number(row.roster_id) === rid) || {{}};
+      const positionCounts = {{}};
+      roster.forEach(row => {{
+        const position = String(row.position || 'Unknown');
+        positionCounts[position] = (positionCounts[position] || 0) + 1;
+      }});
+      const constructionDossiers = roster
+        .map(row => dossierByPlayer.get(String(row.player_id)) || {{}})
+        .filter(row => Object.keys(row).length);
+      const marketDossiers = constructionDossiers.filter(row => row.market_value !== undefined && row.market_value !== '');
+      const projectionDossiers = constructionDossiers.filter(row => row.projected_ppg !== undefined && row.projected_ppg !== '');
+      const marketTotal = marketDossiers.reduce((total, row) => total + num(row.market_value), 0);
+      const projectedPpgTotal = projectionDossiers.reduce((total, row) => total + num(row.projected_ppg), 0);
+      const actionRows = (tables.action_recommendations || []).filter(row => Number(row.roster_id) === rid);
+      const actionMix = {{}};
+      actionRows.forEach(row => {{
+        const action = String(row.action_label || row.consumer_label || 'unlabeled');
+        actionMix[action] = (actionMix[action] || 0) + 1;
+      }});
+      const needLanes = [
+        ['QB', 'need_qb'],
+        ['RB', 'need_rb'],
+        ['pass catcher', 'need_pass_catcher'],
+        ['picks', 'need_picks']
+      ].filter(([, key]) => truthy(needs[key]) || num(needs[key]) > 0).map(([labelText]) => labelText);
+      const positionMix = Object.entries(positionCounts).sort(([left], [right]) => left.localeCompare(right)).map(([position, count]) => `${{position}} ${{count}}`).join(' · ') || 'No roster rows';
+      const actionMixText = Object.entries(actionMix).sort(([left], [right]) => left.localeCompare(right)).map(([action, count]) => `${{action}} ${{count}}`).join(' · ') || 'No roster-scoped action rows';
+      const constructionEvidence = `roster_id=${{rid}}; season=${{app.currentSeason || 'unknown'}}; players=${{roster.length}}; positions=${{positionMix}}; market_rows=${{marketDossiers.length}}; projection_rows=${{projectionDossiers.length}}; action_rows=${{actionRows.length}}; source_tables=roster_players;player_dossiers;team_needs_matrix;action_recommendations`;
       const thesis = (analysis.tradeTheses || []).find(row => Number(row.target_manager_roster_id) === rid) || {{}};
       const edges = (tables.counterparty_trade_edges || []).filter(row => Number(row.target_roster_id) === rid).slice(0, 5);
       const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) === rid) || {{}};
@@ -3843,6 +3871,20 @@ def _page(
             ${{cycle.likely_needs ? `<p class="article-p">Likely needs: ${{escapeHtml(cycle.likely_needs)}}</p>` : ''}}
             ${{cycle.likely_sells ? `<p class="article-p">Likely sells: ${{escapeHtml(cycle.likely_sells)}}</p>` : ''}}
           </div>
+        </div>
+        <div class="panel article-panel team-construction">
+          <h3>Team construction</h3>
+          <p class="note">Current-season roster snapshot for exact roster ID ${{escapeHtml(String(rid))}}. These are deterministic joins, not a lineup recommendation.</p>
+          <div class="tile-row">
+            ${{entityTile('Roster Players', roster.length)}}
+            ${{entityTile('Market Value', marketDossiers.length ? Math.round(marketTotal * 100) / 100 : 'n/a')}}
+            ${{entityTile('Projected PPG', projectionDossiers.length ? Math.round(projectedPpgTotal * 100) / 100 : 'n/a')}}
+            ${{entityTile('Future 1sts', picks.length)}}
+          </div>
+          <p class="article-p"><strong>Position mix:</strong> ${{escapeHtml(positionMix)}}</p>
+          <p class="article-p"><strong>Need lanes:</strong> ${{escapeHtml(needLanes.join(' · ') || 'No current need lane is marked')}}</p>
+          <p class="article-p"><strong>Recommendation mix:</strong> ${{escapeHtml(actionMixText)}}</p>
+          <details class="evidence-drawer"><summary>Construction evidence</summary><p class="brief-card-evidence">${{escapeHtml(constructionEvidence)}}</p></details>
         </div>
         <div class="tile-row">
           ${{entityTile('Trade Activity', behavior.trade_activity_score ?? '', 'score')}}

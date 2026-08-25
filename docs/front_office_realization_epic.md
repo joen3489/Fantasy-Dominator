@@ -736,6 +736,21 @@ contract evidence. The action remains fail-closed and makes no provider call.
 This is a stability prerequisite for the protected Luna publication, not a
 publication run itself.
 
+## 2026-08-25 team construction entry-path checkpoint
+
+The manager/team entity page now adds a deterministic Team construction panel
+to the existing dossier. It is scoped to the selected current-season
+`roster_id` and summarizes player count, position mix, market-value and
+projected-PPG coverage, future firsts, need lanes, and roster-scoped action
+mix. The construction evidence drawer names the source tables and coverage
+counts so the summary is not another opaque analyst card. Missing market,
+projection, or action joins remain `n/a` or explicitly unavailable.
+
+The reader shell contract includes the Team construction marker so a durable
+old shell cannot silently hide this entry path after deployment. This is a
+team-context layer over existing evidence, not a new valuation model or lineup
+recommendation.
+
 ### Production acceptance amendment — `1be8e7c`
 
 Public revision smoke matched the deployed source revision. In the

@@ -811,6 +811,7 @@ def _bundle_matches_identity(paths: LeaguePaths, league: dict[str, Any]) -> bool
 _CORE_READER_SHELL_MARKERS = (
     "Cross-season valuation lanes",
     "trade_fit_evaluation",
+    "Team construction",
 )
 _RECOMMENDATION_LEARNING_SHELL_MARKERS = (
     "Recommendation outcome",

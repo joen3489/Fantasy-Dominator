@@ -320,3 +320,11 @@ not enough for a decision. The current fit list now carries its own alignment
 object, including the matching lane and evidence or an explicit no-direct-lane
 state. The UI can explain one candidate without making every candidate inherit
 the strongest historical signal in the dossier.
+
+## 2026-08-25 team construction must be exact-scope presentation
+
+An entity page is deeper when it translates the selected roster into a
+construction snapshot: position mix, market/projection coverage, need lanes,
+and action mix. Those values must come from the current-season `roster_id`
+scope and retain an evidence drawer. Missing joins stay unavailable; a
+neighboring team must never fill the blank merely to make the card look rich.

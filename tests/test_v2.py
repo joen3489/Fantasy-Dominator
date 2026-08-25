@@ -1467,7 +1467,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         _write_complete_bundle(private_site, "<h1>Stale private shell</h1>")
         _write_complete_bundle(
             legacy_site,
-            '<script>Cross-season valuation lanes trade_fit_evaluation Recommendation outcome decision_outcome Recommendation learning</script>',
+            '<script>Cross-season valuation lanes trade_fit_evaluation Team construction Recommendation outcome decision_outcome Recommendation learning</script>',
         )
         receipts = {
             "daily_brief": {
@@ -1695,7 +1695,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         site = self.tmp_path / "users" / str(user_id) / "leagues" / "reader-receipt" / "site"
         _write_complete_bundle(
             site,
-            "Cross-season valuation lanes trade_fit_evaluation Recommendation outcome decision_outcome Recommendation learning",
+            "Cross-season valuation lanes trade_fit_evaluation Team construction Recommendation outcome decision_outcome Recommendation learning",
         )
         receipts = {
             "daily_brief": {
@@ -2151,7 +2151,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         def fake_build(site_dir: Path, *args: object, **kwargs: object) -> Path:
             _write_complete_bundle(
                 site_dir,
-                "Cross-season valuation lanes trade_fit_evaluation <h1>Recovered edition</h1>",
+                "Cross-season valuation lanes trade_fit_evaluation Team construction <h1>Recovered edition</h1>",
             )
             return site_dir / "index.html"
 

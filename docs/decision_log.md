@@ -125,6 +125,16 @@ click preserved `openai`, `gpt-5.6-luna`, and the publication receipt. This
 closes the readiness-display seam; it does not authorize or complete a Luna
 generation run without the operator token.
 
+## 2026-08-25 - Make team construction visible in the entity dossier
+
+The team page already showed a roster list and manager behavior, but a reader
+had to reconstruct roster shape from cards. It now presents exact current-
+season position counts, market/projection coverage, future firsts, need lanes,
+and roster-scoped action mix with a construction evidence drawer. The browser
+joins by `roster_id` and `player_id`; missing values stay unavailable. The
+semantic shell marker is part of the migration contract so the capability
+cannot disappear behind a durable older shell.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

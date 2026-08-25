@@ -296,3 +296,13 @@ The production check at
 `1be8e7c7160454dd28d9255cd4edce75e7e6e7c1` confirmed the exact failure seam:
 the blocked action message appeared while the configured writer and
 publication receipts remained visible. The action stayed fail-closed.
+
+## 2026-08-25 - Team construction must be exact-scope presentation
+
+The team entity page previously made the reader infer roster construction from
+a long player list. The new construction panel uses the selected current
+season and exact `roster_id`, keeps player joins on `player_id`, exposes
+coverage and need/action evidence, and leaves missing joins unavailable. The
+entry-path test requires the panel and evidence drawer, while the reader shell
+contract adds its semantic marker so a stale durable shell cannot pass as the
+current interface.
