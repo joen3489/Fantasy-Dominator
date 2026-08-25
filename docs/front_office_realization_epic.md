@@ -1106,3 +1106,14 @@ summaries, and the generated browser marker. Production acceptance still
 requires a fresh private league refresh and authenticated verification of the
 actual preserved matchup coverage; this code/doc checkpoint does not claim
 that the current durable production bundle contains historical matchup rows.
+
+### Production acceptance amendment — `201c3f7`
+
+Public smoke passed against the full revision
+`201c3f7d2d6319dae7bdfc246ebb1f12f9aa3fed`. Authenticated Chrome then
+reloaded the private Joanie Loves Dynasty Football edition and opened the
+exact Lulu's Potatoe's team route, preserving `roster_id=2`. The live
+manager dossier showed a recorded `45-37-18` outcome across 108 matchup rows
+with the `manager_season_history;matchups` trace. The writer desk remained
+at `0/5` fallback because the separate operator authorization was not
+supplied; no paid generation claim is made.

@@ -423,3 +423,11 @@ object with stable IDs, source trace, and explicit coverage first; then let
 the dossier and writers explain it. A production refresh is still required
 before claiming that the durable private bundle contains the new historical
 outcomes.
+
+Production proof at revision
+`201c3f7d2d6319dae7bdfc246ebb1f12f9aa3fed` passed public smoke and the
+authenticated private route. Lulu's Potatoe's remained linked to exact
+`roster_id=2`; the live dossier rendered `45-37-18` across 108 recorded
+matchup rows and exposed the `manager_season_history;matchups` trace. The
+operator-gated writer remained visibly at `0/5`, so deployment verification
+did not get confused with a paid Luna publication.

@@ -417,3 +417,13 @@ quiet-season behavior, dossier trace propagation, and the browser entry
 marker. The local contract is therefore wired end to end. The remaining gate
 is production-specific: refresh the private bundle and verify actual matchup
 coverage in the authenticated browser before describing the feature as live.
+
+### Production acceptance amendment — `201c3f7`
+
+The full revision `201c3f7d2d6319dae7bdfc246ebb1f12f9aa3fed` passed
+revision-aware public smoke. A fresh authenticated Chrome load of the private
+league route preserved the exact `roster_id=2` / Lulu's Potatoe's identity
+and rendered the manager outcome receipt: `45-37-18` across 108 recorded
+matchup rows with the `manager_season_history;matchups` trace. The writer
+desk correctly remained `0/5` fallback because no operator token was
+provided; this proves the reader and data seam, not current Luna generation.

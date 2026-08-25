@@ -933,3 +933,12 @@ matchup count when no matchup evidence exists and exposes the outcome receipt
 next to the manager dossier. This is a foundation slice for future manager
 prediction and feedback work, not a claim that observed outcomes reveal
 manager intent or that the current production bundle has been refreshed yet.
+
+### Production acceptance amendment — `201c3f7`
+
+Railway now serves the full pushed revision
+`201c3f7d2d6319dae7bdfc246ebb1f12f9aa3fed`. Public smoke returned 200 for
+health and login. Authenticated Chrome verified the selected private team as
+Lulu's Potatoe's / `roster_id=2` and the manager dossier outcome receipt as
+`45-37-18`, 108 matchup rows, and
+`manager_season_history;matchups`. The protected writer was not run.

@@ -1102,3 +1102,9 @@ Acceptance checks for the slice are exact roster/opponent normalization,
 unplayed and quiet-season handling, dossier source-trace propagation, and a
 browser entry-path marker. A scoped production refresh and authenticated
 coverage check remain required before counting the outcome layer as live.
+
+Production acceptance amendment (`201c3f7d2d6319dae7bdfc246ebb1f12f9aa3fed`):
+public smoke and an authenticated private-browser check passed. The exact
+Lulu's Potatoe's / `roster_id=2` manager route rendered `45-37-18` across
+108 recorded matchup rows with its source trace. The protected writer remains
+a separate pending operator-authorized action.
