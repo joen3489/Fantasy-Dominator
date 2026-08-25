@@ -4,6 +4,24 @@ This is a short memory of decisions and failure modes that materially affect
 the product. Add an entry when a future implementation changes one of these
 boundaries.
 
+## 2026-08-25 - Preserve the research-to-build playbook
+
+The research and product review is now captured in
+`docs/front_office_research.md`. The durable lesson is that Fantasy Dominator
+is a private publication over a data room: a story begins with a question,
+uses validated deterministic evidence, applies a bounded analyst lens, and
+ends in a human decision or recorded outcome. Presentation choices must serve
+that path. Structured content, progressive disclosure, question-led visuals,
+exact roster identity, evidence/source separation, bounded LLM use, optional
+generated media, and revision-aware browser verification are now explicit
+working rules rather than assumptions left in chat history.
+
+The playbook also records the remaining realization boundary: the protected
+Luna publication, deeper historical manager intelligence, consistently
+two-sided Trade Desk packets, and a measured learning loop are still work to
+execute. Future status claims should be amended with the implementation that
+changes them.
+
 ## 2026-08-25 - Adopt the Front Office realization epic
 
 The project is now treated as a personal front-office publication backed by a

@@ -16,6 +16,9 @@ Start here when returning to the project:
 - [Front Office realization epic](front_office_realization_epic.md) — staged
   plan for connecting trustworthy data, analyst publication, dossiers, trade
   intelligence, and generated media into the promised personal product.
+- [Front Office research and build playbook](front_office_research.md) —
+  reusable research-derived presentation rules, layer boundaries, and
+  anti-regression checks.
 
 - [Anti-recursive development audit](anti_recursive_dev_audit.md) - dated
   failure-class findings and guardrails for future changes.
