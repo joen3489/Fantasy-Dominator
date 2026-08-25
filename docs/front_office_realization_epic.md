@@ -968,3 +968,19 @@ page. The panel rendered exact roster ID 4 with 30 roster players, position
 mix QB 6 / RB 9 / TE 2 / WR 13, market value 720.54, projected PPG 258.7,
 recommendation mix, and the Construction evidence drawer. The private edition
 continued to identify Lulu’s Potatoe’s as the signed-in manager’s team.
+
+## 2026-08-25 market valuation reconciliation entry-path checkpoint
+
+The first Team construction implementation exposed a real trust seam: its
+market total was computed from `player_dossiers`, while the manager dossier
+computed the same roster's economic total from the canonical
+`team_asset_inventory`. Four internal proxy-valued players were therefore
+silently omitted from the new panel. The construction panel now uses the
+exact current-season inventory rows for market totals, keeps `player_dossiers`
+for projection coverage, and reports both market-row coverage and the count
+of `internal_proxy_player_value` rows. This makes the 30-player Moose Caboose
+total reconcile to the manager dossier while preserving the external/proxy
+distinction.
+
+The entry-path test requires the inventory source and proxy receipt markers;
+the production amendment will be recorded after the deployed browser check.

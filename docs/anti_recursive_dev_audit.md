@@ -313,3 +313,15 @@ authenticated Moose Caboose route rendered the Team construction marker,
 position mix, need lanes, recommendation mix, and Construction evidence for
 roster ID 4. The root edition still identified Lulu’s Potatoe’s, so the new
 surface did not cross the private identity boundary.
+
+## 2026-08-25 - Do not let parallel economic joins disagree
+
+The first Team construction panel used `player_dossiers` for market totals
+while the manager dossier used `team_asset_inventory`. Live data exposed the
+contradiction: the same 30-player roster displayed 720.54 in one place and
+835.54 in another because four internal proxy values were omitted. The seam
+now uses the canonical inventory ledger for totals, keeps projection joins
+separate, and exposes `market_proxy_rows` plus the source table in the
+construction evidence. The browser entry-path test protects the source
+selection; production verification must check reconciliation, not only the
+presence of a panel.

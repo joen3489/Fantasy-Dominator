@@ -171,15 +171,16 @@ Before adding a feature or “cleaning up” an old artifact:
 ## Current open boundary
 
 The durable-bundle migration and semantic-reader gates are closed for the
-current deployment `ad08ef1f8b2b001fc71f8349651bd9028112273b`. A fresh,
+current deployment `b58fd3b96d66525df71b01c270be0679024b02ed`. A fresh,
 authenticated direct entry served the current private bundle for exact
 `roster_id=2` / Lulu’s Potatoe’s, rendered the Data Room's “Historical
 identity receipt,” and reported 3,101 history rows, 3,101 resolved joins, zero
 unresolved rows, and balanced acquired/sold trade direction. The reader receipt
 reported `current · private`; public smoke independently verified the expected
-deployment revision. Browser freshness remains an explicit verification
-precondition because an already-open tab can retain an older shell until it is
-reloaded.
+deployment revision. The Moose Caboose entity route also reconciles its
+835.54 market total to `team_asset_inventory` and labels four internal proxy
+rows. Browser freshness remains an explicit verification precondition because
+an already-open tab can retain an older shell until it is reloaded.
 
 The protected Luna publication is a separate open boundary: deterministic
 fallback remains the honest reader state until the operator-authorized run
@@ -332,3 +333,13 @@ neighboring team must never fill the blank merely to make the card look rich.
 Production proof at revision
 `db6c71e34eb18c7069f7cd35361c83be65d39f48` rendered the panel for Moose
 Caboose roster 4 while the authenticated edition remained Lulu’s Potatoe’s.
+
+## 2026-08-25 economic totals must use one canonical ledger
+
+When two dossier surfaces show a market total, they must consume the same
+`team_asset_inventory` rows. `player_dossiers` is a player-profile join and
+may omit internal proxy valuations that the economic ledger intentionally
+retains. The reader should reconcile totals across surfaces and label proxy
+coverage instead of silently dropping values or pretending a proxy is an
+external observation. This is a data-contract issue, not a cosmetic card
+choice.

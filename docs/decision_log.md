@@ -827,3 +827,15 @@ Production revision
 authenticated in Chrome. Moose Caboose rendered the exact-scope panel with
 30 players and the expected position, market, projection, action, and
 evidence values while the private edition remained Lulu’s Potatoe’s.
+
+## 2026-08-25 - Reconcile team market totals to the asset ledger
+
+The Team construction panel initially summed `player_dossiers.market_value`,
+which omitted four current-roster internal proxy values and showed 720.54
+while the manager dossier's canonical `team_asset_inventory` total was
+835.54. The panel now uses exact current-season player inventory rows for its
+market total and reports proxy-row coverage separately. Projection coverage
+continues to come from `player_dossiers`; missing inventory joins remain
+unavailable. A market number is not trustworthy merely because it is
+available, so the UI must expose whether it is externally sourced or proxy
+valued.

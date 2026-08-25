@@ -140,6 +140,18 @@ learning rates must not be blended with recommendation rates.
 | `player_transaction_history` | Deterministic profile intelligence | League-specific player transaction history with acquired/sold direction | `trades`, `waivers`, `draft_picks`, `roster_players` | `player_id`, `identity_method`, `player_name`, `event_type`, `season`, `week`, `created_datetime`, `roster_id`, `team_name`, `counterparty`, `direction`, `evidence`, `source_trace` | source IDs are preferred; name fallback must be labeled `normalized_name`, `ambiguous_name`, or `unmatched_name`; transaction evidence and source table trace required |
 | `player_profile_tags` | Deterministic profile intelligence | Evidence-backed player archetype tags | `player_dossiers`, `player_signal_scores`, `league_news_impact` | `entity_id`, `entity_name`, `tag`, `score`, `confidence`, `evidence`, `risk`, `source_trace`, `generated_at` | tags are deterministic prompts for research, not guarantees |
 
+### Team construction presentation contract
+
+Team entity pages must use the current-season `roster_players` rows scoped by
+exact `roster_id`, and must use `team_asset_inventory` for aggregate economic
+values. `player_dossiers` remains the source for projection coverage and
+player-level signal joins. The reader must show market-row coverage and count
+`internal_proxy_player_value` rows separately; a proxy value is useful for
+ranking but is not equivalent to an externally sourced market observation.
+The market total shown in the construction panel must therefore reconcile to
+the manager dossier's inventory total, while missing inventory rows remain
+unavailable rather than falling back to a different roster or table.
+
 ## Presentation Artifacts
 
 `app_bundle.json.dataRoomDelta` is a deterministic reader receipt, not a
