@@ -102,6 +102,13 @@ the first snapshot is never presented as historical change. This establishes
 the return-later evidence seam without claiming that a newly observed event
 is important, intentional, or a recommendation outcome.
 
+The deployed entry proof at `6e706ffff1643b8322b3a74fedcdafd9c531ed1f`
+matched the public revision and the authenticated private edition. Chrome
+rendered Lulu’s Potatoe’s, the verified prior-bundle heading, and the honest
+zero-added-event result alongside the current pulse. This closes the first
+return-later comparison seam; it does not close the broader Data Room or
+protected Luna publication work.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

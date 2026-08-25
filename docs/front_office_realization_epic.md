@@ -713,6 +713,17 @@ entry-path test covers both verified and unavailable states. This is the first
 return-later slice of the Data Room; it does not infer strategic importance,
 manager intent, or recommendation outcome from event presence.
 
+### Production acceptance amendment — `6e706ff`
+
+Public revision smoke matched the full deployed source revision after Railway
+propagation. The authenticated Chrome entry opened the private Joanie Loves
+Dynasty Football edition for Lulu’s Potatoe’s, reached the question-led Data
+Room, and rendered the verified “Since the prior reader bundle” receipt. The
+receipt reported zero newly added news, trade, or waiver rows in this
+comparison, while the separate current pulse remained visible with its source
+event volume. The unavailable fallback was not substituted for a complete
+comparison, and no private identity or source token was exposed.
+
 ## 2026-08-25 cross-season trade-fit checkpoint
 
 Manager dossiers now expose a deterministic comparison between current

@@ -274,3 +274,9 @@ covers the added-event ordering and incomplete-scope failure, while the
 browser entry test requires the comparison copy and fallback marker. Future
 changes must preserve the prior bundle boundary and keep strategic meaning in
 the deterministic analysis layer rather than smuggling it into the delta.
+
+The production entry proof at
+`6e706ffff1643b8322b3a74fedcdafd9c531ed1f` matched public revision smoke and
+the authenticated private Chrome route. The Data Room rendered the verified
+prior-bundle receipt and a zero-added-event result without replacing it with
+the unavailable state or exposing private implementation details.
