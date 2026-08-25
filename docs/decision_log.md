@@ -282,3 +282,8 @@ read, why it matters, the active decision lens, watchouts, an evidence chain,
 source traces, confidence, and an explicit no-outcome guardrail. It remains a
 view over canonical rows and validated insight cards; it does not create a
 new player fact or imply a transaction.
+
+The first live review also showed that exposing raw trace strings inline made
+the page harder to read. The player dossier now shows compact source labels in
+the evidence chain and keeps the complete trace in a collapsed drawer; it
+also labels the player as yours, an opponent's, or unrostered.

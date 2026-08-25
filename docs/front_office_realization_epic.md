@@ -523,3 +523,7 @@ projection, opportunity, role, news, and league-history evidence, then labels
 confidence, source traces, watchouts, and the no-outcome guardrail. This makes
 player analysis inspectable at the entity entry point while keeping canonical
 facts in the data room.
+
+The entry path was reviewed against the live signed-in bundle: an opponent's
+player is visibly marked as `Opponent roster`, compact evidence labels keep the
+read legible, and the full source trace remains available in a drawer.

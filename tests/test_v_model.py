@@ -1398,6 +1398,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("function renderTeamPage", html)
         self.assertIn("Player dossier", html)
         self.assertIn("Evidence chain", html)
+        self.assertIn("Show full source traces", html)
+        self.assertIn("Opponent roster", html)
         self.assertIn("It does not imply a trade, waiver claim, or future outcome", html)
         self.assertIn("entity-search", html)
         self.assertIn("Manager Cycle Profiles", html)
