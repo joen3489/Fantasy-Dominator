@@ -217,3 +217,12 @@ The local validator now carries a compact identity receipt for this seam:
 method counts, resolved and unresolved rows, unresolved rate, and acquired vs
 sold trade counts. A green freshness check without this semantic receipt is
 not enough to call historical player depth trustworthy.
+
+## 2026-08-25 Data Room semantic receipt
+
+If a validator can detect a semantic limitation, the reader should expose the
+same limitation at the point where a manager consumes the evidence. The Data
+Room now renders `dataQuality.player_history_identity` from the exact history
+rows in the bundle. Freshness, join coverage, identity method, and trade
+direction balance are separate facts. A partial or contract-error receipt must
+remain visible instead of being converted into a reassuring green badge.

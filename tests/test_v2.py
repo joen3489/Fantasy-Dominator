@@ -34,17 +34,37 @@ from src.league_paths import LeaguePaths
 from src.league_registry import classify_league, discover_leagues
 
 
+def _empty_data_quality() -> dict:
+    return {
+        "player_history_identity": {
+            "status": "empty",
+            "valid": True,
+            "row_count": 0,
+            "resolved_rows": 0,
+            "unresolved_rows": 0,
+            "resolved_rate": 0.0,
+            "identity_method_counts": {},
+            "trade_direction_counts": {},
+            "trade_direction_status": "not_applicable",
+        }
+    }
+
+
 def _write_complete_bundle(site_dir: Path, html: str, editorial: dict | None = None) -> None:
     """Create the smallest valid reader bundle for route/readiness tests."""
 
     data_dir = site_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
+    data_quality = _empty_data_quality()
     (site_dir / "index.html").write_text(html, encoding="utf-8")
+    # Keep the app payload empty so generic route tests continue to model the
+    # legacy migration fixture; production-generated bundles are checked for
+    # the receipt when a deployment revision is present.
     (data_dir / "app_bundle.json").write_text("{}", encoding="utf-8")
     (data_dir / "editorial_issue.json").write_text(json.dumps(editorial or {}), encoding="utf-8")
     (data_dir / "draft_room.json").write_text("{}", encoding="utf-8")
     (data_dir / "media_manifest.json").write_text(json.dumps({"schema_version": "media_manifest_v1", "assets": []}), encoding="utf-8")
-    (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}}), encoding="utf-8")
+    (data_dir / "manifest.json").write_text(json.dumps({"auditTables": {}, "dataQuality": data_quality}), encoding="utf-8")
 
 
 def _write_writer_brief(
@@ -1082,6 +1102,47 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_data_quality_receipt_is_missing(self) -> None:
+        """Encodes docs/front_office_operating_lessons.md's reader-quality contract."""
+        token = self._token("user_stale_data_quality")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_data_quality")
+        league = {
+            "league_id": "stale-data-quality",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Stale Data Quality",
+            "roster_id": 1,
+        }
+        db.upsert_user_league(user_id, league)
+        site_dir = self.leagues_root / "stale-data-quality" / "site"
+        _write_complete_bundle(site_dir, "Cross-season valuation lanes trade_fit_evaluation")
+        receipts = {
+            "daily_brief": {
+                "mode": "deterministic_template",
+                "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+            }
+        }
+        (site_dir / "data" / "manifest.json").write_text(
+            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": receipts, "dataQuality": _empty_data_quality()}),
+            encoding="utf-8",
+        )
+        (site_dir / "data" / "app_bundle.json").write_text(
+            json.dumps({
+                "myRosterId": 1,
+                "identityReceipt": {"roster_id": 1},
+                "analysis": {"articleReceipts": receipts},
+            }),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-current"}, clear=False):
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get("/league/stale-data-quality/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 503)
+        rebuild.assert_called_once()
+
     def test_persisted_bundle_is_rebuilt_when_reader_shell_contract_is_old(self) -> None:
         """A current payload receipt cannot bless an older generated interface."""
         token = self._token("user_stale_reader_shell")
@@ -1357,7 +1418,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         }
         for site in (private_site, legacy_site):
             (site / "data" / "manifest.json").write_text(
-                json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": receipts}),
+                json.dumps({"auditTables": {}, "sourceRevision": "release-current", "articleReceipts": receipts, "dataQuality": _empty_data_quality()}),
                 encoding="utf-8",
             )
             (site / "data" / "app_bundle.json").write_text(
@@ -1365,6 +1426,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                     "myRosterId": 7,
                     "identityReceipt": {"roster_id": 7},
                     "articleReceipts": receipts,
+                    "dataQuality": _empty_data_quality(),
                 }),
                 encoding="utf-8",
             )
@@ -1580,11 +1642,11 @@ class FastAPIClerkAppTests(unittest.TestCase):
             }
         }
         (site / "data" / "manifest.json").write_text(
-            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "bundleRevision": "bundle-1", "articleReceipts": receipts}),
+            json.dumps({"auditTables": {}, "sourceRevision": "release-current", "bundleRevision": "bundle-1", "articleReceipts": receipts, "dataQuality": _empty_data_quality()}),
             encoding="utf-8",
         )
         (site / "data" / "app_bundle.json").write_text(
-            json.dumps({"myRosterId": 1, "identityReceipt": {"roster_id": 1}, "articleReceipts": receipts}),
+            json.dumps({"myRosterId": 1, "identityReceipt": {"roster_id": 1}, "articleReceipts": receipts, "dataQuality": _empty_data_quality()}),
             encoding="utf-8",
         )
 
@@ -1612,6 +1674,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(reader["served_revision"], "release-current")
         self.assertTrue(reader["shell_contract"])
         self.assertTrue(reader["manager_dossier_contract"])
+        self.assertTrue(reader["data_quality_contract"])
         self.assertTrue(reader["identity_match"])
         self.assertNotIn("site_path", json.dumps(reader))
         self.assertNotIn(str(self.tmp_path), json.dumps(reader))

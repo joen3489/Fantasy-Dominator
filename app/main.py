@@ -833,7 +833,7 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         return True
     if str(manifest.get("sourceRevision") or "") != expected:
         return True
-    if _payload_has_stale_fallback_receipts(manifest):
+    if _payload_has_stale_fallback_receipts(manifest) or _payload_has_stale_data_quality(manifest):
         return True
     app_bundle_path = site_dir / "data" / "app_bundle.json"
     try:
@@ -844,6 +844,7 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         not isinstance(app_bundle, dict)
         or _payload_has_stale_fallback_receipts(app_bundle)
         or _payload_has_stale_manager_dossier_fields(app_bundle)
+        or _payload_has_stale_data_quality(app_bundle)
     ):
         return True
     return False
@@ -896,6 +897,7 @@ def _reader_bundle_snapshot(
     fallback_receipt_contract = not _payload_has_stale_fallback_receipts(manifest)
     if not fallback_receipt_contract:
         reasons.append("fallback_receipt_contract")
+    data_quality_contract = not _payload_has_stale_data_quality(manifest)
 
     try:
         loaded_app_bundle = load_json(site_dir / "data" / "app_bundle.json")
@@ -906,6 +908,9 @@ def _reader_bundle_snapshot(
     manager_dossier_contract = not _payload_has_stale_manager_dossier_fields(app_bundle)
     if not manager_dossier_contract:
         reasons.append("manager_dossier_contract")
+    data_quality_contract = data_quality_contract and not _payload_has_stale_data_quality(app_bundle)
+    if not data_quality_contract:
+        reasons.append("data_quality_contract")
 
     identity_match = _bundle_matches_identity(paths, league)
     if not identity_match:
@@ -928,6 +933,7 @@ def _reader_bundle_snapshot(
         "shell_contract": shell_contract,
         "fallback_receipt_contract": fallback_receipt_contract,
         "manager_dossier_contract": manager_dossier_contract,
+        "data_quality_contract": data_quality_contract,
         "source_revision": source_revision,
         "bundle_revision": bundle_revision,
         "reasons": list(dict.fromkeys(reasons)),
@@ -956,6 +962,7 @@ def _reader_bundle_receipt(user_id: int, league: dict[str, Any]) -> dict[str, An
             "shell_contract": False,
             "fallback_receipt_contract": False,
             "manager_dossier_contract": False,
+            "data_quality_contract": False,
             "source_revision": "",
             "bundle_revision": "",
             "reasons": ["no_selected_bundle"],
@@ -970,6 +977,7 @@ def _reader_bundle_receipt(user_id: int, league: dict[str, Any]) -> dict[str, An
         "shell_contract": selected_snapshot["shell_contract"],
         "fallback_receipt_contract": selected_snapshot["fallback_receipt_contract"],
         "manager_dossier_contract": selected_snapshot["manager_dossier_contract"],
+        "data_quality_contract": selected_snapshot["data_quality_contract"],
         "reasons": selected_snapshot["reasons"],
         "candidates": candidates,
     }
@@ -1009,6 +1017,27 @@ def _payload_has_stale_manager_dossier_fields(payload: dict[str, Any]) -> bool:
         isinstance(item, dict) and "trade_fit_evaluation" not in item
         for item in items
     )
+
+
+def _payload_has_stale_data_quality(payload: dict[str, Any]) -> bool:
+    """Return whether a durable reader lacks the semantic history receipt."""
+
+    quality = payload.get("dataQuality") if isinstance(payload, dict) else None
+    history = quality.get("player_history_identity") if isinstance(quality, dict) else None
+    if not isinstance(history, dict):
+        return True
+    required = {
+        "status",
+        "valid",
+        "row_count",
+        "resolved_rows",
+        "unresolved_rows",
+        "resolved_rate",
+        "identity_method_counts",
+        "trade_direction_counts",
+        "trade_direction_status",
+    }
+    return not required.issubset(history)
 
 
 def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:

@@ -177,3 +177,14 @@ The local trust gate now audits this contract directly. This prevents a
 future refactor from preserving the column names while dropping IDs, changing
 trade direction semantics, or erasing source traces; unresolved legacy names
 remain a visible warning rather than a silent pass.
+
+## 2026-08-25 - Semantic gates must reach the reader
+
+The local validator had a stronger player-history identity receipt than the
+browser surface, creating a new seam where the product could look fresh while
+its historical joins were weak. The bundle now carries the deterministic
+receipt, the Data Room renders it, and the serving contract rebuilds a durable
+bundle that lacks it when a deployment revision is present. Entry-path tests
+cover partial coverage, malformed rows, and a missing durable receipt. This is
+the reusable rule: a semantic gate is incomplete until its limitation is
+visible at the point of consumption.

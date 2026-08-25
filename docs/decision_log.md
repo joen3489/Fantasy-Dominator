@@ -663,3 +663,14 @@ only as deep as the evidence objects it can reliably join. Current local
 refresh evidence is 3,101 rows, all `source_id`, with balanced trade direction
 (505 acquired and 505 sold). Future unresolved matches must remain visible and
 must not be silently promoted by display-name equality.
+
+## 2026-08-25 - Put semantic data quality in the reader
+
+The local player-history validator exposed an important receipt that the
+browser did not show. That made the Data Room capable of presenting a fresh
+but semantically weak history table without warning the manager. Fresh and
+shell-only browser builds now carry `dataQuality.player_history_identity`, and
+the Data Room renders its coverage, identity methods, trade-direction balance,
+and bounded contract warnings. The receipt is derived from the displayed rows;
+it is not a second manually maintained status. A `partial` or `contract_error`
+state remains visible so presentation cannot overstate historical depth.

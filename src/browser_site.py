@@ -158,6 +158,7 @@ def rebuild_browser_shell(
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     app_payload["analysis"] = analysis
     app_payload["tables"] = tables
+    app_payload["dataQuality"] = _data_quality_receipt(tables)
     shell_config = dict(config or {})
     shell_config.setdefault("current_season", app_payload.get("currentSeason") or "")
     shell_config.setdefault("current_team", {"team_name": my_team_name, "roster_id": my_roster_id})
@@ -197,6 +198,7 @@ def rebuild_browser_shell(
     manifest["sourceRevision"] = source_revision
     manifest["reporterPersona"] = app_payload["reporterPersona"]
     manifest["reporterLineup"] = app_payload["reporterLineup"]
+    manifest["dataQuality"] = app_payload["dataQuality"]
     manifest["articleReceipts"] = analysis.get("articleReceipts") or {}
     manifest["mediaManifest"] = app_payload.get("mediaManifest") or manifest.get("mediaManifest") or {}
     (data_dir / "manifest.json").write_text(
@@ -268,6 +270,75 @@ def _refresh_preserved_media(output_dir: Path, app_payload: dict[str, Any], mani
         # the browser use its text/gradient fallback when this refresh is not
         # possible.
         return
+
+
+def _data_quality_receipt(tables: Mapping[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Return deterministic semantic-quality receipts for the reader bundle.
+
+    Freshness only says when a table was produced. The reader also needs to
+    show whether the historical rows can be joined to canonical Sleeper
+    players. Keep this receipt derived from the same rows that the browser
+    renders so a green source timestamp cannot hide a broken identity seam.
+    """
+
+    rows = tables.get("player_transaction_history") or []
+    method_counts: dict[str, int] = {}
+    trade_direction_counts: dict[str, int] = {}
+    errors: list[str] = []
+    resolved_rows = 0
+    unresolved_rows = 0
+    supported_methods = {"source_id", "normalized_name", "ambiguous_name", "unmatched_name"}
+
+    for row in rows:
+        method = str(row.get("identity_method") or "").strip()
+        player_id = str(row.get("player_id") or "").strip()
+        event_type = str(row.get("event_type") or "").strip()
+        direction = str(row.get("direction") or "").strip()
+        method_counts[method or "missing"] = method_counts.get(method or "missing", 0) + 1
+        if method not in supported_methods:
+            errors.append(f"unsupported identity method for {row.get('player_name') or 'unnamed player'}")
+        if method in {"source_id", "normalized_name"}:
+            resolved_rows += 1
+            if not player_id:
+                errors.append(f"{method} row has no player_id for {row.get('player_name') or 'unnamed player'}")
+        else:
+            unresolved_rows += 1
+        if event_type == "trade":
+            trade_direction_counts[direction or "missing"] = trade_direction_counts.get(direction or "missing", 0) + 1
+            if direction not in {"acquired", "sold"}:
+                errors.append(f"invalid trade direction for {row.get('player_name') or 'unnamed player'}")
+        if not str(row.get("player_name") or "").strip():
+            errors.append("history row has no player_name")
+        if not str(row.get("source_trace") or "").strip():
+            errors.append(f"history row has no source_trace for {row.get('player_name') or 'unnamed player'}")
+
+    acquired = trade_direction_counts.get("acquired", 0)
+    sold = trade_direction_counts.get("sold", 0)
+    trade_direction_status = "not_applicable"
+    if trade_direction_counts:
+        trade_direction_status = "balanced" if acquired == sold and not errors else "unbalanced"
+    if not rows:
+        status = "empty"
+    elif errors:
+        status = "contract_error"
+    elif unresolved_rows:
+        status = "partial"
+    else:
+        status = "verified"
+    return {
+        "player_history_identity": {
+            "status": status,
+            "valid": not errors,
+            "row_count": len(rows),
+            "resolved_rows": resolved_rows,
+            "unresolved_rows": unresolved_rows,
+            "resolved_rate": round(resolved_rows / len(rows), 4) if rows else 0.0,
+            "identity_method_counts": dict(sorted(method_counts.items())),
+            "trade_direction_counts": dict(sorted(trade_direction_counts.items())),
+            "trade_direction_status": trade_direction_status,
+            "errors": errors[:8],
+        }
+    }
 
 
 def browser_bundle_missing(site_dir: Path) -> list[str]:
@@ -634,6 +705,7 @@ def _write_data_chunks(
         "configuredLeagues": config.get("leagues") or {},
         "leagueId": str(league_id or ""),
         "analysis": analysis,
+        "dataQuality": _data_quality_receipt(tables),
         "tableCounts": table_counts,
         "mediaManifest": media_manifest,
     }
@@ -687,6 +759,7 @@ def _write_data_chunks(
         "reporterPersona": editorial.get("reporter_persona") or {},
         "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
         "identityReceipt": identity_receipt,
+        "dataQuality": app_payload["dataQuality"],
         "bundleRevision": bundle_revision,
         "sourceRevision": source_revision,
         "articleReceipts": analysis.get("articleReceipts") or {},
@@ -1471,6 +1544,11 @@ def _page(
       <p class="note">Artwork is atmosphere, not evidence. This receipt shows its scope and responsive delivery without allowing an image to carry a fantasy claim.</p>
       <div id="media-ledger-body"><p class="note">No media receipt is available yet.</p></div>
     </div>
+    <div class="panel article-panel data-quality-receipt" id="data-quality-receipt">
+      <h3>Historical identity receipt</h3>
+      <p class="note">Freshness tells us when the bundle was built. This receipt tells us whether historical player rows can be joined to canonical Sleeper players before a dossier or story relies on them.</p>
+      <div id="data-quality-receipt-body"><p class="note">No historical identity receipt is available yet.</p></div>
+    </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>
       <h3>Operator Mode</h3>
@@ -2163,6 +2241,7 @@ def _page(
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
       renderDataRoomQuestions();
+      renderDataQualityReceipt();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
       renderDraftRoom();
@@ -2541,6 +2620,39 @@ def _page(
       visualsNode.innerHTML = (result.visuals || []).join('');
     }}
 
+    function renderDataQualityReceipt() {{
+      const node = document.getElementById('data-quality-receipt-body');
+      if (!node) return;
+      const receipt = (app.dataQuality || {{}}).player_history_identity || {{}};
+      const status = String(receipt.status || 'missing');
+      const statusLabel = {{
+        verified: 'Verified',
+        partial: 'Partial coverage',
+        contract_error: 'Contract issue',
+        empty: 'No rows',
+        missing: 'Not recorded'
+      }}[status] || label(status);
+      const rows = Number(receipt.row_count || 0);
+      const resolved = Number(receipt.resolved_rows || 0);
+      const unresolved = Number(receipt.unresolved_rows || 0);
+      const directions = receipt.trade_direction_counts || {{}};
+      const methods = Object.entries(receipt.identity_method_counts || {{}})
+        .map(([method, count]) => `${{label(method)}}: ${{count}}`)
+        .join(' · ') || 'No identity methods recorded';
+      const errors = (receipt.errors || []).slice(0, 4);
+      const directionStatus = receipt.trade_direction_status === 'not_applicable'
+        ? 'No trade rows'
+        : `${{label(receipt.trade_direction_status || 'unknown')}} (${{directions.acquired || 0}} acquired · ${{directions.sold || 0}} sold)`;
+      const limitation = status === 'verified'
+        ? 'Every historical row has a supported identity path; source IDs are preferred when available.'
+        : status === 'partial'
+          ? 'Some rows still rely on ambiguous or unmatched names. Treat historical joins as limited until those rows are resolved.'
+          : status === 'contract_error'
+            ? 'The bundle contains rows that violate the history contract. Do not treat this ledger as trustworthy until the source or normalization step is repaired.'
+            : 'No historical transaction evidence is available in this bundle.';
+      node.innerHTML = `<div class="tile-row">${{entityTile('History rows', rows)}}${{entityTile('Resolved joins', resolved)}}${{entityTile('Unresolved rows', unresolved)}}${{entityTile('Resolved rate', `${{Math.round(Number(receipt.resolved_rate || 0) * 100)}}%`)}}</div><p class="brief-card-evidence"><strong>Status:</strong> ${{escapeHtml(statusLabel)}} · <strong>Trade direction:</strong> ${{escapeHtml(directionStatus)}}.</p><p class="brief-card-evidence"><strong>Identity methods:</strong> ${{escapeHtml(methods)}}</p><p class="note">${{escapeHtml(limitation)}}</p>${{errors.length ? `<details class="evidence-drawer"><summary>Contract warnings</summary><ul class="article-list">${{errors.map(error => `<li>${{escapeHtml(error)}}</li>`).join('')}}</ul></details>` : ''}}`;
+    }}
+
     function renderLearningLedger(summary) {{
       const node = document.getElementById('learning-ledger-body');
       if (!node) return;
@@ -2773,6 +2885,7 @@ def _page(
       const metadata = (tables.refresh_metadata || [])[0] || {{}};
       const leagueIds = metadata.configured_league_ids || Object.values(app.configuredLeagues || {{}}).filter(Boolean).join(';');
       const counts = app.tableCounts || manifest.tableCounts || {{}};
+      const historyQuality = (app.dataQuality || {{}}).player_history_identity || {{}};
       return table([
         {{ item: 'Generated at', value: metadata.generated_at || 'unknown' }},
         {{ item: 'Current season', value: metadata.current_season || app.currentSeason || '' }},
@@ -2801,6 +2914,7 @@ def _page(
         {{ item: 'Manager profile tag rows', value: metadata.manager_profile_tag_rows || tables.manager_profile_tags.length }},
         {{ item: 'Manager cycle rows', value: tables.manager_cycle_profiles.length }},
         {{ item: 'Player dossier rows', value: metadata.player_dossier_rows || tables.player_dossiers.length }},
+        {{ item: 'Player history identity', value: `${{historyQuality.status || 'not recorded'}} · ${{historyQuality.resolved_rows || 0}}/${{historyQuality.row_count || 0}} resolved` }},
         {{ item: 'Player profile tag rows', value: metadata.player_profile_tag_rows || tables.player_profile_tags.length }},
         {{ item: 'Breakout candidate rows', value: tables.breakout_candidates.length }},
         {{ item: 'Sell candidate rows', value: tables.sell_candidates.length }},

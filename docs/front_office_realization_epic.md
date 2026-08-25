@@ -781,3 +781,14 @@ receipt keys, `current · private` reader state, and the rendered
 navigation before reload is retained as evidence that browser freshness is a
 real precondition, not discarded as noise. The migration slice is accepted;
 the protected Luna publication remains the next cost-gated boundary.
+
+## 2026-08-25 Data Room semantic-quality receipt
+
+The player-history identity audit is now carried into the browser bundle as a
+deterministic `dataQuality.player_history_identity` receipt and rendered in the
+Data Room. It reports row count, resolved/unresolved joins, identity methods,
+and acquired-versus-sold balance. Fresh builds and shell-only rebuilds derive
+the receipt from the same history rows the reader displays. Legacy or malformed
+rows are labeled `partial` or `contract_error`; they cannot look like verified
+historical depth. The entry-path tests cover both the partial-coverage state and
+the fail-closed contract-error state.

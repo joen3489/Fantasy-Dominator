@@ -1487,6 +1487,56 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(bundle["myTeamName"], "Lulu’s Potatoe’s")
         self.assertEqual(bundle["identityReceipt"]["roster_id"], 2)
 
+    def test_browser_data_room_exposes_player_history_identity_receipt(self) -> None:
+        """The Data Room must expose semantic history coverage, not freshness alone."""
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            site = Path(tmp) / "site"
+            processed.mkdir()
+            self._write_minimal_processed_tables(processed)
+            pd.DataFrame(
+                [
+                    {"player_id": "1", "identity_method": "source_id", "player_name": "Jayden Daniels", "event_type": "trade", "season": 2026, "week": 3, "created_datetime": "2026-06-20", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "Other Team", "direction": "acquired", "evidence": "trade evidence", "source_trace": "trades"},
+                    {"player_id": "1", "identity_method": "source_id", "player_name": "Jayden Daniels", "event_type": "trade", "season": 2026, "week": 3, "created_datetime": "2026-06-20", "roster_id": 8, "team_name": "Other Team", "counterparty": "Melkor Lord of Light", "direction": "sold", "evidence": "trade evidence", "source_trace": "trades"},
+                    {"player_id": "", "identity_method": "unmatched_name", "player_name": "Legacy Player", "event_type": "waiver_add", "season": 2025, "week": 4, "created_datetime": "2025-06-10", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "", "direction": "added", "evidence": "waiver evidence", "source_trace": "waivers"},
+                ]
+            ).to_csv(processed / "player_transaction_history.csv", index=False)
+
+            output = build_browser_site(site, processed)
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
+            html = output.read_text(encoding="utf-8")
+
+        receipt = bundle["dataQuality"]["player_history_identity"]
+        self.assertEqual(receipt["status"], "partial")
+        self.assertEqual(receipt["row_count"], 3)
+        self.assertEqual(receipt["resolved_rows"], 2)
+        self.assertEqual(receipt["unresolved_rows"], 1)
+        self.assertEqual(receipt["trade_direction_status"], "balanced")
+        self.assertEqual(manifest["dataQuality"], bundle["dataQuality"])
+        self.assertIn("Historical identity receipt", html)
+        self.assertIn("renderDataQualityReceipt", html)
+        self.assertIn("Some rows still rely on ambiguous or unmatched names", html)
+
+    def test_browser_data_room_history_receipt_fails_closed_on_contract_error(self) -> None:
+        """Malformed history must be visible as a contract issue, not a healthy join."""
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            site = Path(tmp) / "site"
+            processed.mkdir()
+            self._write_minimal_processed_tables(processed)
+            pd.DataFrame(
+                [{"player_id": "", "identity_method": "source_id", "player_name": "Broken Player", "event_type": "trade", "season": 2026, "week": 2, "created_datetime": "2026-06-12", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "Other Team", "direction": "received", "evidence": "bad fixture", "source_trace": "trades"}]
+            ).to_csv(processed / "player_transaction_history.csv", index=False)
+
+            build_browser_site(site, processed)
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+
+        receipt = bundle["dataQuality"]["player_history_identity"]
+        self.assertEqual(receipt["status"], "contract_error")
+        self.assertFalse(receipt["valid"])
+        self.assertTrue(receipt["errors"])
+
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             processed = Path(tmp) / "processed"
@@ -2740,7 +2790,7 @@ class VModelTests(unittest.TestCase):
             [{"player_id": "1", "player_name": "Jayden Daniels", "position": "QB", "age": 25, "roster_id": 2, "team_name": "Melkor Lord of Light", "roster_status": "starter", "market_value": 53, "projected_fantasy_points": 350, "projected_ppg": 20.59, "projection_confidence": "high", "signal_label": "breakout_target", "breakout_score": 70, "sell_score": 0, "news_impact": "role_or_value_change", "transaction_count": 1, "last_transaction": "draft_pick", "source_trace": "test"}]
         ).to_csv(processed / "player_dossiers.csv", index=False)
         pd.DataFrame(
-            [{"player_id": "1", "player_name": "Jayden Daniels", "event_type": "draft_pick", "season": 2026, "week": "", "created_datetime": "", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "", "direction": "drafted pick 1", "evidence": "test", "source_trace": "draft_picks"}]
+            [{"player_id": "1", "identity_method": "source_id", "player_name": "Jayden Daniels", "event_type": "draft_pick", "season": 2026, "week": "", "created_datetime": "", "roster_id": 2, "team_name": "Melkor Lord of Light", "counterparty": "", "direction": "drafted pick 1", "evidence": "test", "source_trace": "draft_picks"}]
         ).to_csv(processed / "player_transaction_history.csv", index=False)
         pd.DataFrame(
             [{"entity_id": "1", "entity_name": "Jayden Daniels", "tag": "franchise cornerstone", "score": 85, "confidence": "high", "evidence": "test", "risk": "medium", "source_trace": "player_dossiers", "generated_at": "2026-06-06T00:00:00+00:00"}]
