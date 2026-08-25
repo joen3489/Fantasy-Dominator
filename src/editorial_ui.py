@@ -207,6 +207,11 @@ EDITORIAL_STYLE = r"""
     .publication-summary strong { color: var(--ink); }
     .learning-ledger { margin: 0 18px 18px; }
     .learning-ledger .tile-row { padding: 0; }
+    .edition-changes { margin: 0 18px 18px; }
+    .edition-change-list { display: grid; gap: 8px; }
+    .edition-change { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcf8; }
+    .edition-change strong { margin-left: 8px; }
+    .edition-change .note { margin: 6px 0 0; }
     .question-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
     .question-card { display: block; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 13px; }
     .question-card strong { display: block; margin-bottom: 5px; font-size: 13px; }
@@ -368,7 +373,13 @@ EDITORIAL_JS = r"""
         structured.counter_evidence ? `<p><strong>Counter-signal:</strong> ${escapeHtml(structured.counter_evidence)}</p>` : ''
       ].filter(Boolean).join('');
       const receipt = article.evidence_fingerprint
-        ? `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. Evidence fingerprint: ${escapeHtml(String(article.evidence_fingerprint).slice(0, 16))}…${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).</p></details>`
+        ? (() => {
+            const sourceIds = Array.isArray(structured.source_ids) ? structured.source_ids.filter(Boolean).map(value => String(value)) : [];
+            const sourceTrace = sourceIds.length
+              ? `<p><strong>Evidence IDs:</strong> ${sourceIds.map(value => escapeHtml(value)).join(' · ')}</p>`
+              : '<p>No article-level evidence IDs were recorded. Open the deterministic Data Room tables and source receipts before treating this as a conclusion.</p>';
+            return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. Evidence fingerprint: ${escapeHtml(String(article.evidence_fingerprint).slice(0, 16))}…${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).</p>${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
+          })()
         : '';
       const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
       const outcome = `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`;

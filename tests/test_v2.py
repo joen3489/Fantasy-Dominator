@@ -556,7 +556,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
-                "database_table_count": 7,
+                "database_table_count": 9,
                 "writer_api_configured": False,
                 "writer_provider": "openai",
                 "writer_model": "gpt-5.6-luna",
@@ -1408,6 +1408,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             reporter_id="topline_tony",
             writer_mode="automatic_llm",
             model="gpt-5.6-luna",
+            generation_metadata={"usage": {"total_tokens": 1234}, "cost_known": False},
         )
         partial = db.content_artifact_status(user_id, "content-league", "2026")
         self.assertEqual(partial["state"], "partial")
@@ -1434,6 +1435,45 @@ class FastAPIClerkAppTests(unittest.TestCase):
             current_bundle_revision="bundle-current",
         )
         self.assertEqual(current_bundle["generated_keys"], ["team_report"])
+
+        db.record_content_artifact(
+            user_id,
+            "content-league",
+            "2026",
+            "article",
+            "team_report",
+            "team_report.md",
+            source={"mode": "automatic_llm"},
+            evidence_fingerprint="evidence-1",
+            bundle_revision="bundle-next",
+            content_hash="content-1",
+            reporter_id="topline_tony",
+            writer_mode="automatic_llm",
+            model="gpt-5.6-luna",
+            generation_metadata={"usage": {"total_tokens": 1234}, "cost_known": False},
+        )
+        unchanged = db.list_content_artifact_changes(user_id, "content-league", "2026")
+        self.assertEqual(unchanged[0]["change_type"], "new")
+        self.assertEqual(unchanged[0]["usage"]["total_tokens"], 1234)
+
+        db.record_content_artifact(
+            user_id,
+            "content-league",
+            "2026",
+            "article",
+            "team_report",
+            "team_report.md",
+            source={"mode": "automatic_llm"},
+            evidence_fingerprint="evidence-2",
+            bundle_revision="bundle-next",
+            content_hash="content-2",
+            reporter_id="topline_tony",
+            writer_mode="automatic_llm",
+            model="gpt-5.6-luna",
+        )
+        changed = db.list_content_artifact_changes(user_id, "content-league", "2026")
+        self.assertEqual(changed[0]["change_type"], "updated")
+        self.assertEqual(changed[0]["prior_evidence_fingerprint"], "evidence-1")
 
     def test_content_feedback_is_explicit_and_scoped_to_the_verified_roster(self) -> None:
         """Encodes docs/front_office_realization_epic.md Workstream 9 and AGENTS.md privacy rules."""
@@ -1490,6 +1530,28 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(summary.json()["feedback_counts"]["useful"], 1)
         self.assertEqual(summary.json()["outcome_counts"]["confirmed"], 1)
         self.assertEqual(summary.json()["confirmed_rate"], 1.0)
+
+        db.record_content_artifact(
+            user_id,
+            "feedback-league",
+            "2026",
+            "article",
+            "trade_desk",
+            "trade_desk.md",
+            roster_id=7,
+            evidence_fingerprint="packet-1",
+            content_hash="article-1",
+            reporter_id="trade_desk_talia",
+            writer_mode="automatic_llm",
+            model="gpt-5.6-luna",
+        )
+        changes = self.client.get(
+            "/api/leagues/feedback-league/edition-changes",
+            cookies={"__session": token},
+        )
+        self.assertEqual(changes.status_code, 200)
+        self.assertEqual(changes.json()["roster_id"], 7)
+        self.assertEqual(changes.json()["changes"][0]["change_type"], "new")
 
         denied = self.client.post(
             "/api/leagues/feedback-league/content-interactions",

@@ -434,6 +434,24 @@ def create_app() -> FastAPI:
             return db.content_learning_summary(int(user["id"]), league_id)
         return db.content_learning_summary(int(user["id"]), league_id, int(roster_id))
 
+    @app.get("/api/leagues/{league_id}/edition-changes")
+    def edition_changes(
+        league_id: str,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        league = _owned_league(user, league_id)
+        roster_id = league.get("roster_id")
+        return {
+            "league_id": league_id,
+            "roster_id": int(roster_id) if roster_id not in (None, "") else None,
+            "changes": db.list_content_artifact_changes(
+                int(user["id"]),
+                league_id,
+                str(league.get("season") or ""),
+                int(roster_id) if roster_id not in (None, "") else None,
+            ),
+        }
+
 
     @app.get("/league/{league_id}/")
     def league_index(request: Request, league_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:

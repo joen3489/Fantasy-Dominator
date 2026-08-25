@@ -1246,6 +1246,11 @@ def _page(
       <p class="note">Only deliberate signals appear here. Reading an article is not treated as approval, and a tracked call remains unresolved until you record what happened.</p>
       <div id="learning-ledger-body"><p class="note">No explicit feedback recorded for this edition yet.</p></div>
     </div>
+    <div class="panel article-panel edition-changes" id="edition-changes">
+      <h3>Since the last edition</h3>
+      <p class="note">This compares the current article receipts with the last recorded publication state. A changed evidence fingerprint means the underlying packet changed; it is not a claim that the recommendation improved.</p>
+      <div id="edition-changes-body"><p class="note">No prior publication receipt is available yet.</p></div>
+    </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>
       <h3>Operator Mode</h3>
@@ -1387,6 +1392,8 @@ def _page(
       document.getElementById('loading-state').hidden = true;
       document.querySelector('main').hidden = false;
       render();
+      hydrateLearningLedger();
+      hydrateEditionChanges();
       showSection(location.hash.replace('#', ''));
     }}
 
@@ -1936,7 +1943,6 @@ def _page(
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
       renderDataRoomQuestions();
-      hydrateLearningLedger();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
       renderDraftRoom();
@@ -2312,6 +2318,43 @@ def _page(
         renderLearningLedger(await response.json());
       }} catch (error) {{
         console.warn('Could not load the decision ledger', error);
+      }}
+    }}
+
+    function renderEditionChanges(payload) {{
+      const node = document.getElementById('edition-changes-body');
+      if (!node) return;
+      const changes = Array.isArray(payload.changes) ? payload.changes : [];
+      if (!changes.length) {{
+        node.innerHTML = '<p class="note">No article receipts are indexed for this league yet.</p>';
+        return;
+      }}
+      const label = {{ new: 'New', updated: 'Changed', failed: 'Generation failed', unchanged: 'No content change', untracked: 'Not tracked' }};
+      node.innerHTML = `<div class="edition-change-list">${{changes.map(row => {{
+        const state = String(row.change_type || 'untracked');
+        const model = row.model ? ` · ${{escapeHtml(row.model)}}` : '';
+        const usage = row.usage && (row.usage.total_tokens || row.usage.input_tokens || row.usage.output_tokens)
+          ? ` · ${{escapeHtml(String(row.usage.total_tokens || ((Number(row.usage.input_tokens) || 0) + (Number(row.usage.output_tokens) || 0))))}} tokens${{row.cost_known ? ' · cost receipt available' : ' · price not estimated'}}`
+          : '';
+        const detail = state === 'updated' && row.prior_evidence_fingerprint
+          ? 'Evidence fingerprint changed since the prior receipt.'
+          : state === 'new' ? 'First receipt for this article in the current durable workspace.'
+          : state === 'failed' ? escapeHtml(row.fallback_reason || 'The deterministic fallback remains the published state.')
+          : state === 'unchanged' ? 'The current evidence and article hash match the prior receipt.'
+          : 'No prior receipt is available for comparison.';
+        return `<article class="edition-change"><div><span class="tag">${{escapeHtml(label[state] || state)}}</span><strong>${{escapeHtml(row.artifact_key || 'Article')}}</strong></div><p class="note">${{detail}}${{model}}${{usage}}</p></article>`;
+      }}).join('')}}</div>`;
+    }}
+
+    async function hydrateEditionChanges() {{
+      const node = document.getElementById('edition-changes-body');
+      if (!node || !manifest.leagueId) return;
+      try {{
+        const response = await fetch(`/api/leagues/${{encodeURIComponent(manifest.leagueId)}}/edition-changes`);
+        if (!response.ok) return;
+        renderEditionChanges(await response.json());
+      }} catch (error) {{
+        console.warn('Could not load edition changes', error);
       }}
     }}
 

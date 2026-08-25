@@ -447,3 +447,11 @@ shows a confirmed rate only after the manager has recorded confirmed or missed
 results. The summary is fetched through the authenticated league boundary and
 is scoped to the exact verified roster, so a shared bundle cannot expose
 another team's learning history.
+
+Publication receipts now also retain an append-only change history. The Data
+Room can show which article receipts are new, changed, failed, unchanged, or
+not yet tracked, while the current artifact remains the source of truth for
+what is published. A bundle revision change alone does not masquerade as a
+new editorial insight. Provider usage metadata is retained with the current
+receipt when available; the UI labels pricing as unknown rather than inventing
+a cost estimate.

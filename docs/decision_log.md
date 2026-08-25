@@ -176,6 +176,14 @@ pursued, open, confirmed, missed, and unclear states without counting ordinary
 page views. A confirmation rate is withheld until there are resolved calls;
 this is a manager-recorded feedback measure, not a model accuracy claim.
 
+Publication history follows the same rule. Each changed artifact receipt is
+stored append-only with its evidence fingerprint, content hash, reporter, mode,
+and failure state. The reader can compare the current article with its prior
+receipt, while a shell-only bundle revision is deliberately excluded from the
+editorial change signal. Provider usage belongs in the receipt when returned;
+we must not turn token counts into a dollar amount without a verified price
+table.
+
 An owned direct edition route is also a selection event. Visiting a bookmarked
 `/league/{league_id}/` now updates the remembered league, so a manager does
 not have to return through the home query-string link for the preference to

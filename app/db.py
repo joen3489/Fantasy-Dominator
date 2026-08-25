@@ -18,6 +18,7 @@ REQUIRED_TABLES = {
     "team_profiles",
     "manager_trade_profiles",
     "content_artifacts",
+    "content_artifact_history",
     "content_interactions",
     "refresh_runs",
 }
@@ -130,6 +131,28 @@ def init_db(path: Path | None = None) -> None:
                 payload_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 PRIMARY KEY(user_id, league_id, roster_id, artifact_type, artifact_key, interaction_type),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS content_artifact_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                league_id TEXT NOT NULL,
+                season TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                artifact_key TEXT NOT NULL,
+                roster_id INTEGER,
+                status TEXT NOT NULL,
+                evidence_fingerprint TEXT NOT NULL DEFAULT '',
+                content_hash TEXT NOT NULL DEFAULT '',
+                reporter_id TEXT NOT NULL DEFAULT '',
+                writer_mode TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                fallback_reason TEXT NOT NULL DEFAULT '',
+                source_receipt_json TEXT NOT NULL DEFAULT '{}',
+                generation_metadata_json TEXT NOT NULL DEFAULT '{}',
+                change_type TEXT NOT NULL DEFAULT 'updated',
+                recorded_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
             """
@@ -739,6 +762,54 @@ def record_content_artifact(
     now = datetime.now(timezone.utc).isoformat()
     conn = _connect()
     try:
+        previous = conn.execute(
+            """
+            SELECT status, evidence_fingerprint, content_hash, reporter_id,
+                   writer_mode, model, fallback_reason
+            FROM content_artifacts
+            WHERE user_id = ? AND league_id = ? AND season = ?
+              AND artifact_type = ? AND artifact_key = ?
+            """,
+            (user_id, str(league_id), str(season), str(artifact_type), str(artifact_key)),
+        ).fetchone()
+        current_signature = (
+            str(status), str(evidence_fingerprint or ""), str(content_hash or ""),
+            str(reporter_id or ""), str(writer_mode or ""), str(model or ""),
+            str(fallback_reason or ""),
+        )
+        previous_signature = tuple(str(value or "") for value in previous) if previous else None
+        if previous_signature != current_signature:
+            change_type = "new" if previous is None else ("failed" if str(status).lower() == "failed" else "updated")
+            conn.execute(
+                """
+                INSERT INTO content_artifact_history(
+                    user_id, league_id, season, artifact_type, artifact_key,
+                    roster_id, status, evidence_fingerprint, content_hash,
+                    reporter_id, writer_mode, model, fallback_reason,
+                    source_receipt_json, generation_metadata_json, change_type,
+                    recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    str(league_id),
+                    str(season),
+                    str(artifact_type),
+                    str(artifact_key),
+                    int(roster_id) if str(roster_id or "").strip().isdigit() else None,
+                    str(status),
+                    str(evidence_fingerprint or ""),
+                    str(content_hash or ""),
+                    str(reporter_id or ""),
+                    str(writer_mode or ""),
+                    str(model or ""),
+                    str(fallback_reason or ""),
+                    json.dumps(source_receipt or {}, sort_keys=True),
+                    json.dumps(generation_metadata or {}, sort_keys=True),
+                    change_type,
+                    now,
+                ),
+            )
         conn.execute(
             """
             INSERT INTO content_artifacts(
@@ -875,6 +946,82 @@ def stamp_content_artifact_bundle(
         conn.commit()
     finally:
         conn.close()
+
+
+def list_content_artifact_changes(
+    user_id: int,
+    league_id: str,
+    season: str,
+    roster_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return current publication artifacts with their last prior receipt."""
+
+    conn = _connect()
+    try:
+        query = """
+            SELECT artifact_type, artifact_key, roster_id, status,
+                   evidence_fingerprint, content_hash, reporter_id,
+                   writer_mode, model, fallback_reason, updated_at,
+                   generation_metadata_json
+            FROM content_artifacts
+            WHERE user_id = ? AND league_id = ? AND season = ?
+        """
+        params: list[Any] = [user_id, str(league_id), str(season)]
+        if roster_id is not None:
+            query += " AND roster_id = ?"
+            params.append(int(roster_id))
+        current_rows = conn.execute(query, tuple(params)).fetchall()
+        history_rows = conn.execute(
+            """
+            SELECT artifact_type, artifact_key, roster_id, status,
+                   evidence_fingerprint, content_hash, reporter_id,
+                   writer_mode, model, fallback_reason, change_type, recorded_at
+            FROM content_artifact_history
+            WHERE user_id = ? AND league_id = ? AND season = ?
+            ORDER BY id DESC
+            """,
+            (user_id, str(league_id), str(season)),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    history_by_key: dict[tuple[str, str, str], list[tuple[Any, ...]]] = {}
+    for row in history_rows:
+        key = (str(row[0] or ""), str(row[1] or ""), str(row[2] or ""))
+        history_by_key.setdefault(key, []).append(row)
+
+    output: list[dict[str, Any]] = []
+    for row in current_rows:
+        key = (str(row[0] or ""), str(row[1] or ""), str(row[2] or ""))
+        history = history_by_key.get(key, [])
+        prior = history[1] if len(history) > 1 else None
+        current = {
+            "artifact_type": str(row[0] or ""),
+            "artifact_key": str(row[1] or ""),
+            "roster_id": row[2],
+            "status": str(row[3] or ""),
+            "evidence_fingerprint": str(row[4] or ""),
+            "content_hash": str(row[5] or ""),
+            "reporter_id": str(row[6] or ""),
+            "writer_mode": str(row[7] or ""),
+            "model": str(row[8] or ""),
+            "fallback_reason": str(row[9] or ""),
+            "updated_at": str(row[10] or ""),
+            "change_type": str(history[0][10] if history else "untracked"),
+            "recorded_at": str(history[0][11] if history else ""),
+            "prior_evidence_fingerprint": str(prior[4] or "") if prior else "",
+            "prior_content_hash": str(prior[5] or "") if prior else "",
+        }
+        metadata = _decode_json(row[11])
+        usage = metadata.get("usage") if isinstance(metadata, dict) and isinstance(metadata.get("usage"), dict) else {}
+        current["usage"] = usage
+        current["cost_known"] = bool(metadata.get("cost_known")) if isinstance(metadata, dict) else False
+        if prior is None and history:
+            current["change_type"] = "new"
+        elif prior and current["evidence_fingerprint"] == current["prior_evidence_fingerprint"] and current["content_hash"] == current["prior_content_hash"]:
+            current["change_type"] = "unchanged"
+        output.append(current)
+    return sorted(output, key=lambda item: (str(item.get("change_type")), str(item.get("artifact_key"))))
 
 
 def content_artifact_status(
