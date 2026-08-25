@@ -193,7 +193,6 @@ def _decorate_deterministic_article(
         "risk": "Deterministic fallback content is not a newly generated analyst article.",
         "confidence": confidence,
         "related_entities": related_entities,
-        "visual_brief": "",
         "evidence_ids": evidence_ids,
         "evidence_count": len(evidence_ids),
         "source_ids": source_ids,

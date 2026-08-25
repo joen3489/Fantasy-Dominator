@@ -111,6 +111,7 @@ class DeterministicArticleTests(unittest.TestCase):
                 self.assertTrue(payload["thesis"])
                 self.assertTrue(payload["what_changed"])
                 self.assertTrue(payload["action"])
+                self.assertTrue(payload["visual_brief"])
 
     def test_manager_intel_exposes_profile_evidence(self) -> None:
         dataframes = {

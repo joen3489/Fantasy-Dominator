@@ -179,6 +179,7 @@ class MediaAssetContractTests(unittest.TestCase):
             html = shell.read_text(encoding="utf-8")
             self.assertEqual(html.count('id="issue-publication"'), 1)
             self.assertIn('id="issue-publication-receipt"', html)
+            self.assertIn("Visual direction:", html)
             rebuilt_manifest = json.loads((data / "media_manifest.json").read_text(encoding="utf-8"))
             rebuilt_masthead = next(item for item in rebuilt_manifest["assets"] if item["asset_type"] == "masthead")
             self.assertEqual(rebuilt_masthead["variants"][0]["key"], "mobile")
@@ -235,12 +236,18 @@ class MediaAssetContractTests(unittest.TestCase):
             rebuilt_app = json.loads(app_path.read_text(encoding="utf-8"))
             rebuilt_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             rebuilt_editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
-            for key in fields:
+            for key, (body_field, _filename) in fields.items():
                 receipt = rebuilt_manifest["articleReceipts"][key]
                 self.assertTrue(receipt["evidence_fingerprint"])
                 self.assertTrue(receipt["fallback_reason"])
                 self.assertTrue(receipt["structured"])
                 self.assertTrue(receipt["source_receipt"])
+                self.assertEqual(receipt["structured"]["fallback_schema_version"], "deterministic_fallback_v2")
+                self.assertTrue(receipt["structured"]["lede"])
+                self.assertTrue(receipt["structured"]["thesis"])
+                self.assertTrue(receipt["structured"]["what_changed"])
+                self.assertTrue(receipt["structured"]["visual_brief"])
+                self.assertIn("fallback_schema_version: deterministic_fallback_v2", rebuilt_app["analysis"][body_field])
             self.assertEqual(rebuilt_manifest["sourceRevision"], "new-release")
             self.assertEqual(len(rebuilt_editorial["publication_articles"]), 5)
             self.assertTrue(all(article["fallback_reason"] for article in rebuilt_editorial["publication_articles"]))

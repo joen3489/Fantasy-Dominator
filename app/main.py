@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from src import operator as front_operator
+from src.analysis import FALLBACK_ARTICLE_SCHEMA_VERSION
 from src.attention import load_attention
 from src.browser_site import (
     browser_bundle_is_complete,
@@ -794,7 +795,13 @@ def _bundle_matches_identity(paths: LeaguePaths, league: dict[str, Any]) -> bool
 
 
 def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
-    """Invalidate persisted generated HTML when the running source changed."""
+    """Invalidate persisted content when code or its durable receipt contract changed.
+
+    A source SHA alone is not sufficient: an older boot or migration can stamp
+    a preserved bundle with the current SHA while leaving its fallback article
+    payload on the old schema. The reader must self-heal that seam before
+    serving the bundle.
+    """
 
     expected = _deployment_revision()
     if not expected:
@@ -806,7 +813,37 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         return True
     if not isinstance(manifest, dict):
         return True
-    return str(manifest.get("sourceRevision") or "") != expected
+    if str(manifest.get("sourceRevision") or "") != expected:
+        return True
+    if _payload_has_stale_fallback_receipts(manifest):
+        return True
+    app_bundle_path = site_dir / "data" / "app_bundle.json"
+    try:
+        app_bundle = load_json(app_bundle_path)
+    except (OSError, ValueError):
+        return True
+    if not isinstance(app_bundle, dict) or _payload_has_stale_fallback_receipts(app_bundle):
+        return True
+    return False
+
+
+def _payload_has_stale_fallback_receipts(payload: dict[str, Any]) -> bool:
+    """Return whether one persisted publication receipt predates the fallback contract."""
+
+    receipts = payload.get("articleReceipts")
+    if not isinstance(receipts, dict):
+        receipts = (payload.get("analysis") or {}).get("articleReceipts") if isinstance(payload.get("analysis"), dict) else None
+    if not isinstance(receipts, dict):
+        return True
+    for receipt in receipts.values():
+        if not isinstance(receipt, dict):
+            continue
+        if str(receipt.get("mode") or "").strip().lower() != "deterministic_template":
+            continue
+        structured = receipt.get("structured")
+        if not isinstance(structured, dict) or structured.get("fallback_schema_version") != FALLBACK_ARTICLE_SCHEMA_VERSION:
+            return True
+    return False
 
 
 def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:

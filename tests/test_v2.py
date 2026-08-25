@@ -1011,6 +1011,38 @@ class FastAPIClerkAppTests(unittest.TestCase):
         revision.assert_called()
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_fallback_receipt_schema_is_old(self) -> None:
+        """A current SHA must not hide a stale durable fallback payload."""
+        token = self._token("user_stale_fallback_schema")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_fallback_schema")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "stale-fallback", "season": "2026", "league_type": "dynasty", "name": "Stale Fallback", "roster_id": 1},
+        )
+        site_dir = self.leagues_root / "stale-fallback" / "site"
+        _write_complete_bundle(site_dir, "<h1>Persisted old fallback</h1>")
+        manifest_path = site_dir / "data" / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "auditTables": {},
+                    "sourceRevision": "release-current",
+                    "articleReceipts": {
+                        "daily_brief": {"mode": "deterministic_template", "structured": {}}
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("app.main._deployment_revision", return_value="release-current"):
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get("/league/stale-fallback/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        rebuild.assert_called_once()
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})
