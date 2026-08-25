@@ -141,9 +141,8 @@ optional by design. The following remain explicit next work rather than implied
 promises:
 
 - complete and verify the protected Luna publication run;
-- deepen manager dossiers with season history, sample sizes, and supported
-  trade-fit questions;
-- make Trade Desk packets consistently two-sided and read-only;
+- continue manager dossier depth with outcome-linked history and richer
+  cross-season trade-fit evaluation;
 - expand the question-led data room without adding unmotivated charts;
 - expand reporter-specific and article-specific media only where it improves
   recognition or comprehension;

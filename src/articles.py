@@ -341,6 +341,8 @@ def _scope_manager_intel(ctx: ArticleContext) -> list[dict[str, Any]]:
                 repeated_behavior=item.get("repeated_behavior", {}),
                 behavior_observations=item.get("behavior_observations", []),
                 trade_fits=item.get("trade_fits", []),
+                trade_fit_status=item.get("trade_fit_status", "none_supported"),
+                trade_fit_summary=item.get("trade_fit_summary", ""),
                 questions_to_ask=item.get("questions_to_ask", []),
                 unknowns=item.get("unknowns", []),
                 confidence=item.get("confidence", ""),

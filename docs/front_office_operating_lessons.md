@@ -98,6 +98,11 @@ The three product layers have distinct jobs:
     and show small samples honestly. Attention is not usefulness, and a
     confirmed rate is not meaningful until there are resolved calls.
 
+11. **Absence is a data result.** A manager dossier or trade packet must say
+    when no supported fit exists, with the evidence boundary visible. An
+    omitted card looks like a broken pipeline and encourages prose to fill the
+    gap; an explicit none-supported state preserves trust.
+
 ## Anti-recursive change protocol
 
 Before adding a feature or “cleaning up” an old artifact:

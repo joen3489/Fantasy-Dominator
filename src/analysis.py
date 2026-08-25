@@ -1246,6 +1246,12 @@ def build_manager_dossier_items(
             }
             for row in sorted(manager_edges, key=lambda value: _num(value.get("trade_edge_score")), reverse=True)[:6]
         ]
+        trade_fit_status = "supported" if trade_fits else "none_supported"
+        trade_fit_summary = (
+            f"{len(trade_fits)} evidence-backed trade fit{'s' if len(trade_fits) != 1 else ''} are supported by the current counterparty edge rows."
+            if trade_fits
+            else "No supported trade fit is present in the current counterparty edge rows; do not manufacture a target from manager labels alone."
+        )
         questions = _manager_questions(cycle, profile, manager_needs, trade_fits)
         items.append(
             {
@@ -1265,6 +1271,8 @@ def build_manager_dossier_items(
                 "repeated_behavior": repeated_behavior,
                 "behavior_observations": behavior_observations,
                 "trade_fits": trade_fits,
+                "trade_fit_status": trade_fit_status,
+                "trade_fit_summary": trade_fit_summary,
                 "questions_to_ask": questions,
                 "unknowns": [
                     "Manager intent is not observed in Sleeper data.",

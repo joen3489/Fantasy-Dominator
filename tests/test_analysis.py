@@ -170,6 +170,8 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertIn("roster_construction", item)
         self.assertIn("season_history", item)
         self.assertIn("questions_to_ask", item)
+        self.assertEqual(item["trade_fit_status"], "none_supported")
+        self.assertIn("No supported trade fit", item["trade_fit_summary"])
         self.assertTrue(any("Manager intent is not observed" in value for value in item["unknowns"]))
 
 

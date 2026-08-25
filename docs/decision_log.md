@@ -65,6 +65,15 @@ rate is shown only for confirmed versus missed calls. This makes the writer
 lineup measurable without turning a small personal ledger into a false claim
 of model or reporter accuracy.
 
+## 2026-08-25 - Empty manager fits must be an explicit result
+
+Manager dossiers now carry `trade_fit_status` and `trade_fit_summary` through
+the deterministic artifact, writer context, and team entry page. “None
+supported” is a useful evidence result; omitting the section invites the
+reader or a writer to fill the gap with a manager label or invented target.
+The UI also exposes the activity sample-size fields needed to judge whether a
+tendency is well supported.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

@@ -643,6 +643,20 @@ claim statistically meaningful reporter evaluation; the sample size and
 unresolved-call state remain visible so future content decisions have a clean
 ledger to build on.
 
+## 2026-08-25 manager dossier completeness checkpoint
+
+Manager dossier entry pages now make the evidence boundary explicit even when
+the current edge table is empty. Each dossier exposes seasons, observed
+trades, waiver claims, observed events, active seasons, roster assets, and
+market value, while the Trade-fit status section says either how many
+evidence-backed fits are supported or that none is supported. The writer
+context receives the same status and summary, so a missing fit cannot silently
+become a generic manager story.
+
+This closes the Workstream 5 acceptance gap where “no opportunity” was
+previously represented by an absent section. It still does not claim manager
+intent or a meaningful prediction rate from small samples.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the
