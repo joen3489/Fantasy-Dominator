@@ -109,6 +109,48 @@ def validate_edition_bundle(payload: dict) -> list[str]:
     return errors
 
 
+def validate_authenticated_edition(
+    payload: dict,
+    expected_revision: str = "",
+    expected_league_id: str = "",
+) -> list[str]:
+    """Validate the private identity and deployment binding, not only payload shape."""
+
+    errors = validate_edition_bundle(payload)
+    if expected_revision and str(payload.get("sourceRevision") or "") != expected_revision:
+        errors.append(
+            "edition bundle source revision="
+            f"{payload.get('sourceRevision')!r}; expected {expected_revision!r}"
+        )
+    if expected_league_id and str(payload.get("leagueId") or "") != str(expected_league_id):
+        errors.append(
+            f"edition bundle league_id={payload.get('leagueId')!r}; expected {expected_league_id!r}"
+        )
+    identity = payload.get("identityReceipt") if isinstance(payload.get("identityReceipt"), dict) else {}
+    if str(identity.get("status") or "").lower() not in {"verified", "verified_roster_match"}:
+        errors.append("edition bundle does not carry a verified Sleeper roster receipt")
+    if identity.get("roster_id") in (None, ""):
+        errors.append("edition bundle identity receipt has no exact roster_id")
+    return errors
+
+
+def validate_edition_manifest(payload: dict, expected_revision: str = "") -> list[str]:
+    """Ensure the HTML shell's manifest is bound to the revision being checked."""
+
+    if not isinstance(payload, dict):
+        return ["edition manifest is not an object"]
+    errors: list[str] = []
+    if expected_revision and str(payload.get("sourceRevision") or "") != expected_revision:
+        errors.append(
+            "edition manifest source revision="
+            f"{payload.get('sourceRevision')!r}; expected {expected_revision!r}"
+        )
+    identity = payload.get("identityReceipt") if isinstance(payload.get("identityReceipt"), dict) else {}
+    if identity.get("roster_id") in (None, ""):
+        errors.append("edition manifest identity receipt has no exact roster_id")
+    return errors
+
+
 def validate_storage_audit_payload(payload: dict) -> list[str]:
     """Check the operator-safe continuity receipt without exposing its contents."""
 
@@ -204,6 +246,8 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
     if not league_links:
         raise SystemExit("Authenticated smoke failed: home page exposes no owned league edition link")
     for league_link in league_links:
+        league_id_match = re.fullmatch(r"/league/([^/]+)/", league_link)
+        league_id = league_id_match.group(1) if league_id_match else ""
         edition = _get(
             f"{base_url}{league_link}",
             cookies={"__session": token},
@@ -234,10 +278,37 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
             bundle_payload = bundle.json()
         except (ValueError, json.JSONDecodeError) as exc:
             raise SystemExit(f"Authenticated smoke failed for {base_url}{league_link}: edition fact bundle was not JSON") from exc
-        bundle_errors = validate_edition_bundle(bundle_payload)
+        bundle_errors = validate_authenticated_edition(
+            bundle_payload,
+            expected_revision=os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip(),
+            expected_league_id=league_id,
+        )
         if bundle_errors:
             raise SystemExit(
                 f"Authenticated smoke failed for {base_url}{league_link}data/app_bundle.json: {'; '.join(bundle_errors)}"
+            )
+        manifest = _get(
+            f"{base_url}{league_link}data/manifest.json",
+            cookies={"__session": token},
+            timeout=30,
+            allow_redirects=False,
+        )
+        if manifest.status_code != 200:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}data/manifest.json: "
+                f"expected 200, got {manifest.status_code}"
+            )
+        try:
+            manifest_payload = manifest.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"Authenticated smoke failed for {base_url}{league_link}: edition manifest was not JSON") from exc
+        manifest_errors = validate_edition_manifest(
+            manifest_payload,
+            expected_revision=os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip(),
+        )
+        if manifest_errors:
+            raise SystemExit(
+                f"Authenticated smoke failed for {base_url}{league_link}data/manifest.json: {'; '.join(manifest_errors)}"
             )
         print(f"Authenticated smoke passed for {base_url}{league_link} ({edition.status_code}, {len(edition.text)} bytes)")
 

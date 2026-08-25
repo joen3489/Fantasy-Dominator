@@ -45,6 +45,11 @@ migration when explicitly configured.
    `FRONT_OFFICE_OPERATOR_TOKEN` locally only when checking the safe operator
    storage audit. Never paste either token into Git, an issue, or a chat log.
 
+   When a session token is supplied, the smoke also checks every owned
+   edition's `data/app_bundle.json` and `data/manifest.json` for the expected
+   deployment revision, league ID, and verified exact `roster_id`. A 200 HTML
+   response alone is not an authenticated production proof.
+
 4. In a real browser, log in and verify the complete continuity path:
    current Clerk user → linked Sleeper user → league → exact managed roster.
    Refresh the page and repeat after logout/login. Confirm that the selected

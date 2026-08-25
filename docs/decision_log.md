@@ -293,3 +293,7 @@ propagation. A green health revision was not sufficient evidence; the browser
 had to load the owned-league route, wait for the bundle, and assert the
 manifest `sourceRevision` plus the visible player markers. The fresh signed-in
 check then confirmed revision `c91108bc` and the new entry path.
+
+The live smoke contract now encodes that lesson: authenticated checks fail if
+the private bundle or manifest is bound to a different revision, league, or
+missing verified roster receipt.

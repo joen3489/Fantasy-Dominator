@@ -1640,6 +1640,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Data Room", text)
         self.assertIn("Data Diagnostics", text)
         self.assertIn("FRONT_OFFICE_SESSION_TOKEN", text)
+        self.assertIn("validate_authenticated_edition", text)
+        self.assertIn("data/manifest.json", text)
+        self.assertIn("source revision", text)
         self.assertIn("/healthz", text)
         self.assertIn("Authenticated smoke skipped", text)
 

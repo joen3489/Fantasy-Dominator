@@ -4,7 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from scripts.smoke_live import (
+    validate_authenticated_edition,
     validate_edition_bundle,
+    validate_edition_manifest,
     validate_health_payload,
     validate_storage_audit_payload,
 )
@@ -133,6 +135,43 @@ class LiveSmokeContractTests(unittest.TestCase):
         errors = validate_edition_bundle({"tables": {}})
         self.assertIn("edition bundle has no source freshness receipt", errors)
         self.assertIn("edition bundle has no Draft Room payload", errors)
+
+    def test_authenticated_edition_requires_revision_league_and_verified_roster(self) -> None:
+        payload = {
+            "leagueId": "alpha",
+            "sourceRevision": "new",
+            "identityReceipt": {"status": "verified", "roster_id": 2},
+            "tables": {
+                "today_priority_board": [{}],
+                "player_dossiers": [{}],
+                "source_freshness": [{}],
+                "news_source_freshness": [{}],
+                "projection_source_freshness": [{}],
+            },
+            "analysis": {"dailyGmBrief": "brief"},
+            "draftRoom": {"schema_version": "draft_room_v1"},
+        }
+
+        self.assertEqual(validate_authenticated_edition(payload, "new", "alpha"), [])
+        errors = validate_authenticated_edition(payload, "old", "beta")
+        self.assertIn("edition bundle source revision='new'; expected 'old'", errors)
+        self.assertIn("edition bundle league_id='alpha'; expected 'beta'", errors)
+
+        errors = validate_authenticated_edition({**payload, "identityReceipt": {"status": "unverified"}}, "new", "alpha")
+        self.assertIn("edition bundle does not carry a verified Sleeper roster receipt", errors)
+        self.assertIn("edition bundle identity receipt has no exact roster_id", errors)
+
+    def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
+        self.assertEqual(
+            validate_edition_manifest(
+                {"sourceRevision": "new", "identityReceipt": {"roster_id": 2}},
+                "new",
+            ),
+            [],
+        )
+        errors = validate_edition_manifest({"sourceRevision": "old", "identityReceipt": {}}, "new")
+        self.assertIn("edition manifest source revision='old'; expected 'new'", errors)
+        self.assertIn("edition manifest identity receipt has no exact roster_id", errors)
 
     def test_storage_audit_requires_current_identity_and_league(self) -> None:
         self.assertEqual(
