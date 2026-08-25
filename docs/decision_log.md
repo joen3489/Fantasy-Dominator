@@ -287,3 +287,9 @@ The first live review also showed that exposing raw trace strings inline made
 the page harder to read. The player dossier now shows compact source labels in
 the evidence chain and keeps the complete trace in a collapsed drawer; it
 also labels the player as yours, an opponent's, or unrostered.
+
+The live verification initially showed the prior durable shell during deploy
+propagation. A green health revision was not sufficient evidence; the browser
+had to load the owned-league route, wait for the bundle, and assert the
+manifest `sourceRevision` plus the visible player markers. The fresh signed-in
+check then confirmed revision `c91108bc` and the new entry path.

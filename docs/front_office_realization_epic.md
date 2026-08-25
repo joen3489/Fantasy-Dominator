@@ -527,3 +527,7 @@ facts in the data room.
 The entry path was reviewed against the live signed-in bundle: an opponent's
 player is visibly marked as `Opponent roster`, compact evidence labels keep the
 read legible, and the full source trace remains available in a drawer.
+
+The deployment check also now treats the rendered manifest revision as part of
+the entry-path proof. A health revision alone cannot prove that an already-open
+private browser has settled onto the new durable shell.

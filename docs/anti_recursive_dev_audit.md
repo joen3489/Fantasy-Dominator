@@ -73,3 +73,16 @@ The authenticated smoke script remained intentionally skipped because no
 for the visible authenticated surface. Railway still reports `0/5 reporter
 articles` and deterministic fallback mode, so this verifies deployment and
 identity continuity—not that a production Luna generation has occurred.
+
+## 2026-08-25 browser propagation follow-up
+
+The player-dossier refinement exposed a deployment-verification trap: a fresh
+health response can report the intended Railway revision while an already-open
+authenticated browser still presents the previous durable shell during
+propagation. The verification gate therefore requires the owned-league route,
+the rendered entry marker, and the bundle manifest's `sourceRevision` after a
+clean reload and settled page load. The check then confirmed revision
+`c91108bc74be7aa010652cfb57dd532f4ba4c3b1`, `Opponent roster`, the compact
+evidence chain, and the full source-trace drawer.
+This closes the manual authenticated browser verification item; the automated
+`FRONT_OFFICE_SESSION_TOKEN` smoke remains intentionally not run.
