@@ -759,6 +759,22 @@ def _bundle_matches_identity(paths: LeaguePaths, league: dict[str, Any]) -> bool
         return False
 
 
+def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
+    """Invalidate persisted generated HTML when the running source changed."""
+
+    expected = _deployment_revision()
+    if not expected:
+        return False
+    manifest_path = site_dir / "data" / "manifest.json"
+    try:
+        manifest = load_json(manifest_path)
+    except (OSError, ValueError):
+        return True
+    if not isinstance(manifest, dict):
+        return True
+    return str(manifest.get("sourceRevision") or "") != expected
+
+
 def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> None:
     """Synchronously rebuild a missing static bundle when processed facts exist."""
 
@@ -774,7 +790,11 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
         if key in seen:
             continue
         seen.add(key)
-        if browser_bundle_is_complete(paths.site_dir) and (paths is candidates[0] or _bundle_matches_identity(paths, league)):
+        if (
+            browser_bundle_is_complete(paths.site_dir)
+            and (paths is candidates[0] or _bundle_matches_identity(paths, league))
+            and not _bundle_needs_source_rebuild(paths.site_dir)
+        ):
             return
         if not (paths.processed_dir / "refresh_metadata.csv").is_file():
             continue
@@ -817,8 +837,9 @@ def _serve_league_file(
         # SECURITY: repeat containment after default-document resolution to keep nested directory requests boxed in.
         if not target.is_relative_to(site_dir):
             raise HTTPException(status_code=404, detail="league file not found")
-    if not target.exists() or not target.is_file() or not browser_bundle_is_complete(site_dir):
-        if requested_path in {"", "index.html"} or browser_bundle_missing(site_dir):
+    source_rebuild_needed = _bundle_needs_source_rebuild(site_dir)
+    if not target.exists() or not target.is_file() or not browser_bundle_is_complete(site_dir) or source_rebuild_needed:
+        if requested_path in {"", "index.html"} or browser_bundle_missing(site_dir) or source_rebuild_needed:
             _rebuild_missing_bundle(user, league)
             paths = _paths_for_user_league(user, league)
             site_dir = paths.site_dir.resolve()

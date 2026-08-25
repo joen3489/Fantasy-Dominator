@@ -949,6 +949,26 @@ class FastAPIClerkAppTests(unittest.TestCase):
         remembered = self.client.get("/", cookies={"__session": token})
         self.assertIn("In focus: <strong>Beta League</strong>", remembered.text)
 
+    def test_persisted_bundle_is_rebuilt_when_running_source_revision_changes(self) -> None:
+        """Encodes AGENTS.md anti-recursive deployment guardrail: a live SHA is not enough if a durable shell is old."""
+        token = self._token("user_stale_source_bundle")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_stale_source_bundle")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "stale-source", "season": "2026", "league_type": "dynasty", "name": "Stale Source", "roster_id": 1},
+        )
+        site_dir = self.leagues_root / "stale-source" / "site"
+        _write_complete_bundle(site_dir, "<h1>Persisted old shell</h1>")
+
+        with patch("app.main._deployment_revision", return_value="release-new") as revision:
+            with patch("app.main._rebuild_missing_bundle") as rebuild:
+                response = self.client.get("/league/stale-source/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        revision.assert_called()
+        rebuild.assert_called_once()
+
     def test_writer_preview_is_private_and_follows_selected_league(self) -> None:
         token = self._token("user_writer_preview")
         self.client.get("/", cookies={"__session": token})

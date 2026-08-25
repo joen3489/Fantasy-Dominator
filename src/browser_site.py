@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from html import escape
 from pathlib import Path
 from typing import Any, Mapping
@@ -260,6 +261,16 @@ def _bundle_revision(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()[:16]
 
 
+def _source_revision() -> str:
+    """Return the deployed source revision used to invalidate persisted shells."""
+
+    for key in ("RAILWAY_GIT_COMMIT_SHA", "SOURCE_VERSION", "COMMIT_SHA", "GIT_COMMIT"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value[:80]
+    return ""
+
+
 def _json_items(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -358,6 +369,7 @@ def _write_data_chunks(
         user_id=context.get("user_id"),
         league_id=str(league_id or ""),
     )
+    source_revision = _source_revision()
     app_payload = {
         "tables": app_tables,
         "editorial": editorial,
@@ -381,6 +393,10 @@ def _write_data_chunks(
     bundle_revision = _bundle_revision(app_payload)
     editorial["bundle_revision"] = bundle_revision
     app_payload["bundleRevision"] = bundle_revision
+    # This is deliberately separate from bundleRevision. The latter describes
+    # reader content and publication receipts; sourceRevision only tells the
+    # server whether a persisted shell needs to be rebuilt after a deploy.
+    app_payload["sourceRevision"] = source_revision
     app_payload["mediaManifest"]["bundle_revision"] = bundle_revision
     for asset in app_payload["mediaManifest"].get("assets", []):
         asset["bundle_revision"] = bundle_revision
@@ -425,6 +441,7 @@ def _write_data_chunks(
         "reporterLineup": editorial.get("reporter_lineup") or reporter_lineup(config.get("writer_preferences") or {}),
         "identityReceipt": identity_receipt,
         "bundleRevision": bundle_revision,
+        "sourceRevision": source_revision,
         "articleReceipts": analysis.get("articleReceipts") or {},
         "mediaManifest": app_payload["mediaManifest"],
     }

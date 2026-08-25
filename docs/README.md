@@ -19,6 +19,8 @@ Start here when returning to the project:
 
 - [Anti-recursive development audit](anti_recursive_dev_audit.md) - dated
   failure-class findings and guardrails for future changes.
+- [Deployment artifact versioning](deployment_artifact_versioning.md) - source
+  versus generated-bundle deployment lessons and verification requirements.
 
 The root [AGENTS.md](../AGENTS.md) is the short operating guide for future
 coding sessions.

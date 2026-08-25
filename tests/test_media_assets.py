@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import unittest
 import json
+import os
 import re
 import shutil
 import subprocess
 import tempfile
 from collections import Counter
 from pathlib import Path
+from unittest.mock import patch
 
 from src.browser_site import build_browser_site
 from src.media_assets import asset_is_current, build_media_manifest, materialize_media_assets
@@ -78,12 +80,15 @@ class MediaAssetContractTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             site = Path(tmp) / "site"
-            html = build_browser_site(
-                site,
-                repo / "data" / "processed",
-                repo / "data" / "analysis",
-            ).read_text(encoding="utf-8")
+            with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-test"}, clear=False):
+                html = build_browser_site(
+                    site,
+                    repo / "data" / "processed",
+                    repo / "data" / "analysis",
+                ).read_text(encoding="utf-8")
             manifest = json.loads((site / "data" / "media_manifest.json").read_text(encoding="utf-8"))
+            root_manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(root_manifest["sourceRevision"], "release-test")
             masthead = next((item for item in manifest["assets"] if item["asset_type"] == "masthead"), None)
             self.assertIsNotNone(masthead)
             self.assertTrue((site / masthead["path"]).is_file())
