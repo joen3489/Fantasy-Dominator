@@ -298,3 +298,11 @@ the canonical recommendation interaction with a stable, scoped key; adding a
 second manager-only feedback lane would split learning and invite
 contradictory rates. The manager-fit control records an explicit human report,
 never a completed trade inferred from the page.
+
+## 2026-08-25 compare fits at the candidate level
+
+A dossier-level statement that some fit overlaps a historical position lane is
+not enough for a decision. The current fit list now carries its own alignment
+object, including the matching lane and evidence or an explicit no-direct-lane
+state. The UI can explain one candidate without making every candidate inherit
+the strongest historical signal in the dossier.

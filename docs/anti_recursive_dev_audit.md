@@ -249,3 +249,12 @@ exact target player. The source-level entry test and authenticated browser
 proof must cover the manager path; no second feedback table is allowed.
 The deployed entry proof at `9fb20f8778fffb396e966af640fb11f6efc92824`
 found six live `manager_fit` controls with roster/player keys and evidence.
+
+## 2026-08-25 - Do not let a dossier-level overlap overstate each fit
+
+The first cross-season evaluation reported aligned position groups globally,
+which could make an individual current fit appear historically supported when
+it was not. The structured evaluation now emits one alignment row per fit and
+fails to a visible `no_direct_lane` state when no matching historical lane
+exists. The adversarial analysis test covers the aligned case; future fixtures
+must cover the no-lane case rather than weakening the label.

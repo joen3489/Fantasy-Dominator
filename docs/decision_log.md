@@ -754,3 +754,12 @@ The authenticated production reader then exposed six `manager_fit` controls
 on Moose Caboose's dossier at revision
 `9fb20f8778fffb396e966af640fb11f6efc92824`; the check inspected the keys and
 evidence without writing an outcome.
+
+## 2026-08-25 - Attach cross-season fit evidence to each candidate
+
+The manager dossier previously summarized valuation-lane overlap at the
+manager level. That was too coarse: one aligned position group could make an
+unrelated candidate look supported. Each current fit now carries its own
+aligned or `no_direct_lane` comparison, lane evidence, sample count,
+confidence, and source trace. This improves the decision packet without
+turning historical preference into intent.

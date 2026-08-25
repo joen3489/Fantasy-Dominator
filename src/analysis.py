@@ -967,6 +967,31 @@ def _manager_trade_fit_evaluation(
         if row.get("position")
     }
     aligned_groups = sorted(group for group in fit_groups if group in lane_groups)
+    fit_alignment = []
+    for fit in trade_fits:
+        position_group = _asset_position_group({"position": fit.get("position")})
+        matches = [row for row in historical_lanes if str(row.get("position_group") or "") == position_group]
+        lane = matches[0] if matches else {}
+        fit_alignment.append(
+            {
+                "player_id": fit.get("player_id", ""),
+                "player_name": fit.get("player_name", ""),
+                "position": fit.get("position", ""),
+                "position_group": position_group,
+                "status": "aligned" if lane else "no_direct_lane",
+                "lane_label": lane.get("label", ""),
+                "recency_weighted_score": lane.get("recency_weighted_score", ""),
+                "evidence_count": lane.get("evidence_count", 0),
+                "confidence": lane.get("confidence", ""),
+                "evidence": lane.get("evidence", ""),
+                "source_trace": "manager_valuation_profiles;manager_season_history",
+                "reason": (
+                    f"Matches the observed {lane.get('label') or position_group} lane."
+                    if lane
+                    else f"No direct {position_group} valuation lane is present in the observed profile."
+                ),
+            }
+        )
     seasons = len(manager_seasons)
     fit_count = len(trade_fits)
     if not fit_count:
@@ -989,6 +1014,9 @@ def _manager_trade_fit_evaluation(
         )
     return {
         "historical_lanes": historical_lanes,
+        "fit_alignment": fit_alignment,
+        "aligned_fit_count": sum(1 for row in fit_alignment if row["status"] == "aligned"),
+        "no_direct_lane_fit_count": sum(1 for row in fit_alignment if row["status"] == "no_direct_lane"),
         "current_fit_count": fit_count,
         "aligned_position_groups": aligned_groups,
         "historical_seasons": seasons,

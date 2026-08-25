@@ -742,6 +742,16 @@ stable roster/player keys, and the evidence-bearing payload attributes without
 submitting an outcome. The transient first bundle fetch was retried and the
 clean entry then loaded the current reader.
 
+## 2026-08-25 richer cross-season fit evaluation slice
+
+Each current manager trade fit now carries a deterministic comparison to the
+best matching historical valuation lane: aligned or no direct lane, lane
+label, lane evidence, evidence count, confidence, and source trace. The
+drawer also reports how many current fits align directly and how many remain
+uncorroborated. This makes the cross-season comparison useful at the candidate
+level while preserving the boundary that historical preference is not intent
+or a predicted response.
+
 ## 2026-08-25 production migration gate remains open
 
 The fallback story-spine code and local migration tests are in place, but the

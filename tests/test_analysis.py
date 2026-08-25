@@ -230,6 +230,20 @@ class DeterministicArticleTests(unittest.TestCase):
                         "risk": "medium",
                         "confidence": "medium",
                         "source_trace": "edge",
+                    },
+                    {
+                        "target_roster_id": 4,
+                        "player_id": "p2",
+                        "player_name": "Target RB",
+                        "position": "RB",
+                        "edge_type": "owner_may_overvalue",
+                        "trade_edge_score": 30,
+                        "market_consensus_value": 40,
+                        "estimated_owner_value_score": 52,
+                        "evidence": "current RB edge",
+                        "risk": "high",
+                        "confidence": "low",
+                        "source_trace": "edge",
                     }
                 ]),
             },
@@ -241,6 +255,12 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertEqual(evaluation["aligned_position_groups"], ["PASS_CATCHER"])
         self.assertIn("overlap", evaluation["summary"])
         self.assertEqual(evaluation["historical_seasons"], 2)
+        self.assertEqual(evaluation["fit_alignment"][0]["status"], "aligned")
+        self.assertEqual(evaluation["fit_alignment"][0]["lane_label"], "pass-catcher accumulator")
+        self.assertEqual(evaluation["fit_alignment"][1]["status"], "no_direct_lane")
+        self.assertEqual(evaluation["fit_alignment"][1]["position_group"], "RB")
+        self.assertEqual(evaluation["aligned_fit_count"], 1)
+        self.assertEqual(evaluation["no_direct_lane_fit_count"], 1)
 
     def test_manager_dossier_carries_scoped_event_timeline(self) -> None:
         """Encodes Workstream 5's transaction-timeline requirement from the realization epic."""

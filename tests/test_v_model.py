@@ -1586,6 +1586,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Manager-fit outcome", html)
         self.assertIn("manager-fit:", html)
         self.assertIn("decisionType: 'manager_fit'", html)
+        self.assertIn("fit_alignment", html)
+        self.assertIn("No direct historical lane in the observed profile", html)
         self.assertIn("decision_outcome", html)
         self.assertIn("Recommendation learning", html)
         self.assertIn("offer_candidates", html)
