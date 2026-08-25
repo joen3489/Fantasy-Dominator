@@ -1700,6 +1700,10 @@ def _page(
       const interactionType = button.dataset.contentInteraction;
       const artifactKey = button.dataset.artifactKey;
       if (!interactionType || !artifactKey || !manifest.leagueId) return;
+      const outcomeSelect = interactionType === 'outcome'
+        ? button.closest('[data-article-key]')?.querySelector('[data-outcome-select]')
+        : null;
+      const outcome = outcomeSelect ? String(outcomeSelect.value || 'open') : '';
       const original = button.textContent;
       button.disabled = true;
       button.textContent = 'Saving...';
@@ -1711,11 +1715,18 @@ def _page(
             artifact_type: 'article',
             artifact_key: artifactKey,
             interaction_type: interactionType,
-            payload: {{ bundle_revision: manifest.bundleRevision || '', mode: 'explicit_reader_feedback' }}
+            payload: {{
+              bundle_revision: manifest.bundleRevision || '',
+              mode: interactionType === 'outcome' ? 'explicit_article_outcome' : 'explicit_reader_feedback',
+              ...(outcome ? {{
+                outcome,
+                prediction_key: `article:${{artifactKey}}:${{manifest.bundleRevision || 'unbound'}}`
+              }} : {{}})
+            }}
           }})
         }});
         if (!response.ok) throw new Error(`${{response.status}}`);
-        button.textContent = 'Saved';
+        button.textContent = interactionType === 'outcome' ? 'Outcome saved' : 'Saved';
       }} catch (error) {{
         button.textContent = original;
         button.disabled = false;

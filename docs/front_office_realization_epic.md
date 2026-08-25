@@ -425,3 +425,16 @@ masthead, `assets/media/front-office-masthead-v1.png`, is now versioned in the
 repo and copied into each generated site through the manifest. Responsive
 variants, asset-level operator receipts, and additional reporter art remain
 Release 4 work; the masthead contains no factual text or statistics.
+## 2026-08-25 writer and outcome checkpoint
+
+The first real Luna run completed all five section articles locally using the
+configured `gpt-5.6-luna` provider. Each result carried a distinct reporter,
+evidence fingerprint, content hash, and structured article payload; the
+antagonistic review found that the generated copy preserved missing-data
+limits and did not turn manager tendencies into certainty.
+
+The reader now also has an explicit article outcome control: open, confirmed,
+missed, or unclear. Outcomes are stored with the selected league, exact
+roster, article key, and bundle revision. They are never inferred from page
+views, and they do not claim that a recommendation was correct until the
+manager records a result.

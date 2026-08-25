@@ -195,6 +195,11 @@ EDITORIAL_STYLE = r"""
     .publication-actions button { border: 1px solid var(--line); border-radius: 999px; background: #f7f8f3; color: var(--accent); padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; }
     .publication-actions button:hover { background: #e4efe9; }
     .publication-actions button:disabled { opacity: .65; cursor: default; }
+    .publication-outcome { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+    .publication-outcome label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 800; }
+    .publication-outcome select { border: 1px solid var(--line); border-radius: 7px; background: #fbfcf8; color: var(--ink); padding: 7px 9px; font-size: 12px; }
+    .publication-outcome button { border: 1px solid var(--accent); border-radius: 999px; background: var(--buy-bg); color: var(--accent); padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; }
+    .publication-outcome button:disabled { opacity: .65; cursor: default; }
     .publication-card .article-body { color: var(--ink); }
     .publication-card .article-p { line-height: 1.6; }
     .publication-summary { margin: 0 0 14px; padding: 12px 13px; border-left: 3px solid var(--gold); background: #f4f0df; border-radius: 8px; }
@@ -331,6 +336,7 @@ EDITORIAL_JS = r"""
         : '<p class="note">Open the data room to choose a question.</p>';
       document.getElementById('issue-pulse-metrics').innerHTML = editorialPulse(issue.signal_summary || {});
       document.getElementById('issue-source-health').innerHTML = editorialHealth(issue.source_health || []);
+      hydrateContentInteractions();
     }
 
     function renderEditorialMedia() {
@@ -363,7 +369,8 @@ EDITORIAL_JS = r"""
         ? `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. Evidence fingerprint: ${escapeHtml(String(article.evidence_fingerprint).slice(0, 16))}…${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).</p></details>`
         : '';
       const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
-      return `<article class="publication-card"><div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}</article>`;
+      const outcome = `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`;
+      return `<article class="publication-card" data-article-key="${escapeHtml(article.key || '')}"><div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}${outcome}</article>`;
     }
 
     function editorialStoryMarkup(story, isLead) {
@@ -415,6 +422,22 @@ EDITORIAL_JS = r"""
     function safeSourceUrl(url) {
       const value = String(url || '');
       return value.startsWith('https://') || value.startsWith('http://') ? escapeHtml(value) : '#';
+    }
+
+    async function hydrateContentInteractions() {
+      if (!manifest.leagueId) return;
+      try {
+        const response = await fetch(`/api/leagues/${encodeURIComponent(manifest.leagueId)}/content-interactions`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        (payload.interactions || []).filter(item => item.interaction_type === 'outcome').forEach(item => {
+          const select = document.querySelector(`[data-outcome-select="${String(item.artifact_key || '').replace(/"/g, '')}"]`);
+          const value = item.payload && item.payload.outcome;
+          if (select && ['open', 'confirmed', 'missed', 'unclear'].includes(String(value || ''))) select.value = value;
+        });
+      } catch (error) {
+        console.warn('Could not load article outcome state', error);
+      }
     }
 
 """

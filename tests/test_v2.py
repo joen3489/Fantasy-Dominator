@@ -1462,6 +1462,23 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(listed.json()["interactions"][0]["interaction_type"], "useful")
         self.assertEqual(listed.json()["interactions"][0]["payload"]["bundle_revision"], "rev-1")
 
+        outcome = self.client.post(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+            json={
+                "artifact_key": "trade_desk",
+                "interaction_type": "outcome",
+                "payload": {"outcome": "confirmed", "prediction_key": "trade_desk:trade_desk"},
+            },
+        )
+        self.assertEqual(outcome.status_code, 200)
+        self.assertEqual(outcome.json()["payload"]["outcome"], "confirmed")
+        outcome_rows = self.client.get(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+        ).json()["interactions"]
+        self.assertEqual(next(row for row in outcome_rows if row["interaction_type"] == "outcome")["payload"]["prediction_key"], "trade_desk:trade_desk")
+
         denied = self.client.post(
             "/api/leagues/feedback-league/content-interactions",
             cookies={"__session": token},
