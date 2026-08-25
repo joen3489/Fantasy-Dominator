@@ -22,6 +22,21 @@ two-sided Trade Desk packets, and a measured learning loop are still work to
 execute. Future status claims should be amended with the implementation that
 changes them.
 
+## 2026-08-25 - Self-healing publication migration verified
+
+The durable-bundle guard now checks the fallback receipt schema in both the
+manifest and embedded app bundle, not only the source SHA. A clean signed-in
+production entry path after `a69e7fd30de84266029163248ef387855f5c3077`
+verified `roster_id=2`, `Lulu’s Potatoe’s`, the v2 fallback story spine, and
+the visible visual-direction receipt. This closes the stale-shell migration
+gate exposed by the prior deployment check. Public smoke passed against the
+same revision; the automated authenticated smoke remains intentionally
+skipped because no session token is stored in the repo or shell.
+
+The publication is still deterministic fallback (`0/5` current Luna articles)
+until the protected operator run is authorized. That is a truthful degraded
+state, not a deployment failure.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

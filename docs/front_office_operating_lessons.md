@@ -103,11 +103,11 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-As of this review, the source revision can be current while a production
-user-scoped bundle still contains an older fallback article payload. The shell
-migration code and local adversarial tests exist, but production is not
-considered fully verified until the authenticated reader visibly exposes the
-current fallback schema/story spine (or a current Luna receipt) from the
-durable bundle. This is an explicit deployment gate, not a reason to weaken
-the receipt contract.
-
+The durable-bundle migration gate was closed on 2026-08-25 after a clean
+authenticated production entry path exposed source revision `a69e7fd`, the
+verified `roster_id=2` receipt for Lulu’s Potatoe’s, the v2 fallback story
+spine, and the visual-direction receipt. The remaining open boundary is the
+protected Luna publication: deterministic fallback remains the honest reader
+state until the operator-authorized run produces current per-article writer
+receipts. This is an explicit cost and authority boundary, not a reason to
+weaken the receipt contract.

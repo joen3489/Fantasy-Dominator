@@ -622,3 +622,13 @@ embedded fallback `lede`, `thesis`, and `what_changed` remained empty. This is
 the exact class of seam defect this epic is intended to prevent. Release
 claims must remain scoped until a clean reader entry path proves the migrated
 payload (or a current Luna receipt) in production.
+
+## 2026-08-25 migration gate closed
+
+Revision `a69e7fd30de84266029163248ef387855f5c3077` added a content-contract
+check to the production serving path. A clean authenticated entry from
+headquarters now proves the current source revision, exact `roster_id=2`
+identity for Lulu’s Potatoe’s, the v2 fallback story spine, and the visual
+direction inside the publication receipt. The stale durable-bundle regression
+is closed and covered by an adversarial entry-path test. Release 1 remains open
+only for the protected Luna run and its five current writer receipts.

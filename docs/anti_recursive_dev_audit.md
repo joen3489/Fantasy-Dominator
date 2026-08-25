@@ -124,3 +124,15 @@ serving-path defect. The gate remains open until a clean authenticated reader
 load proves the current fallback schema or a current Luna receipt. Do not
 weaken the receipt assertions or treat the health endpoint as proof of content
 propagation.
+
+## 2026-08-25 migration gate closed
+
+After `a69e7fd30de84266029163248ef387855f5c3077` deployed, the clean signed-in
+reader path self-healed the preserved bundle. The browser showed the current
+source revision, verified `roster_id=2`, `Lulu’s Potatoe’s`, the
+`deterministic_fallback_v2` story spine, and a visible visual-direction receipt
+with evidence/source traces. The public smoke also passed against that exact
+revision. The stale durable payload was therefore a real migration seam, not
+a permanent production data loss; the new guard and entry-path tests now cover
+it. The protected Luna run remains separate and is still pending operator
+authorization.
