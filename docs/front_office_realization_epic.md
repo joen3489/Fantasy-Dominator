@@ -807,3 +807,18 @@ the join must be by `player_id` and selected `roster_id`, and an absent fit row
 must remain `not_scored`. The old “planned overlay” copy is covered by an
 entry-path test so a future UI change cannot silently regress to profile-only
 customization.
+
+## 2026-08-25 recommendation outcome entry-path slice
+
+The decision ledger now has a separate recommendation lane. Target, sell, and
+trade thesis cards expose an explicit outcome control; the browser submits a
+scoped `recommendation` interaction carrying the thesis key, decision type,
+subject, bundle revision, confidence, risk, and evidence snapshot. The API
+validates the four allowed states and rejects recommendation outcomes sent as
+article interactions. The learning summary reports recommendation calls and
+rates separately from article usefulness and reporter outcomes.
+
+This records the manager's later report; it does not infer success from a
+page view, execute a transaction, or imply that a thesis became true. The
+existing upsert key makes changing an open call to confirmed/missed replace
+the current state without duplicating history rows.

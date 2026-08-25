@@ -390,12 +390,18 @@ def create_app() -> FastAPI:
         """Record explicit, scoped feedback without tracking ordinary reading."""
 
         league = _owned_league(user, league_id)
-        allowed_types = {"useful", "not_useful", "evidence_opened", "saved", "pursued", "outcome"}
+        allowed_types = {"useful", "not_useful", "evidence_opened", "saved", "pursued", "outcome", "decision_outcome"}
         if body.interaction_type not in allowed_types:
             raise HTTPException(status_code=422, detail="Unsupported content interaction type.")
         artifact_key = str(body.artifact_key or "").strip()
         if not artifact_key or len(artifact_key) > 120:
             raise HTTPException(status_code=422, detail="artifact_key is required and must be short.")
+        if body.interaction_type == "decision_outcome" and body.artifact_type != "recommendation":
+            raise HTTPException(status_code=422, detail="Decision outcomes must use artifact_type recommendation.")
+        if body.interaction_type in {"outcome", "decision_outcome"}:
+            outcome = str((body.payload or {}).get("outcome") or "").strip().lower()
+            if outcome not in {"open", "confirmed", "missed", "unclear"}:
+                raise HTTPException(status_code=422, detail="Outcome must be open, confirmed, missed, or unclear.")
         roster_id = league.get("roster_id")
         if roster_id in (None, ""):
             raise HTTPException(status_code=409, detail="This league does not have a verified roster scope.")

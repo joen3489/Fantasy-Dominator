@@ -199,3 +199,13 @@ active `roster_id` and `player_id` rows, renders alignment and action mix, and
 marks missing fit rows `not_scored`. The entry-path test asserts the real My
 Team surface contains these joins and no longer contains the planned-overlay
 claim.
+
+## 2026-08-25 - The learning loop must reach decisions, not just prose
+
+The existing ledger could evaluate article usefulness while actionable thesis
+cards had no outcome path. That created a plausible but shallow learning
+surface. The decision cards now reach the real scoped interaction endpoint;
+the seam validates recommendation-specific artifact type and outcome states,
+stores the bundle/evidence context, and reports recommendation rates separately
+from reporter rates. Tests cover the authenticated entry path, invalid states,
+and the separation of the two summaries.

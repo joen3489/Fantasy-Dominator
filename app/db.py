@@ -1207,7 +1207,9 @@ def content_learning_summary(
     outcome_types = {"open", "confirmed", "missed", "unclear"}
     feedback = {name: 0 for name in sorted(feedback_types)}
     outcomes = {name: 0 for name in sorted(outcome_types)}
+    recommendation_outcomes = {name: 0 for name in sorted(outcome_types)}
     artifacts: set[tuple[str, str]] = set()
+    recommendation_artifacts: set[tuple[str, str]] = set()
     latest_recorded_at = ""
 
     artifact_by_key = {
@@ -1249,31 +1251,38 @@ def content_learning_summary(
 
     for row in rows:
         interaction_type = str(row.get("interaction_type") or "")
+        payload = row.get("payload") or {}
+        artifact_type = str(row.get("artifact_type") or "")
         if interaction_type in feedback:
             feedback[interaction_type] += 1
         elif interaction_type == "outcome":
-            outcome = str((row.get("payload") or {}).get("outcome") or "").strip().lower()
+            outcome = str(payload.get("outcome") or "").strip().lower()
             if outcome in outcomes:
                 outcomes[outcome] += 1
-        artifact = artifact_by_key.get(
-            (str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")),
-            {},
-        )
-        group = reporter_group(
-            str(artifact.get("reporter_id") or "unassigned"),
-            str(artifact.get("writer_mode") or ""),
-        )
-        group["interaction_count"] += 1
-        if interaction_type in feedback:
-            group[interaction_type] += 1
-        elif interaction_type == "outcome":
-            outcome = str((row.get("payload") or {}).get("outcome") or "").strip().lower()
-            if outcome in outcomes:
-                group[outcome] += 1
+        elif interaction_type == "decision_outcome":
+            outcome = str(payload.get("outcome") or "").strip().lower()
+            if outcome in recommendation_outcomes:
+                recommendation_outcomes[outcome] += 1
+            recommendation_artifacts.add((artifact_type, str(row.get("artifact_key") or "")))
+
+        artifact = artifact_by_key.get((artifact_type, str(row.get("artifact_key") or "")), {})
+        if artifact_type == "article":
+            group = reporter_group(
+                str(artifact.get("reporter_id") or "unassigned"),
+                str(artifact.get("writer_mode") or ""),
+            )
+            group["interaction_count"] += 1
+            if interaction_type in feedback:
+                group[interaction_type] += 1
+            elif interaction_type == "outcome":
+                outcome = str(payload.get("outcome") or "").strip().lower()
+                if outcome in outcomes:
+                    group[outcome] += 1
         artifacts.add((str(row.get("artifact_type") or ""), str(row.get("artifact_key") or "")))
         latest_recorded_at = max(latest_recorded_at, str(row.get("created_at") or ""))
 
     resolved = outcomes["confirmed"] + outcomes["missed"]
+    recommendation_resolved = recommendation_outcomes["confirmed"] + recommendation_outcomes["missed"]
     reporter_breakdown = []
     for group in reporter_groups.values():
         group_resolved = group["confirmed"] + group["missed"]
@@ -1290,6 +1299,10 @@ def content_learning_summary(
         "outcome_counts": outcomes,
         "resolved_outcomes": resolved,
         "confirmed_rate": round(outcomes["confirmed"] / resolved, 3) if resolved else None,
+        "recommendation_count": len(recommendation_artifacts),
+        "recommendation_outcome_counts": recommendation_outcomes,
+        "recommendation_resolved_outcomes": recommendation_resolved,
+        "recommendation_confirmed_rate": round(recommendation_outcomes["confirmed"] / recommendation_resolved, 3) if recommendation_resolved else None,
         "latest_recorded_at": latest_recorded_at,
         "reporter_breakdown": reporter_breakdown,
     }

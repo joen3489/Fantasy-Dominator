@@ -690,3 +690,17 @@ No new score or LLM call was added. This slice makes existing deterministic
 evidence legible and fails closed to `not_scored` when a player fit row is
 missing. The old planned-overlay copy is covered by a browser entry-path
 contract test.
+
+## 2026-08-25 - Keep recommendation learning separate from article learning
+
+The first learning loop tracked article usefulness and article outcomes, but
+target, sell, and trade theses had no explicit way to be evaluated. The
+browser now renders an outcome control on those decision cards and writes a
+private `recommendation` interaction keyed to the thesis and bundle revision.
+The API accepts only `open`, `confirmed`, `missed`, or `unclear` and rejects a
+recommendation outcome sent through the article lane.
+
+The summary reports recommendation counts and confirmation rate separately
+from reporter/article outcomes. This keeps a useful article from looking like
+a correct decision and prevents a page view or generated sentence from being
+treated as evidence that a recommendation succeeded.

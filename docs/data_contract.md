@@ -44,6 +44,18 @@ Transform tables convert projections, market values, news, roster ownership, man
 
 Strategy views are browser and markdown outputs that apply configurable team strategy. Melkor-specific rebuild logic belongs in `config/leagues.yml` and presentation/report overlays, not in canonical normalization.
 
+### Layer 4: Private Decision Ledger
+
+The SQLite `content_interactions` store is private, user/league/roster-scoped
+state, not canonical Sleeper data. Article usefulness/outcome signals use
+`artifact_type=article` and `interaction_type=outcome`. Actionable target,
+sell, and trade theses use `artifact_type=recommendation` and
+`interaction_type=decision_outcome`, keyed to the thesis and bundle revision.
+The ledger records what the manager later reports happened; it does not infer
+an outcome from a page view, execute a trade, or rewrite deterministic facts.
+Open, confirmed, missed, and unclear remain separate states, and article
+learning rates must not be blended with recommendation rates.
+
 ## Table Contracts
 
 ### Canonical Sleeper Tables

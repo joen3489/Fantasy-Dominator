@@ -1072,6 +1072,22 @@ def _page(
       line-height: 1.45;
       color: var(--ink);
     }}
+    .decision-outcome {{
+      border-top: 1px solid var(--line);
+      margin-top: 12px;
+      padding-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: end;
+    }}
+    .decision-outcome label {{
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
     .evidence-drawer {{
       border-top: 1px solid var(--line);
       margin-top: 4px;
@@ -2010,9 +2026,10 @@ def _page(
       const interactionType = button.dataset.contentInteraction;
       const artifactKey = button.dataset.artifactKey;
       if (!interactionType || !artifactKey || !manifest.leagueId) return;
+      const decisionNode = interactionType === 'decision_outcome' ? button.closest('[data-decision-key]') : null;
       const outcomeSelect = interactionType === 'outcome'
         ? button.closest('[data-article-key]')?.querySelector('[data-outcome-select]')
-        : null;
+        : decisionNode?.querySelector('[data-decision-outcome-select]');
       const outcome = outcomeSelect ? String(outcomeSelect.value || 'open') : '';
       const original = button.textContent;
       button.disabled = true;
@@ -2022,15 +2039,23 @@ def _page(
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
           body: JSON.stringify({{
-            artifact_type: 'article',
+            artifact_type: interactionType === 'decision_outcome' ? 'recommendation' : 'article',
             artifact_key: artifactKey,
             interaction_type: interactionType,
             payload: {{
               bundle_revision: manifest.bundleRevision || '',
-              mode: interactionType === 'outcome' ? 'explicit_article_outcome' : 'explicit_reader_feedback',
+              mode: interactionType === 'decision_outcome' ? 'explicit_recommendation_outcome' : interactionType === 'outcome' ? 'explicit_article_outcome' : 'explicit_reader_feedback',
               ...(outcome ? {{
                 outcome,
-                prediction_key: `article:${{artifactKey}}:${{manifest.bundleRevision || 'unbound'}}`
+                prediction_key: `${{interactionType === 'decision_outcome' ? 'recommendation' : 'article'}}:${{artifactKey}}:${{manifest.bundleRevision || 'unbound'}}`,
+                ...(decisionNode ? {{
+                  decision_type: decisionNode.dataset.decisionType || '',
+                  subject_id: decisionNode.dataset.decisionSubjectId || '',
+                  subject_name: decisionNode.dataset.decisionSubjectName || '',
+                  confidence: decisionNode.dataset.decisionConfidence || '',
+                  risk: decisionNode.dataset.decisionRisk || '',
+                  evidence: decisionNode.dataset.decisionEvidence || ''
+                }} : {{}})
               }} : {{}})
             }}
           }})
@@ -2718,17 +2743,24 @@ def _page(
       if (!node) return;
       const feedback = summary.feedback_counts || {{}};
       const outcomes = summary.outcome_counts || {{}};
+      const recommendationOutcomes = summary.recommendation_outcome_counts || {{}};
       const cards = [
         entityTile('Useful', feedback.useful || 0),
         entityTile('Needs work', feedback.not_useful || 0),
         entityTile('Evidence reviewed', feedback.evidence_opened || 0),
         entityTile('Saved / pursued', (feedback.saved || 0) + (feedback.pursued || 0)),
         entityTile('Open calls', outcomes.open || 0),
-        entityTile('Resolved calls', summary.resolved_outcomes || 0)
+        entityTile('Resolved calls', summary.resolved_outcomes || 0),
+        entityTile('Recommendation calls', summary.recommendation_count || 0),
+        entityTile('Resolved recommendations', summary.recommendation_resolved_outcomes || 0)
       ].join('');
       const rate = summary.confirmed_rate === null || summary.confirmed_rate === undefined
         ? 'Not enough resolved calls for a rate.'
         : `${{Math.round(Number(summary.confirmed_rate) * 100)}}% of resolved calls confirmed useful`;
+      const recommendationRate = summary.recommendation_confirmed_rate === null || summary.recommendation_confirmed_rate === undefined
+        ? 'Recommendation rate is not established yet.'
+        : `${{Math.round(Number(summary.recommendation_confirmed_rate) * 100)}}% of resolved recommendation calls confirmed useful`;
+      const recommendationState = `${{recommendationOutcomes.open || 0}} open · ${{recommendationOutcomes.confirmed || 0}} confirmed · ${{recommendationOutcomes.missed || 0}} missed · ${{recommendationOutcomes.unclear || 0}} unclear`;
       const latest = summary.latest_recorded_at ? `Last recorded ${{summary.latest_recorded_at}}.` : 'No explicit signals recorded yet.';
       const reporterNames = new Map((manifest.reporterLineup || []).map(row => [String(row.persona_id || ''), String(row.name || '')]));
       const reporterRowsById = new Map();
@@ -2773,7 +2805,7 @@ def _page(
             return `<article class="brief-card"><div class="brief-card-body"><div class="brief-card-title">${{escapeHtml(reporterName)}} <span class="tag">${{escapeHtml(row.writer_mode ? label(row.writer_mode) : 'Receipt state unavailable')}}</span></div><div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(signalLabel)}}</span><span class="brief-chip">${{escapeHtml(outcomeLabel)}}</span></div><div class="brief-card-evidence">${{escapeHtml(usefulness)}}${{row.article_keys?.length ? ` · keys: ${{row.article_keys.join(', ')}}` : ''}}</div></div></article>`;
           }}).join('')}}</div></div>`
         : '';
-      node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p>${{breakdown}}`;
+      node.innerHTML = `<div class="tile-row">${{cards}}</div><p class="note">Article learning: ${{escapeHtml(rate)}} · ${{escapeHtml(latest)}} ${{escapeHtml(String(summary.artifact_count || 0))}} artifacts in scope.</p><p class="note"><strong>Recommendation learning:</strong> ${{escapeHtml(recommendationRate)}} · ${{escapeHtml(recommendationState)}}.</p>${{breakdown}}`;
     }}
 
     async function hydrateLearningLedger() {{
@@ -3133,6 +3165,13 @@ def _page(
         title: row.player_name || row.target_manager_name || row.thesis_id || 'Analysis thesis',
         category: categoryFor('signal_label', row.signal_label) !== 'info' ? categoryFor('signal_label', row.signal_label) : bucket,
         playerId: row.player_id,
+        decisionKey: row.thesis_id || `${{mode}}:${{row.player_id || row.target_manager_roster_id || row.target_manager_name || 'unknown'}}`,
+        decisionType: mode,
+        decisionSubjectId: row.player_id || row.target_manager_roster_id || '',
+        decisionSubjectName: row.player_name || row.target_manager_name || '',
+        decisionConfidence: row.confidence || '',
+        decisionRisk: row.risk || '',
+        decisionEvidence: `${{row.evidence || row.analysis_text || ''}} Source: ${{row.source_trace || ''}}`,
         chips: [
           mode,
           row.target_manager_name,
@@ -3347,6 +3386,20 @@ def _page(
       return 'medium';
     }}
 
+    function decisionOutcomeControl(card) {{
+      if (!card.decisionKey) return '';
+      const subjectName = card.decisionSubjectName || card.title || '';
+      return `<div class="decision-outcome" data-decision-key="${{escapeHtml(String(card.decisionKey))}}" data-decision-type="${{escapeHtml(String(card.decisionType || ''))}}" data-decision-subject-id="${{escapeHtml(String(card.decisionSubjectId || ''))}}" data-decision-subject-name="${{escapeHtml(String(subjectName))}}" data-decision-confidence="${{escapeHtml(String(card.decisionConfidence || ''))}}" data-decision-risk="${{escapeHtml(String(card.decisionRisk || ''))}}" data-decision-evidence="${{escapeHtml(String(card.decisionEvidence || ''))}}">
+        <label>Recommendation outcome<select data-decision-outcome-select="${{escapeHtml(String(card.decisionKey))}}">
+          <option value="open">Track this call</option>
+          <option value="confirmed">Confirmed useful</option>
+          <option value="missed">Missed or wrong</option>
+          <option value="unclear">Unclear / needs more evidence</option>
+        </select></label>
+        <button type="button" data-content-interaction="decision_outcome" data-artifact-key="${{escapeHtml(String(card.decisionKey))}}">Save outcome</button>
+      </div>`;
+    }}
+
     function briefCard(card) {{
       const bucket = card.category || 'info';
       const rankNum = Number(card.rank);
@@ -3358,6 +3411,7 @@ def _page(
       const watchouts = card.watchouts ? `<div class="brief-card-evidence"><strong>Watch:</strong> ${{escapeHtml(card.watchouts)}}</div>` : '';
       const details = card.details || card.evidence || '';
       const detailsHtml = card.detailsHtml || '';
+      const decisionOutcome = decisionOutcomeControl(card);
 
       const rankBlock = rank
         ? `<div class="brief-card-rank ${{rank <= 3 ? 'brief-card-rank-top' : ''}}">${{rank}}</div>`
@@ -3378,6 +3432,7 @@ def _page(
           ${{watchouts}}
           ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
           ${{detailsHtml ? `<details class="evidence-drawer trade-packet-drawer"><summary>Open the two-sided decision packet</summary>${{detailsHtml}}</details>` : ''}}
+          ${{decisionOutcome}}
         </div>
       </article>`;
     }}

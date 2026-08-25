@@ -1894,17 +1894,40 @@ class FastAPIClerkAppTests(unittest.TestCase):
         ).json()["interactions"]
         self.assertEqual(next(row for row in outcome_rows if row["interaction_type"] == "outcome")["payload"]["prediction_key"], "trade_desk:trade_desk")
 
+        recommendation_outcome = self.client.post(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+            json={
+                "artifact_type": "recommendation",
+                "artifact_key": "target:player-11566",
+                "interaction_type": "decision_outcome",
+                "payload": {
+                    "outcome": "confirmed",
+                    "prediction_key": "recommendation:target:player-11566:rev-1",
+                    "decision_type": "target",
+                    "subject_id": "11566",
+                    "bundle_revision": "rev-1",
+                },
+            },
+        )
+        self.assertEqual(recommendation_outcome.status_code, 200)
+        self.assertEqual(recommendation_outcome.json()["artifact_type"], "recommendation")
+
         summary = self.client.get(
             "/api/leagues/feedback-league/learning-summary",
             cookies={"__session": token},
         )
         self.assertEqual(summary.status_code, 200)
         self.assertEqual(summary.json()["roster_id"], 7)
-        self.assertEqual(summary.json()["interaction_count"], 2)
-        self.assertEqual(summary.json()["artifact_count"], 1)
+        self.assertEqual(summary.json()["interaction_count"], 3)
+        self.assertEqual(summary.json()["artifact_count"], 2)
         self.assertEqual(summary.json()["feedback_counts"]["useful"], 1)
         self.assertEqual(summary.json()["outcome_counts"]["confirmed"], 1)
         self.assertEqual(summary.json()["confirmed_rate"], 1.0)
+        self.assertEqual(summary.json()["recommendation_count"], 1)
+        self.assertEqual(summary.json()["recommendation_outcome_counts"]["confirmed"], 1)
+        self.assertEqual(summary.json()["recommendation_resolved_outcomes"], 1)
+        self.assertEqual(summary.json()["recommendation_confirmed_rate"], 1.0)
 
         db.record_content_artifact(
             user_id,
@@ -1945,6 +1968,17 @@ class FastAPIClerkAppTests(unittest.TestCase):
             json={"artifact_key": "trade_desk", "interaction_type": "invented"},
         )
         self.assertEqual(denied.status_code, 422)
+        invalid_outcome = self.client.post(
+            "/api/leagues/feedback-league/content-interactions",
+            cookies={"__session": token},
+            json={
+                "artifact_type": "recommendation",
+                "artifact_key": "target:player-11566",
+                "interaction_type": "decision_outcome",
+                "payload": {"outcome": "maybe"},
+            },
+        )
+        self.assertEqual(invalid_outcome.status_code, 422)
 
     def test_user_refresh_endpoint_is_not_operator_protected(self) -> None:
         token = self._token("user_refresh")

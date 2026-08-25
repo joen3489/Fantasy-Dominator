@@ -244,3 +244,11 @@ evidence; the roster table carries the same fit, action, timeline, and
 liquidity fields. Missing joins remain `not_scored`. A configured strategy is
 not complete until it changes the decision surface, not merely the profile
 label.
+
+## 2026-08-25 recommendation outcome ledger
+
+Article usefulness is not recommendation accuracy. The private ledger now
+keeps article outcomes and target/sell/trade decision outcomes in separate
+lanes, keyed to the recommendation and the bundle revision that produced it.
+Only an explicit manager report can move a call from open to confirmed,
+missed, or unclear; page views and generated prose never count as outcomes.
