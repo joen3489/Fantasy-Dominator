@@ -119,6 +119,12 @@ now overlays blocked or client-side failure state onto the existing status,
 preserving the live writer, publication, and reader-contract fields. No writer
 call is attempted until the operator token is present.
 
+The production proof at `1be8e7c7160454dd28d9255cd4edce75e7e6e7c1` matched
+public revision smoke and the authenticated private edition. A blocked LLM
+click preserved `openai`, `gpt-5.6-luna`, and the publication receipt. This
+closes the readiness-display seam; it does not authorize or complete a Luna
+generation run without the operator token.
+
 ## 2026-08-25 - Preserve the operating lessons in-repo
 
 The compact product and development memory now lives in

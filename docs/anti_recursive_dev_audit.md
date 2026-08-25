@@ -291,3 +291,8 @@ status overlay for blocked and client-side failure paths. The entry-path test
 requires the helper and its rationale, and the authenticated browser audit must
 recheck that blocking an action preserves readiness evidence and does not call
 the provider.
+
+The production check at
+`1be8e7c7160454dd28d9255cd4edce75e7e6e7c1` confirmed the exact failure seam:
+the blocked action message appeared while the configured writer and
+publication receipts remained visible. The action stayed fail-closed.

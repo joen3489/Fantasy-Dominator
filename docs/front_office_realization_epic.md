@@ -736,6 +736,16 @@ contract evidence. The action remains fail-closed and makes no provider call.
 This is a stability prerequisite for the protected Luna publication, not a
 publication run itself.
 
+### Production acceptance amendment — `1be8e7c`
+
+Public revision smoke matched the deployed source revision. In the
+authenticated private edition, the operator panel showed the configured
+`openai / gpt-5.6-luna` writer receipt before the blocked action. Pressing the
+LLM control without an operator token produced the explicit blocked message,
+while preserving the writer API, provider, model, and publication receipt. No
+provider call was made; the protected Luna publication remains an explicit
+next action once the operator credential is available.
+
 ## 2026-08-25 cross-season trade-fit checkpoint
 
 Manager dossiers now expose a deterministic comparison between current
