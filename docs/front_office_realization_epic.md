@@ -1895,3 +1895,11 @@ full-edition behavior. When a terminal receipt names failed or held desks, the
 Writer Desk renders `Retry failed desks`; when the worker stopped during a
 known provider call, it can retry that current desk. Refresh-stage failures
 remain full-retry only because there is no safe desk target to invent.
+
+## 2026-08-26 selected-edition launch boundary
+
+The selected-edition browser action now fails closed when its league selector
+does not yield an exact `league_id`. An empty selector can no longer fall
+through to the server's deliberately aggregate all-edition scope, and the UI
+states that no writer request was sent. This preserves the paid-action and
+identity boundaries while keeping aggregate generation explicit.

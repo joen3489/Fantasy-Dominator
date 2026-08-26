@@ -1565,9 +1565,11 @@
               return;
             }
             const leagueId = selectedWriterLeagueId();
-            if (retryKeys.length && !leagueId) {
+            if (!allEditions && !leagueId) {
               writerStatus.className = 'writer-status error';
-              writerStatus.textContent = 'Choose a league before retrying selected desks.';
+              writerStatus.textContent = retryKeys.length
+                ? 'Choose a league before retrying selected desks. No writer request was sent.'
+                : 'Select a league before running this edition. No writer request was sent.';
               resetWriterButton(button, allEditions, retryKeys);
               return;
             }

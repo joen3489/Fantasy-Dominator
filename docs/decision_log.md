@@ -1960,3 +1960,14 @@ league for a targeted run, and forwards the exact set to the real workflow.
 The homepage exposes `Retry failed desks` only when a terminal receipt identifies
 failed or held desks (or the desk interrupted during its provider call). A
 refresh-stage failure remains full-retry only because no desk target is known.
+
+## 2026-08-26 - Fail closed when the selected writer league is unavailable
+
+The browser's selected-edition writer action previously treated an empty
+league selector as an all-edition request because the server correctly
+interprets a missing `league_id` as the explicit aggregate scope. That was a
+dangerous entry-path ambiguity: a missing UI selection could widen a paid run
+across every enabled league. The browser now stops locally with a truthful
+message and sends no writer request when the selected-edition control has no
+league ID. The all-edition button remains the only path that intentionally
+uses aggregate scope.

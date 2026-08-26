@@ -1481,3 +1481,10 @@ validates the selected `article_keys`, requires an owned league, and forwards
 them into the evidence-backed workflow. The homepage does not invent targets
 when a refresh-stage failure has no per-desk receipt; it falls back to the
 normal full-edition action.
+
+2026-08-26 selected-writer launch amendment: the browser now refuses to send
+the selected-edition writer request when the exact league selector is empty.
+Because the API intentionally interprets a missing `league_id` as an
+all-edition run, the previous UI fallthrough could widen an ambiguous click
+into a paid aggregate request. Aggregate generation remains available only
+through its explicit all-editions control.

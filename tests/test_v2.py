@@ -964,6 +964,25 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("data-writer-retry-keys=", response.text)
 
+    def test_writer_entry_path_fails_closed_without_a_selected_league(self) -> None:
+        """Design source: AGENTS.md; a selected-edition writer run must never widen to all leagues."""
+
+        token = self._token("user_writer_missing_selection")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_missing_selection")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "missing-selection", "season": "2026", "league_type": "dynasty", "name": "Missing Selection", "roster_id": 1},
+        )
+
+        with patch("app.main.front_operator.status", return_value={"state": "idle", "job": "", "operator_enabled": True}):
+            response = self.client.get("/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("if (!allEditions && !leagueId)", response.text)
+        self.assertIn("Select a league before running this edition. No writer request was sent.", response.text)
+        self.assertIn("Choose a league before retrying selected desks. No writer request was sent.", response.text)
+
     def test_generate_insights_preserves_failed_workflow_diagnostics(self) -> None:
         league = {
             "league_id": "diagnostic-league",
