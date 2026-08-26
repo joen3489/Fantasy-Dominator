@@ -3880,9 +3880,13 @@ def _page(
       const leagueIds = metadata.configured_league_ids || Object.values(app.configuredLeagues || {{}}).filter(Boolean).join(';');
       const counts = app.tableCounts || manifest.tableCounts || {{}};
       const historyQuality = (app.dataQuality || {{}}).player_history_identity || {{}};
+      const identity = app.identityReceipt || {{}};
       return table([
         {{ item: 'Generated at', value: metadata.generated_at || 'unknown' }},
         {{ item: 'Current season', value: metadata.current_season || app.currentSeason || '' }},
+        {{ item: 'Sleeper user ID', value: identity.sleeper_user_id || 'not recorded' }},
+        {{ item: 'Managed roster', value: `${{identity.roster_id ?? 'not recorded'}} · ${{identity.team_name || 'team label not recorded'}}` }},
+        {{ item: 'Identity receipt', value: `${{identity.status || 'unverified'}} · ${{identity.source || 'source unavailable'}}` }},
         {{ item: 'Configured leagues', value: leagueIds }},
         {{ item: 'Configured seasons', value: metadata.configured_seasons || '' }},
         {{ item: 'Ingested seasons', value: metadata.ingested_seasons || '' }},

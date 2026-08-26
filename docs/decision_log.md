@@ -1930,3 +1930,7 @@ selector.
 The deployment smoke gate now fails closed when either half of that receipt is
 missing. A verified roster number without a linked Sleeper user is not enough
 evidence of identity continuity.
+
+The Data Room diagnostics now prints the linked Sleeper user ID, exact managed
+roster, and receipt source so the manager can inspect the same lineage that the
+deployment gate verifies.

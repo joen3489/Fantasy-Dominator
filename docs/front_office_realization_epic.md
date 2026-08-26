@@ -1876,3 +1876,7 @@ The private reader bundle now carries the linked Sleeper user ID alongside the
 exact league and roster receipt. This makes the full identity chain inspectable
 after refresh or deployment while preserving the important boundary: the
 Sleeper user establishes ownership, but `roster_id` selects the managed team.
+
+The Data Room diagnostics exposes those receipt fields to the signed-in
+manager, turning identity continuity into a reader-visible check rather than
+an internal-only contract.

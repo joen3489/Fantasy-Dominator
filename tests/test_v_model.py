@@ -2223,6 +2223,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("publication-${escapeHtml", html)
         self.assertNotIn('id="app-data"', html)
         self.assertIn("Data Room", html)
+        self.assertIn("Sleeper user ID", html)
+        self.assertIn("const identity = app.identityReceipt", html)
         self.assertIn("Team Overview", html)
         self.assertIn("Today's Board", html)
         self.assertIn("brief-card", html)
