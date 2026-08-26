@@ -1967,3 +1967,13 @@ and the historical opportunity/production signals are labeled as historical
 instead of looking like current weekly grades. Injury-limited rows use a
 baseline label while the detailed evidence chain retains the raw Sleeper
 status and source trace.
+
+## 2026-08-26 paid-publication acceptance guard
+
+The live verifier now has an explicit post-run mode for the protected Luna
+boundary. With `FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1`, the authenticated smoke
+requires every registered desk to be automatic LLM output, publication-approved,
+and attributed to a named assigned reporter lens. The ordinary smoke remains
+fallback-tolerant so a degraded provider does not erase the evidence-backed
+reader. This distinguishes a terminal writer process from proof that paid copy
+was actually printed.

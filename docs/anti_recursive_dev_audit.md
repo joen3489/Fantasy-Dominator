@@ -580,3 +580,14 @@ fallback receipt claims a named reporter as its effective byline or omits the
 assigned reporter lens. This pairs the local provenance tests with the live
 edition contract and protects the exact regression where evidence-led copy
 looked like paid newsroom output.
+
+## 2026-08-26 paid-publication acceptance guard
+
+The normal deployment smoke intentionally accepts deterministic fallback, but
+that is too weak to prove that an operator-triggered writer run actually
+printed paid editorial. `validate_paid_publication()` is now an explicit,
+opt-in smoke contract requiring all six desks to be automatic LLM output,
+approved, and attributed to named reporter lenses. The guard is activated with
+`FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1`; it does not change the degraded reader
+contract or make a provider call. This closes the verification gap between a
+terminal job receipt and a genuinely published newsroom edition.

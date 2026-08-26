@@ -12,6 +12,7 @@ from scripts.smoke_live import (
     main,
     resolve_smoke_credentials,
     validate_storage_audit_payload,
+    validate_paid_publication,
 )
 
 
@@ -329,6 +330,51 @@ class LiveSmokeContractTests(unittest.TestCase):
         }
         errors = validate_authenticated_edition(missing_lens, "new", "alpha")
         self.assertTrue(any("fallback has no assigned reporter lens" in error for error in errors))
+
+    def test_paid_publication_check_rejects_fallback_and_accepts_six_approved_desks(self) -> None:
+        """Design source: AGENTS.md and docs/production_runbook.md; paid output must be proven separately from fallback health."""
+        fallback_receipts = {
+            key: {
+                "mode": "deterministic_template",
+                "reporter_id": "front_office",
+                "assigned_reporter_id": key,
+                "publication_status": "approved",
+                "structured": {
+                    "headline": key,
+                    "lede": "A grounded fallback lead.",
+                    "thesis": "Use the evidence.",
+                    "what_changed": "The receipt boundary is explicit.",
+                    "action": "Open the Data Room.",
+                    "visual_brief": "Use accessible HTML evidence rails.",
+                    "fallback_schema_version": "deterministic_fallback_v2",
+                },
+            }
+            for key in ("daily_brief", "team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel")
+        }
+        payload = {"analysis": {"articleReceipts": fallback_receipts}}
+        fallback_errors = validate_paid_publication(payload)
+        self.assertTrue(any("is not automatic_llm" in error for error in fallback_errors))
+
+        paid_receipts = {
+            key: {
+                "mode": "automatic_llm",
+                "reporter_id": key,
+                "assigned_reporter_id": key,
+                "publication_status": "approved",
+                "structured": {
+                    "headline": key,
+                    "lede": "A grounded lead.",
+                    "thesis": "Use the evidence.",
+                    "what_changed": "The receipt boundary is explicit.",
+                    "action": "Open the Data Room.",
+                },
+            }
+            for key in fallback_receipts
+        }
+        self.assertEqual(validate_paid_publication({"analysis": {"articleReceipts": paid_receipts}}), [])
+
+        held = {"analysis": {"articleReceipts": {**paid_receipts, "daily_brief": {**paid_receipts["daily_brief"], "publication_status": "held"}}}}
+        self.assertTrue(any("is not approved" in error for error in validate_paid_publication(held)))
 
     def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
         self.assertEqual(

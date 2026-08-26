@@ -224,6 +224,45 @@ def _validate_publication_receipts(payload: dict) -> list[str]:
     return errors
 
 
+def validate_paid_publication(payload: dict) -> list[str]:
+    """Require a completed six-desk LLM publication for an explicit post-run check.
+
+    The normal authenticated smoke intentionally accepts deterministic fallback
+    because fallback is a valid degraded reader state.  A writer-run acceptance
+    check needs a stricter contract: every registered desk must be automatic LLM
+    output, approved for publication, and attributed to its assigned reporter
+    lens.  This is opt-in so a missing provider run cannot turn the ordinary
+    deployment health check into a false outage.
+    """
+
+    errors = _validate_publication_receipts(payload)
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), dict) else {}
+    for article_key in EXPECTED_ARTICLE_KEYS:
+        receipt = receipts.get(article_key)
+        if not isinstance(receipt, dict):
+            continue
+        mode = str(receipt.get("mode") or "").strip().lower()
+        if mode != "automatic_llm":
+            errors.append(f"paid publication receipt {article_key} is not automatic_llm")
+            continue
+        if str(receipt.get("publication_status") or "").strip().lower() != "approved":
+            errors.append(f"paid publication receipt {article_key} is not approved")
+        reporter_id = str(receipt.get("reporter_id") or "").strip().lower()
+        assigned_reporter_id = str(receipt.get("assigned_reporter_id") or "").strip().lower()
+        if not reporter_id or reporter_id == "front_office":
+            errors.append(f"paid publication receipt {article_key} has no named reporter attribution")
+        if not assigned_reporter_id:
+            errors.append(f"paid publication receipt {article_key} has no assigned reporter lens")
+        editorial_review = receipt.get("editorial_review")
+        if isinstance(editorial_review, dict):
+            if str(editorial_review.get("status") or "").strip().lower() != "approved":
+                errors.append(f"paid publication receipt {article_key} is not desk-approved")
+        elif str(receipt.get("editor_mode") or "").strip().lower() == "llm":
+            errors.append(f"paid publication receipt {article_key} is missing its editor receipt")
+    return errors
+
+
 def validate_edition_manifest(payload: dict, expected_revision: str = "") -> list[str]:
     """Ensure the HTML shell's manifest is bound to the revision being checked."""
 
@@ -402,6 +441,14 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
             expected_revision=os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip(),
             expected_league_id=league_id,
         )
+        require_paid = os.environ.get("FRONT_OFFICE_REQUIRE_LLM_PUBLICATION", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if require_paid:
+            bundle_errors.extend(validate_paid_publication(bundle_payload))
         if bundle_errors:
             raise SystemExit(
                 f"Authenticated smoke failed for {base_url}{league_link}data/app_bundle.json: {'; '.join(bundle_errors)}"

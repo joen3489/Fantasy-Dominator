@@ -81,6 +81,15 @@ migration when explicitly configured.
    interrupted. Retry on the stable revision only after the owner is actually
    gone and the receipt is terminal.
 
+   A terminal writer receipt is still not proof that paid copy was printed.
+   For the post-run acceptance check, set
+   `FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1` alongside the expected revision and
+   authenticated session token before running `scripts\smoke_live.py`. That
+   stricter mode requires all six registered desks to be automatic LLM output,
+   approved for publication, and attributed to a named assigned reporter. The
+   ordinary smoke remains fallback-tolerant so provider degradation is visible
+   without making the reader unavailable.
+
 ## Data lifecycle
 
 The data room has two intentionally different build paths:
