@@ -10,6 +10,16 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-26 - Make the universal price question explicit
+
+The Four-Window Market Board now has a dedicated Market Price view. It sorts
+by canonical `market_value` across positions and places rows without a usable
+price after priced rows. The four clock scores remain visible as
+position-relative percentiles, so the reader can answer “who is priced higher?”
+without confusing that question with weekly utility, strategy fit, or a
+same-position repricing lead. This is a presentation path over existing market
+receipts, not a new valuation formula.
+
 ## 2026-08-26 - Availability must travel with projection baselines
 
 The projection model intentionally preserves historical production when a

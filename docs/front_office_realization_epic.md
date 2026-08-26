@@ -1839,3 +1839,14 @@ through the published table, and fails closed when the requested scope is not
 present. The Data Room filters the disagreement view to the selected roster's
 player IDs through the same current-league helper. This is a scope repair over
 existing usage scores, not a new ranking formula.
+
+## 2026-08-26 cross-position market-price view
+
+The Four-Window Market Board now has a separate Market Price view that sorts by
+the canonical cross-position `market_value` anchor. The view keeps the four
+clock scores visible as secondary, position-relative percentiles and sends
+unpriced rows to the bottom rather than letting missing values sort as leaders.
+This gives the manager a direct answer to “who is actually priced higher?” while
+preserving the separate questions of weekly utility, season value, dynasty
+window, fit, and repricing. It does not create a fifth score or reinterpret a
+clock percentile as a universal market ranking.

@@ -1705,6 +1705,7 @@ def _page(
         <button class="horizon-view" data-horizon-view="dynasty" type="button">Dynasty / career</button>
         <button class="horizon-view" data-horizon-view="fit" type="button">Contender vs rebuilder</button>
         <button class="horizon-view" data-horizon-view="repricing" type="button">Repricing leads</button>
+        <button class="horizon-view" data-horizon-view="market_price" type="button">Market price</button>
       </div>
       <p id="horizon-view-note" class="horizon-view-note">All clocks: use this when you want the full player card. Scores remain position-relative percentiles; market value is the cross-position price anchor.</p>
       <div class="controls">
@@ -2058,7 +2059,7 @@ def _page(
       populateSelect('signal-label-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.signal_label)).sort()]);
       populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
       populateSelect('horizon-lane-filter', ['ALL', ...unique(tables.player_horizon_market_scores.map(row => row.value_lane)).sort()]);
-      populateSelect('horizon-sort-filter', ['team_fit', 'rebuilder_contender_spread', 'market_disagreement', 'market_lead', 'market_lag', 'next_game_market_score', 'rest_of_season_market_score', 'dynasty_market_score', 'career_projection_score']);
+      populateSelect('horizon-sort-filter', ['team_fit', 'rebuilder_contender_spread', 'market_value', 'market_disagreement', 'market_lead', 'market_lag', 'next_game_market_score', 'rest_of_season_market_score', 'dynasty_market_score', 'career_projection_score']);
       populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
       renderMarketLensPresetButtons();
       bindControls();
@@ -2299,7 +2300,8 @@ def _page(
             rest_of_season: 'rest_of_season_market_score',
             dynasty: 'dynasty_market_score',
             fit: 'team_fit',
-            repricing: 'market_disagreement'
+            repricing: 'market_disagreement',
+            market_price: 'market_value'
           }}[state.horizonView] || 'team_fit';
           state.horizonSort = defaultSort;
           syncControls();
@@ -3028,6 +3030,15 @@ def _page(
       if (state.horizonLane !== 'ALL') rows = rows.filter(row => row.value_lane === state.horizonLane);
       const sortKey = state.horizonSort || 'team_fit';
       rows = applySearch(rows);
+      if (sortKey === 'market_value') {{
+        const priced = rows.filter(row => Number.isFinite(Number(row.market_value)) && Number(row.market_value) > 0)
+          .slice()
+          .sort((left, right) => (Number(right.market_value) - Number(left.market_value)) || String(left.player_name || '').localeCompare(String(right.player_name || '')));
+        const unpriced = rows.filter(row => !Number.isFinite(Number(row.market_value)) || Number(row.market_value) <= 0)
+          .slice()
+          .sort((left, right) => String(left.player_name || '').localeCompare(String(right.player_name || '')));
+        return [...priced, ...unpriced].slice(0, 80);
+      }}
       // Every horizon score is position-relative. Keep the board grouped and
       // sorted inside position so a QB percentile can never masquerade as a
       // universal price or league-wide player ranking.
@@ -3221,6 +3232,10 @@ def _page(
         repricing: {{
           label: 'Repricing leads',
           note: 'Where does a decision clock differ from the same-position market percentile? Positive and negative deltas are research leads, not proven mispricing.'
+        }},
+        market_price: {{
+          label: 'Market price',
+          note: 'How does the canonical cross-position market anchor compare? This view sorts by market value; the other scores remain position-relative percentiles.'
         }}
       }};
       return definitions[state.horizonView] || definitions.all;
@@ -3230,6 +3245,9 @@ def _page(
       const view = state.horizonView || 'all';
       const marketAnchor = `market value ${{horizonScoreValue(row.market_value)}} · market percentile ${{horizonScoreValue(row.market_percentile)}}`;
       const opponent = row.next_game_opponent ? `vs ${{row.next_game_opponent}} (${{row.next_game_home_away || 'game'}})` : 'opponent unavailable';
+      if (view === 'market_price') {{
+        return `<div class="horizon-market-primary"><div><strong>Cross-position market price</strong><p>${{escapeHtml(marketAnchor)}} · ${{escapeHtml(row.market_source_confidence || 'confidence unavailable')}} consensus from ${{escapeHtml(horizonScoreValue(row.market_source_count))}} source(s)</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.market_value))}}<small>market value</small></div></div><p class="brief-card-evidence"><strong>Clock context:</strong> this week ${{escapeHtml(horizonScoreValue(row.next_game_market_score))}} · rest of season ${{escapeHtml(horizonScoreValue(row.rest_of_season_market_score))}} · dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_market_score))}} · career window ${{escapeHtml(horizonScoreValue(row.career_projection_score))}}. These are position-relative percentiles, not additional prices.</p>`;
+      }}
       if (view === 'this_week') {{
         return `<div class="horizon-market-primary"><div><strong>This week's utility</strong><p>${{escapeHtml(opponent)}} · expected ${{escapeHtml(horizonScoreValue(row.next_game_expected_points))}} points vs baseline ${{escapeHtml(horizonScoreValue(row.next_game_baseline_points))}} · ${{escapeHtml(row.next_game_status || 'availability unavailable')}}</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.next_game_market_score))}}<small>position percentile</small></div></div><p class="brief-card-evidence"><strong>Clock vs market:</strong> ${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}} points of percentile difference · ${{escapeHtml(marketAnchor)}}. Matchup factor ${{escapeHtml(horizonScoreValue(row.next_game_matchup_factor))}} (${{escapeHtml(row.next_game_matchup_adjustment_status || 'unavailable')}}).</p>`;
       }}
@@ -3297,9 +3315,11 @@ def _page(
         if (!grouped.has(position)) grouped.set(position, []);
         grouped.get(position).push(row);
       }});
-      const sections = [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0])).map(([position, positionRows]) =>
-        `<section class="horizon-position-section"><h4>${{escapeHtml(position)}} <span class="note">· comparisons within position</span></h4><div class="horizon-market-list">${{positionRows.map((row, index) => horizonMarketCard(row, index)).join('')}}</div></section>`
-      ).join('');
+      const sections = state.horizonView === 'market_price'
+        ? `<section class="horizon-position-section"><h4>All positions <span class="note">· sorted by canonical cross-position market value</span></h4><div class="horizon-market-list">${{rows.map((row, index) => horizonMarketCard(row, index)).join('')}}</div></section>`
+        : [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0])).map(([position, positionRows]) =>
+          `<section class="horizon-position-section"><h4>${{escapeHtml(position)}} <span class="note">· comparisons within position</span></h4><div class="horizon-market-list">${{positionRows.map((row, index) => horizonMarketCard(row, index)).join('')}}</div></section>`
+        ).join('');
       document.getElementById('horizon-market-board').innerHTML = rows.length
         ? sections
         : '<p class="note">No horizon rows match this scope and lane. Check the refresh receipt before treating the market as empty.</p>';

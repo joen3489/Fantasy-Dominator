@@ -1445,3 +1445,10 @@ current season and league before attaching roster identity. The output carries
 joins, and the Data Room's usage/output disagreement question uses the exact
 selected-roster player set. This keeps a deep historical archive from leaking
 an arbitrary team label into a current signal.
+
+2026-08-26 market-price presentation amendment: the Four-Window Market Board
+now includes an explicit cross-position Market Price view. It sorts by the
+canonical `market_value` anchor, keeps missing prices below priced rows, and
+labels the four clock values as secondary position-relative percentiles. This
+separates the universal price question from the clock and roster-fit questions
+without adding another valuation formula.
