@@ -2344,6 +2344,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("transaction_timeline", html)
         self.assertIn("Breakout Candidates", html)
         self.assertIn("Sell Candidates", html)
+        self.assertIn("not market prices or universal player rankings", html)
         self.assertIn("Projection Market Gaps", html)
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)

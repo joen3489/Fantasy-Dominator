@@ -1755,6 +1755,7 @@ def _page(
         <label>Label<select id="signal-label-filter"></select></label>
         <label>Confidence<select id="signal-confidence-filter"></select></label>
       </div>
+      <p class="note">Breakout and sell scores are deterministic tactical screens built from projection, role, age, news, opportunity, and roster context. They are not market prices or universal player rankings; compare the underlying player, position, decision horizon, availability, and evidence before treating a row as an action.</p>
       <div class="grid">
         <div class="panel"><h3>Breakout Candidates</h3><div id="signal-breakouts"></div></div>
         <div class="panel"><h3>Sell Candidates</h3><div id="signal-sells"></div></div>
