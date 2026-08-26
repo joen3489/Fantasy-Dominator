@@ -1204,6 +1204,24 @@ def _page(
       gap: 10px;
       align-items: start;
     }}
+    .manager-dossier-index {{
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }}
+    .manager-dossier-index > summary {{
+      grid-column: 1 / -1;
+      cursor: pointer;
+      list-style-position: outside;
+    }}
+    .manager-dossier-index[open] > summary {{ margin-bottom: 2px; }}
+    .manager-dossier-index > .button-link {{ justify-self: start; }}
+    .brief-card-top {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
     .brief-card.cat-buy {{ border-left-color: var(--buy); }}
     .brief-card.cat-sell {{ border-left-color: var(--sell); }}
     .brief-card.cat-hold {{ border-left-color: var(--hold); }}
