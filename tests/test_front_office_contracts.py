@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src import articles, operator
@@ -12,6 +14,34 @@ from src.editorial import review_publication_article
 
 
 class FrontOfficeContractsTests(unittest.TestCase):
+    def test_persisted_running_status_fails_closed_after_process_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            status_dir = Path(tmp) / "operator" / "status"
+            status_path = status_dir / "operator_status.json"
+            status_dir.mkdir(parents=True)
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "state": "running",
+                        "job": "generate-insights",
+                        "message": "generate-insights started.",
+                        "updated_at": "2026-08-26T12:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(operator, "STATUS_PATH", status_path), patch.object(
+                operator, "OPERATOR_STATUS_DIR", status_dir
+            ), patch.object(operator, "_ACTIVE_JOB", False):
+                recovered = operator.status()
+
+            self.assertEqual(recovered["state"], "failed")
+            self.assertTrue(recovered["recovered_from_restart"])
+            self.assertIn("interrupted", recovered["message"])
+            saved = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["state"], "failed")
+
     def test_evidence_packet_labels_source_quality_and_interpretation_boundary(self) -> None:
         """Encodes docs/front_office_realization_epic.md Workstream 2 and AGENTS.md evidence rules."""
         packet = articles._evidence(

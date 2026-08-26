@@ -137,6 +137,17 @@ class MultiLeagueLayerTests(unittest.TestCase):
                 ):
                     self.assertTrue(path.is_dir())
 
+    def test_user_paths_keep_aggregate_operator_receipts_outside_league_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            users_root = Path(tmp) / "data" / "users"
+            with patch("src.league_paths.USERS_ROOT", users_root):
+                paths = LeaguePaths.for_user("101")
+
+            self.assertEqual(paths.root, users_root / "101")
+            self.assertEqual(paths.league_id, "__user__")
+            self.assertEqual(paths.operator_status_dir, users_root / "101" / "operator" / "status")
+            self.assertEqual(paths.user_id, "101")
+
     def test_discover_leagues_resolves_user_roster_and_type(self) -> None:
         api = MagicMock()
         api.user.return_value = {"user_id": "user-1"}
@@ -2280,6 +2291,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
+        self.assertEqual(
+            start_job.call_args.kwargs["paths"],
+            LeaguePaths.for_user(str(self._user_id("user_refresh"))),
+        )
 
     def test_targeted_refresh_endpoint_queues_owned_league_refresh(self) -> None:
         token = self._token("user_targeted_refresh")
@@ -2296,6 +2311,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         start_job.assert_called_once()
         self.assertEqual(start_job.call_args.args[0], "refresh")
+        self.assertEqual(
+            start_job.call_args.kwargs["paths"],
+            LeaguePaths.for_user_league(str(user_id), "targeted"),
+        )
 
     def test_league_readiness_reports_building_then_failed(self) -> None:
         token = self._token("user_readiness")

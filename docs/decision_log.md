@@ -1713,3 +1713,14 @@ validated reporter draft but records a held editor receipt instead of silently
 leaving the prior deterministic publication in place. The reader can therefore
 distinguish an approved article, an evidence-led fallback, and a draft waiting
 for editor review; a failed provider cannot masquerade as editorial approval.
+
+## 2026-08-26 - Aggregate job state must stay inside the user boundary
+
+Unscoped refresh and all-edition writer actions previously wrote one legacy
+global operator status file, while the authenticated headquarters summarized
+per-user league status files. That mismatch could leave a user's interface
+stuck on `Refreshing` or make an aggregate run invisible to its own status
+poller. Aggregate receipts now live under the authenticated user's workspace,
+and a persisted `running` receipt is converted to an explicit interrupted
+failure after a process restart so a daemon restart cannot permanently block
+the next run. League-scoped jobs continue to use their exact league workspace.

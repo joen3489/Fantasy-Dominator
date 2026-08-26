@@ -278,6 +278,7 @@ def create_app() -> FastAPI:
         return front_operator.start_job(
             "refresh",
             lambda: _refresh_job(None, user_id),
+            paths=_operator_paths_for_user(user_id),
         )
 
     @app.post("/api/leagues/{league_id}/refresh")
@@ -290,6 +291,7 @@ def create_app() -> FastAPI:
         return front_operator.start_job(
             "refresh",
             lambda: _refresh_and_rebuild_league(league, user_id),
+            paths=_private_paths(user_id, str(league["league_id"])),
         )
 
     @app.post("/api/leagues/{league_id}/toggle")
@@ -587,22 +589,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="operator action not found")
         _require_operator_access(request)
         league = _owned_enabled_league(user, body.league_id if body else None) if body and body.league_id else None
-        paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
+        user_id = int(user["id"])
+        paths = _private_paths(user_id, str(league["league_id"])) if league else _operator_paths_for_user(user_id)
         if action == "refresh":
             return front_operator.start_job(
                 "refresh",
-                lambda: _refresh_job(league, int(user["id"])),
+                lambda: _refresh_job(league, user_id),
                 paths=paths,
             )
         if action == "generate-insights":
             return front_operator.start_job(
                 "generate-insights",
-                lambda: _generate_insights_job(league, int(user["id"])),
+                lambda: _generate_insights_job(league, user_id),
                 paths=paths,
             )
         return front_operator.start_job(
             "rebuild-browser",
-            lambda: _rebuild_browser_job(league, int(user["id"])),
+            lambda: _rebuild_browser_job(league, user_id),
             paths=paths,
         )
 
@@ -797,6 +800,12 @@ def _owned_enabled_league(user: dict[str, Any], league_id: str | None) -> dict[s
 
 def _private_paths(user_id: int | str, league_id: str) -> LeaguePaths:
     return LeaguePaths.for_user_league(str(user_id), str(league_id))
+
+
+def _operator_paths_for_user(user_id: int | str) -> LeaguePaths:
+    """Keep aggregate job receipts private to the authenticated Clerk user."""
+
+    return LeaguePaths.for_user(str(user_id))
 
 
 def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) -> LeaguePaths:
@@ -1995,7 +2004,7 @@ def _legacy_config() -> dict[str, Any]:
 def _safe_operator_status(payload: dict[str, Any]) -> dict[str, Any]:
     """Keep authenticated status useful without returning host filesystem details."""
 
-    private_fields = {"packet_path", "output_path", "validated_path", "site_path", "traceback"}
+    private_fields = {"packet_path", "output_path", "validated_path", "site_path", "traceback", "owner_pid"}
     return {key: value for key, value in payload.items() if key not in private_fields}
 
 
@@ -2029,6 +2038,9 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "reader_bundle": _reader_bundle_receipt(user_id, league),
         }
 
+    aggregate_status = _safe_operator_status(
+        front_operator.status(_operator_paths_for_user(user_id))
+    )
     statuses = []
     for league in db.list_user_leagues(user_id):
         if not int(league.get("enabled")):
@@ -2039,24 +2051,27 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         )
     if not statuses:
         return {
-            "state": "idle",
-            "message": "No enabled league workspaces yet.",
+            "state": aggregate_status.get("state") or "idle",
+            "message": aggregate_status.get("message") or "No enabled league workspaces yet.",
             "leagues": [],
-            "operator_enabled": front_operator.operator_enabled(),
+            "operator_enabled": bool(aggregate_status.get("operator_enabled", front_operator.operator_enabled())),
         }
-    if any(item.get("state") == "running" for item in statuses):
+    all_statuses = [aggregate_status, *statuses]
+    if any(item.get("state") == "running" for item in all_statuses):
         state = "running"
-    elif any(item.get("state") == "failed" for item in statuses):
+    elif any(item.get("state") == "failed" for item in all_statuses):
         state = "failed"
-    elif any(item.get("state") == "complete" for item in statuses):
+    elif any(item.get("state") == "complete" for item in all_statuses):
         state = "complete"
     else:
         state = "idle"
     return {
         "state": state,
+        "job": aggregate_status.get("job", ""),
+        "message": aggregate_status.get("message", ""),
         "leagues": statuses,
-        "updated_at": max(item.get("updated_at", "") for item in statuses),
-        "operator_enabled": any(bool(item.get("operator_enabled")) for item in statuses),
+        "updated_at": max(item.get("updated_at", "") for item in all_statuses),
+        "operator_enabled": any(bool(item.get("operator_enabled")) for item in all_statuses),
     }
 
 

@@ -207,7 +207,7 @@ def status(paths: LeaguePaths | None = None) -> dict[str, Any]:
             try:
                 payload = load_json(status_path)
                 if isinstance(payload, dict):
-                    return payload
+                    return _reconcile_interrupted_status(status_path, payload)
             except (OSError, json.JSONDecodeError):
                 pass
         return _base_status("idle", "Operator loop is ready.", paths=paths)
@@ -216,7 +216,7 @@ def status(paths: LeaguePaths | None = None) -> dict[str, Any]:
         try:
             payload = load_json(STATUS_PATH)
             if isinstance(payload, dict):
-                return payload
+                return _reconcile_interrupted_status(STATUS_PATH, payload)
         except (OSError, json.JSONDecodeError):
             pass
     return _base_status("idle", "Operator loop is ready.")
@@ -1890,11 +1890,30 @@ def _base_status(
         "job": job,
         "message": message,
         "updated_at": _now(),
+        "owner_pid": os.getpid(),
         "operator_enabled": operator_enabled(),
         "packet_path": str(packet_path.as_posix()),
         "output_path": str(output_path.as_posix()),
         "validated_path": str(validated_path.as_posix()),
     }
+
+
+def _reconcile_interrupted_status(status_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Fail closed when a daemon job left a running receipt after process exit."""
+
+    if payload.get("state") != "running" or _ACTIVE_JOB:
+        return payload
+    recovered = dict(payload)
+    recovered.update(
+        {
+            "state": "failed",
+            "message": "The previous operator job was interrupted before completion; retry the run.",
+            "updated_at": _now(),
+            "recovered_from_restart": True,
+        }
+    )
+    _write_json(status_path, recovered)
+    return recovered
 
 
 def _safe_json(path: Path) -> dict[str, Any]:

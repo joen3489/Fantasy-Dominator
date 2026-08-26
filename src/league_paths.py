@@ -100,6 +100,29 @@ class LeaguePaths:
         )
 
     @classmethod
+    def for_user(cls, user_id: str | int) -> LeaguePaths:
+        """Return the private user workspace used for aggregate job receipts."""
+
+        safe_user_id = _safe_component(str(user_id), "user")
+        root = USERS_ROOT / safe_user_id
+        operator_dir = root / "operator"
+        return cls(
+            league_id="__user__",
+            root=root,
+            raw_dir=root / "raw",
+            raw_external_dir=RAW_EXTERNAL_DIR,
+            processed_dir=root / "processed",
+            cache_dir=root / "cache",
+            reports_dir=root / "reports",
+            site_dir=root / "site",
+            analysis_dir=root / "analysis",
+            operator_inbox_dir=operator_dir / "inbox",
+            operator_outbox_dir=operator_dir / "outbox",
+            operator_status_dir=operator_dir / "status",
+            user_id=safe_user_id,
+        )
+
+    @classmethod
     def default(cls) -> LeaguePaths:
         return cls(
             league_id="default",
