@@ -1979,3 +1979,13 @@ used the intended writer model. The ordinary smoke remains fallback-tolerant so
 a degraded provider does not erase the evidence-backed reader. This
 distinguishes a terminal writer process from proof that paid copy was actually
 printed.
+
+## 2026-08-26 Team Pulse availability aggregation repair
+
+The player-level availability contract was correct, but the front-page Team
+Pulse still summed conditional historical baselines into one generic `Baseline
+PPG` fact and treated any nonempty injury field as an injury. The panel now
+joins the exact current-season roster receipt before classifying rows, presents
+current-role baseline PPG separately from conditional history PPG, and counts
+only real `injury_*` statuses. This keeps aggregate media summaries from
+undoing the row-level protection against the Hill/Mixon regression.

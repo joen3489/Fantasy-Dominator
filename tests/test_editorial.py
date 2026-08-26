@@ -7,6 +7,62 @@ from src.editorial_ui import inject_editorial_facade
 
 
 class EditorialIssueTests(unittest.TestCase):
+    def test_team_pulse_separates_current_role_and_conditional_history_baselines(self) -> None:
+        """Design source: AGENTS.md and docs/data_contract.md availability boundary."""
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-01T16:48:16+00:00", "current_season": "2026"}],
+                "roster_players": [
+                    {
+                        "season": "2026",
+                        "league_id": "league-1",
+                        "roster_id": "2",
+                        "player_id": "active",
+                        "nfl_team": "WAS",
+                        "availability_scope": "current_season_snapshot",
+                        "injury_status": "Active",
+                        "roster_status": "starter",
+                    },
+                    {
+                        "season": "2026",
+                        "league_id": "league-1",
+                        "roster_id": "2",
+                        "player_id": "injured",
+                        "nfl_team": "BAL",
+                        "availability_scope": "current_season_snapshot",
+                        "injury_status": "Questionable",
+                        "roster_status": "starter",
+                    },
+                    {
+                        "season": "2026",
+                        "league_id": "league-1",
+                        "roster_id": "2",
+                        "player_id": "free-agent",
+                        "nfl_team": "",
+                        "availability_scope": "current_season_snapshot",
+                        "injury_status": "",
+                        "roster_status": "bench",
+                    },
+                ],
+                "player_dossiers": [
+                    {"season": "2026", "league_id": "league-1", "roster_id": "2", "player_id": "active", "projected_ppg": "20"},
+                    {"season": "2026", "league_id": "league-1", "roster_id": "2", "player_id": "injured", "projected_ppg": "15"},
+                    {"season": "2026", "league_id": "league-1", "roster_id": "2", "player_id": "free-agent", "projected_ppg": "14"},
+                ],
+            },
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="My Team",
+        )
+
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "team_pulse")
+        facts = {fact["label"]: fact["value"] for fact in panel["facts"]}
+        self.assertEqual(facts["Current-role baseline PPG"], 35.0)
+        self.assertEqual(facts["Conditional history PPG"], 14.0)
+        self.assertEqual(facts["Injury flags"], 1)
+        self.assertIn("1 without a current NFL team", panel["dek"])
+        self.assertIn("excludes players without a current NFL team", panel["uncertainty"])
+
     def test_issue_prioritizes_my_team_and_keeps_claim_evidence(self) -> None:
         tables = {
             "refresh_metadata": [{"generated_at": "2026-08-01T16:48:16+00:00", "current_season": "2026"}],

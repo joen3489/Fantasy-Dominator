@@ -11,7 +11,7 @@ cannot remove the evidence, source trace, confidence, or risk that came with the
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from .availability import baseline_ppg_label
+from .availability import baseline_ppg_label, current_availability_status
 from .personas import front_office_metadata, persona_metadata, reporter_lineup
 
 
@@ -296,11 +296,34 @@ def _team_pulse_panel(
         if _same_id(row.get("roster_id"), my_roster_id)
         and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
     ]
-    injury_count = sum(1 for row in roster if _text(row.get("injury_status")))
+    injury_count = sum(
+        1 for row in roster if current_availability_status(row).startswith("injury_")
+    )
+    no_current_team_count = sum(
+        1 for row in roster if current_availability_status(row) == "no_current_nfl_team"
+    )
     starter_count = sum(1 for row in roster if _text(row.get("roster_status")).lower() == "starter")
     market_rows = [row for row in dossiers if _text(row.get("market_value"))]
-    projected_rows = [row for row in dossiers if _text(row.get("projected_ppg"))]
-    baseline_ppg = sum(_number(row.get("projected_ppg")) for row in projected_rows)
+    roster_by_player = {
+        _text(row.get("player_id")): row
+        for row in roster
+        if _text(row.get("player_id"))
+    }
+    projected_rows = [
+        {**row, **roster_by_player.get(_text(row.get("player_id")), {})}
+        for row in dossiers
+        if _text(row.get("projected_ppg"))
+    ]
+    current_role_rows = [
+        row
+        for row in projected_rows
+        if current_availability_status(row) not in {"no_current_nfl_team", "historical_unavailable"}
+    ]
+    conditional_history_rows = [
+        row for row in projected_rows if current_availability_status(row) == "no_current_nfl_team"
+    ]
+    current_role_ppg = sum(_number(row.get("projected_ppg")) for row in current_role_rows)
+    conditional_history_ppg = sum(_number(row.get("projected_ppg")) for row in conditional_history_rows)
     dossier_by_player = {str(row.get("player_id")): row for row in dossiers if _text(row.get("player_id"))}
     items: list[dict[str, Any]] = []
     for row in sorted(news, key=lambda item: _text(item.get("published_at")), reverse=True)[:2]:
@@ -336,18 +359,30 @@ def _team_pulse_panel(
         "title": my_team_name or "Your team",
         "dek": (
             f"{len(roster)} current-season roster rows, {injury_count} with a current Sleeper injury flag, "
-            f"and {len(news)} linked news signal{'s' if len(news) != 1 else ''}."
+            f"{no_current_team_count} without a current NFL team, and {len(news)} linked news signal{'s' if len(news) != 1 else ''}."
         ),
         "facts": [
             {"label": "Starters", "value": starter_count},
             {"label": "Market rows", "value": f"{len(market_rows)}/{len(roster)}"},
-            {"label": "Baseline PPG", "value": round(baseline_ppg, 2) if projected_rows else "n/a"},
+            {
+                "label": "Current-role baseline PPG",
+                "value": round(current_role_ppg, 2) if current_role_rows else "n/a",
+            },
+            {
+                "label": "Conditional history PPG",
+                "value": round(conditional_history_ppg, 2) if conditional_history_rows else "0",
+            },
+            {"label": "Injury flags", "value": injury_count},
             {"label": "Season", "value": current_season or "current"},
         ],
         "items": items,
         "route": "#view-my-team",
         "route_label": "Open My Team",
-        "uncertainty": "Roster facts are exact; baseline projections do not adjust for availability unless explicitly stated.",
+        "uncertainty": (
+            "Roster facts are exact. Current-role baseline PPG excludes players without a current NFL team; "
+            "conditional history PPG remains research context and is not current-role production. Injury-limited "
+            "baselines remain conditional on being active."
+        ),
         "source_trace": "roster_players;player_dossiers;league_news_impact",
         "tone": "team",
     }

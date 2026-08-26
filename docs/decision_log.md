@@ -2043,3 +2043,14 @@ labels opportunity, production, role, and market signals as historical or
 baseline when current availability limits their immediate use. This keeps a
 player page useful without making a historical signal look like a current
 weekly recommendation.
+
+## 2026-08-26 - Team Pulse totals must preserve availability semantics
+
+The front-page Team Pulse was still aggregating every rostered `projected_ppg`
+value into one unlabeled total. That made a player with no current NFL team
+look like current production, even though the player-level card correctly
+called the baseline conditional on signing. The panel now separates
+current-role baseline PPG from conditional historical PPG, and counts only
+actual `injury_*` statuses as injury flags; neutral values such as `Active` do
+not inflate the injury count. Aggregate summaries must preserve the same
+availability boundary as their row-level evidence.
