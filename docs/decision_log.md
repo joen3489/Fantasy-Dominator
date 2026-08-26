@@ -1833,3 +1833,15 @@ low-value assets on the selected roster as owner-only watch rows, and excludes
 those non-current-role rows from the action-preview board. The gap ledger still
 keeps them inspectable for dynasty research; it no longer turns a historical
 baseline into a current trade conversation.
+
+## 2026-08-26 - Persist writer-run truth across homepage reloads
+
+The writer controls previously showed live progress only in the browser tab
+that initiated the request. A reload could therefore show the old `0/6`
+fallback while a paid run was active, or leave the manager unable to tell an
+interrupted run from a run that never started. The homepage now selects the
+authenticated user's persisted writer status for the focused league and
+renders active progress plus terminal interruption/failure state. Aggregate
+all-edition runs use the user-scoped receipt. These statuses are operational
+receipts only; a current article receipt bound to the reader bundle is still
+required before content is called published.

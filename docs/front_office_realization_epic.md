@@ -1780,3 +1780,15 @@ The regenerated local evidence now shows Tyreek Hill and Joe Mixon as
 conditional historical baselines, while Jayden Daniels remains available and
 Jalen Nailor remains a low-production, market-rich watch rather than a top
 asset.
+
+## 2026-08-26 writer receipt reload checkpoint
+
+The headquarters now renders the selected league's persisted writer-run
+checkpoint after a page reload, including active desk progress and explicit
+terminal interruption/failure language. User-scoped all-edition runs use the
+aggregate receipt while they are active or terminal, because their work is
+not owned by one selected league. This keeps a cost-incurring run visible
+without treating an in-progress checkpoint as publication: the current
+article/editor receipts and bundle revision remain the only proof that copy
+was printed. The behavior is covered by selected-league and all-edition
+entry-path tests and has passed the public production smoke gate.

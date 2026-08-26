@@ -210,6 +210,15 @@ def create_app() -> FastAPI:
             ),
             {},
         )
+        aggregate_writer_status = user_operator_status
+        if (
+            aggregate_writer_status.get("job") == "generate-insights"
+            and aggregate_writer_status.get("state") in {"running", "complete", "partial", "failed"}
+        ):
+            # An all-edition run is stored at the user scope, so it has no
+            # reliable per-league receipt to select while the aggregate job
+            # is active or at its terminal state.
+            selected_operator_status = aggregate_writer_status
         return templates.TemplateResponse(
             request,
             "home.html",
@@ -2112,7 +2121,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         state = "complete"
     else:
         state = "idle"
-    return {
+    summary = {
         "state": state,
         "job": aggregate_status.get("job", ""),
         "message": aggregate_status.get("message", ""),
@@ -2120,6 +2129,27 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         "updated_at": max(item.get("updated_at", "") for item in all_statuses),
         "operator_enabled": any(bool(item.get("operator_enabled")) for item in all_statuses),
     }
+    for field in (
+        "run_id",
+        "started_at",
+        "stage",
+        "last_stage",
+        "league_id",
+        "league_name",
+        "provider",
+        "model",
+        "reasoning_effort",
+        "editor_mode",
+        "timeout_seconds",
+        "completed_count",
+        "total_count",
+        "current_article",
+        "current_reporter",
+        "articles",
+    ):
+        if field in aggregate_status:
+            summary[field] = aggregate_status[field]
+    return summary
 
 
 def _continuity_view(user_id: int) -> dict[str, Any]:

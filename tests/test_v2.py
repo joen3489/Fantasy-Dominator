@@ -688,6 +688,39 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('class="writer-status error"', response.text)
         self.assertIn("Last writer run: The previous operator job was interrupted before completion; retry the run.", response.text)
 
+    def test_home_surfaces_user_scoped_all_edition_writer_run(self) -> None:
+        """Design source: AGENTS.md; aggregate runs must not disappear on a selected league page."""
+
+        token = self._token("user_all_writer_status_home")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_all_writer_status_home")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "all-writer-status", "season": "2026", "league_type": "dynasty", "name": "All Writer Status", "roster_id": 1},
+        )
+        aggregate_running = {
+            "state": "running",
+            "job": "generate-insights",
+            "message": "Writing the newsroom for All Writer Status.",
+            "updated_at": "2026-08-26T18:00:00+00:00",
+            "operator_enabled": True,
+        }
+        league_idle = {
+            "state": "idle",
+            "job": "",
+            "message": "Operator loop is ready.",
+            "updated_at": "2026-08-26T18:00:00+00:00",
+            "operator_enabled": True,
+        }
+        with patch("app.main.front_operator.status", side_effect=[aggregate_running, league_idle]):
+            response = self.client.get(
+                "/?league_id=all-writer-status",
+                cookies={"__session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Writing the newsroom for All Writer Status.", response.text)
+
     def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
         clerk_token = self._token("user_two_league_profiles")
         self.client.get("/", cookies={"__session": clerk_token})
