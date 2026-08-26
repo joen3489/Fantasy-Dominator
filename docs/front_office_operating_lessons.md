@@ -191,15 +191,16 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-As of 2026-08-26, `9feb8483966398e01ac40011c94b54616fc5e849` is the live
-`main` revision. Railway health reports the production configuration as
-deployment-ready, with durable storage/database continuity, protected operator
-writes, and OpenAI `gpt-5.6-luna`; public revision-aware smoke passes. The
-authenticated reader and writer receipt are still an open verification
-boundary in this work session because no current Fantasy Dominator Clerk
-session is available in the connected browser. Do not turn the public health
-result into a claim that the user's private league identity, exact roster, or
-latest article publication was verified.
+As of 2026-08-26, `8da47cd8d1945f70e0423f8997a4e4d95543f710` is the verified live
+`main` revision. Railway health/public smoke report the production
+configuration as deployment-ready, with durable storage/database continuity,
+protected operator writes, and OpenAI `gpt-5.6-luna`; the authenticated reader
+and writer receipt are still an open verification boundary in this work session
+because no current Fantasy Dominator Clerk session is available in the
+connected browser. The local follow-up trust fix is committed as `f675f10` but
+is intentionally not deployed while the current writer run is in flight. Do
+not turn public health or smoke into a claim that the user's private league
+identity, exact roster, or latest article publication was verified.
 
 The protected Luna publication is a separate open boundary: deterministic
 fallback remains the honest reader state until the operator-authorized run
