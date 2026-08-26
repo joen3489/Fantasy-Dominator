@@ -1627,3 +1627,15 @@ lineup from the current article registry on every read, using writer
 preferences only when their profile roster ID matches the verified Sleeper
 roster. This repairs old bundles without inventing content, leaking another
 league's preferences, or requiring a paid writer run.
+
+## 2026-08-26 - Six-desk propagation is fixed; source-name sync remains open
+
+Commit `1ede08a` is live. The authenticated production facade now shows all
+six visible desks, including Market Clock Morgan, even when the persisted
+issue predates that desk. Public revision-aware smoke passes and the exact
+Dynasty roster remains verified. The same browser check still renders
+`Melkor Lord of Light` in the selected edition while the current source-backed
+roster data says `Lulu’s Potatoe’s`. The identity recheck returned `invalid
+session token`, so no production identity repair is claimed. A fresh Clerk
+session or an explicit source-name synchronization is still required before
+the edition can be called fully current.

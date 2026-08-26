@@ -507,3 +507,17 @@ persisted payload is repaired to six, including a scoped custom horizon lens.
 The source fix still requires a new Railway revision and the same authenticated
 recheck. Production writer output remains an explicit operation: `0/6`
 fallback is expected until the operator runs a paid generation request.
+
+## 2026-08-26 live boundary amendment after `1ede08a`
+
+Revision `1ede08ab1c377aaecd7eb3cd772b71b324befaec` is now live and
+revision-aware public smoke passes. A fresh authenticated page shows the
+current six-desk lineup, including Market Clock Morgan, with `0/6` fallback
+until an operator explicitly runs paid generation. The exact Dynasty roster
+receipt remains verified, but the visible label is still the historical
+`Melkor Lord of Light` instead of the current source-backed `Lulu’s Potatoe’s`.
+
+An attempted identity recheck was rejected by the current browser session as
+`invalid session token`; it is therefore not evidence of a successful Sleeper
+identity refresh. The name-sync boundary remains open and must be rechecked
+after a fresh Clerk session or repaired through a source-backed label path.
