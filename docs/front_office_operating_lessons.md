@@ -191,15 +191,14 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-As of 2026-08-26, `8da47cd8d1945f70e0423f8997a4e4d95543f710` is the verified live
+As of 2026-08-26, `2bde1abf94fceec4a88c6c024bb6699c927208fc` is the verified live
 `main` revision. Railway health/public smoke report the production
 configuration as deployment-ready, with durable storage/database continuity,
 protected operator writes, and OpenAI `gpt-5.6-luna`; the authenticated reader
 and writer receipt are still an open verification boundary in this work session
 because no current Fantasy Dominator Clerk session is available in the
-connected browser. The local follow-up trust fixes include `f675f10`,
-`1fd71d9`, `4e2a072`, `6a0bb71`, and `7af6e20`; they are intentionally not
-deployed while the current writer run is in flight. Do
+connected browser. The current-role writer-scope and availability-editor fixes
+are included in the live revision. Do
 not turn public health or smoke into a claim that the user's private league
 identity, exact roster, or latest article publication was verified.
 
@@ -666,8 +665,9 @@ active projection cohort or appear as current-role Cornerstones or Shop
 Candidates. The fallback report now carries separate counts for current-role
 and conditional baselines, and the signal row exposes
 `availability_conditioned_unavailable` when a current market gap cannot be
-trusted. This is implemented locally in `6a0bb71`; production verification and
-publication still require the current writer receipt and authenticated smoke.
+trusted. The safeguard is included in live revision
+`2bde1abf94fceec4a88c6c024bb6699c927208fc`; publication still requires the
+current writer receipt and authenticated smoke.
 
 ## 2026-08-26 - Writer scopes must inherit current-role action boundaries
 
