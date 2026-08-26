@@ -2055,6 +2055,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
             user_id,
             "content-league",
             "2026",
+            current_receipts={"team_report": {"mode": "automatic_llm", "content_hash": "content-1"}},
+            current_bundle_revision="bundle-current",
             expected_model="gpt-5.6-luna",
         )
         self.assertEqual(partial["state"], "partial")
@@ -2064,6 +2066,18 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(partial["last_generated_model"], "gpt-5.6-luna")
         self.assertEqual(partial["model_mismatch_count"], 0)
         self.assertEqual(partial["model_reconciliation"], "prior runs match configured model")
+
+        unverified = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            expected_model="gpt-5.6-luna",
+        )
+        self.assertEqual(unverified["state"], "unverified")
+        self.assertEqual(unverified["label"], "1/6 reporter articles · reader receipt unavailable")
+        self.assertEqual(unverified["generated_count"], 0)
+        self.assertEqual(unverified["unverified_keys"], ["team_report"])
+        self.assertFalse(unverified["receipt_verified"])
 
         stale_bundle = db.content_artifact_status(
             user_id,

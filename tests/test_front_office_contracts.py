@@ -28,6 +28,7 @@ class FrontOfficeContractsTests(unittest.TestCase):
                     model="gpt-5.6-luna",
                     reasoning_effort="max",
                     editor_mode="deterministic",
+                    writer_preferences={"article_reporters": {article.key: "quant"}},
                 )
                 receipt = json.loads(status_path.read_text(encoding="utf-8"))
 
@@ -38,6 +39,7 @@ class FrontOfficeContractsTests(unittest.TestCase):
             self.assertEqual(receipt["model"], "gpt-5.6-luna")
             self.assertEqual(receipt["reasoning_effort"], "max")
             self.assertIn("team_report", receipt["articles"])
+            self.assertEqual(receipt["current_reporter"]["persona_id"], "quant")
 
     def test_persisted_running_status_fails_closed_after_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

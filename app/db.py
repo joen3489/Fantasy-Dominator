@@ -1071,8 +1071,12 @@ def content_artifact_status(
     def is_current_generated(row: tuple[Any, ...]) -> bool:
         if str(row[1] or "").lower() != "generated":
             return False
+        # A database artifact is not proof that the reader is serving it. The
+        # manifest is the publication seam, so fail closed when it is absent.
+        # This keeps a stale/private DB receipt from making the headquarters
+        # call content "published" while its bundle is missing or rebuilding.
         if current_receipts is None:
-            return True
+            return False
         receipt = current_receipts.get(str(row[0])) or {}
         return (
             str(receipt.get("mode") or "").lower() == "automatic_llm"
@@ -1095,6 +1099,11 @@ def content_artifact_status(
         if str(row[2] or row[3] or "") and is_current_generated(row)
     ]
     generated_rows = [row for row in rows if str(row[1] or "").lower() == "generated"]
+    unverified_keys = {
+        str(row[0])
+        for row in generated_rows
+        if str(row[0]) in expected_keys
+    } if current_receipts is None else set()
     latest_generated_row = max(
         generated_rows,
         key=lambda row: str(row[3] or row[2] or ""),
@@ -1116,7 +1125,10 @@ def content_artifact_status(
         model_reconciliation = "configured model not supplied"
     generated_count = len(generated_keys)
     expected_count = len(expected_keys)
-    if generated_count == expected_count:
+    if current_receipts is None and unverified_keys:
+        state = "unverified"
+        label = f"{len(unverified_keys)}/{expected_count} reporter articles · reader receipt unavailable"
+    elif generated_count == expected_count:
         state = "complete"
         label = f"{generated_count}/{expected_count} reporter articles"
     elif generated_count:
@@ -1131,6 +1143,7 @@ def content_artifact_status(
         "generated_count": generated_count,
         "expected_count": expected_count,
         "generated_keys": sorted(generated_keys),
+        "unverified_keys": sorted(unverified_keys),
         "last_generated_at": max(timestamps, default=""),
         "last_generated_model": last_generated_model,
         "expected_model": str(expected_model or ""),

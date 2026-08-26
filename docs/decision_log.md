@@ -1758,3 +1758,12 @@ counts, model, reasoning effort, and per-desk state; it never includes prose,
 evidence, secrets, or host paths in that progress payload. Reader polling also
 waits long enough for the configured multi-call newsroom to finish, while the
 durable final receipt remains authoritative after a tab sleeps or reloads.
+
+### 2026-08-26: Do not call database-only writer artifacts published
+
+The writer database receipt and the reader publication manifest are separate
+claims. `content_artifact_status` now fails closed when the manifest is absent:
+database rows are reported as unverified rather than current. A generated
+article is only counted as current when its content hash and bundle revision
+match the authenticated reader's manifest. This prevents a missing or
+rebuilding bundle from presenting private historical artifacts as live content.

@@ -1227,6 +1227,7 @@ def generate_articles_workflow(
             model=model,
             reasoning_effort=llm.reasoning_effort,
             editor_mode=editor_mode,
+            writer_preferences=ctx.writer_preferences,
         )
 
     record_progress(None, 0)
@@ -1909,6 +1910,7 @@ def _write_writer_progress(
     model: str,
     reasoning_effort: str,
     editor_mode: str,
+    writer_preferences: dict[str, Any] | None = None,
 ) -> None:
     """Persist a safe, per-desk receipt while the newsroom is still running.
 
@@ -1948,7 +1950,7 @@ def _write_writer_progress(
             "total_count": total_count,
             "current_article": current_article.key if current_article is not None else "",
             "current_reporter": (
-                persona_metadata({}, current_article.key)
+                persona_metadata(writer_preferences or {}, current_article.key)
                 if current_article is not None
                 else {}
             ),
