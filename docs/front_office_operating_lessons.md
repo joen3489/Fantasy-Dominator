@@ -656,3 +656,15 @@ The personal writer target is OpenAI `gpt-5.6-luna` with
 `reasoning.effort=max`. The provider boundary defaults to that setting but
 keeps an explicit environment override for intentional cost/latency choices;
 the model and effort must remain visible in preflight and publication receipts.
+
+## 2026-08-26 - Conditional baselines must stay out of current-role action copy
+
+The current-role action view is a stricter boundary than the projection table.
+Players whose Sleeper rows have no current NFL team may retain a conditional
+historical PPG baseline for dynasty context, but they cannot calibrate the
+active projection cohort or appear as current-role Cornerstones or Shop
+Candidates. The fallback report now carries separate counts for current-role
+and conditional baselines, and the signal row exposes
+`availability_conditioned_unavailable` when a current market gap cannot be
+trusted. This is implemented locally in `6a0bb71`; production verification and
+publication still require the current writer receipt and authenticated smoke.
