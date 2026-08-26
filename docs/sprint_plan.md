@@ -1429,3 +1429,11 @@ compact per-desk progress receipts and expose the configured model/reasoning
 configuration while work is in flight. Browser polling covers the expected
 multi-call duration, but completion still requires the durable per-article
 writer/editor receipts and revision-aware authenticated production check.
+
+2026-08-26 current-role percentile amendment: the legacy signal layer now
+excludes current Sleeper no-team players from the projection percentile cohort
+and leaves their own current projection percentile and market-gap signal
+unavailable. Their historical baseline remains visible as conditional research
+context, while active players are ranked against current-role peers. This
+closes a subtle path where a free-agent veteran could distort an otherwise
+current projection-versus-market read.

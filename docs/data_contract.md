@@ -140,6 +140,13 @@ league availability filter. This keeps an available player's clock scores
 comparable to the refresh's rostered cohort while the league-absence and
 waiver-eligibility limitations remain explicit.
 
+For the signal layer, a `no_current_nfl_team` row retains conditional
+historical PPG as research context but is excluded from the current-role
+projection percentile cohort. Its own current projection percentile and
+market-gap signal remain unavailable, with status
+`availability_conditioned_unavailable`, so a conditional free-agent baseline
+cannot distort an active player's projection-versus-market read.
+
 ### Projection Tables
 
 | Table | Owner | Purpose | Inputs | Required columns | Trace/evidence requirement |

@@ -163,6 +163,70 @@ class AvailabilityContractTests(unittest.TestCase):
         self.assertEqual(horizon["next_game_status"], "unavailable_no_current_nfl_team")
         self.assertEqual(horizon["rest_of_season_status"], "unavailable_no_current_nfl_team")
 
+    def test_free_agent_baseline_does_not_calibrate_current_projection_percentiles(self) -> None:
+        """Design source: docs/data_contract.md; conditional history cannot calibrate current-role rankings."""
+
+        projections = pd.DataFrame(
+            [
+                {
+                    "player_id": "active-low",
+                    "player_name": "Active Low",
+                    "position": "WR",
+                    "team": "AAA",
+                    "roster_id": 1,
+                    "projected_fantasy_points": 170,
+                    "projected_ppg": 10,
+                    "projection_confidence": "high",
+                    "source_trace": "projection",
+                },
+                {
+                    "player_id": "active-high",
+                    "player_name": "Active High",
+                    "position": "WR",
+                    "team": "BBB",
+                    "roster_id": 2,
+                    "projected_fantasy_points": 204,
+                    "projected_ppg": 12,
+                    "projection_confidence": "high",
+                    "source_trace": "projection",
+                },
+                {
+                    "player_id": "conditional",
+                    "player_name": "Conditional Veteran",
+                    "position": "WR",
+                    "team": "",
+                    "roster_id": 3,
+                    "projected_fantasy_points": 850,
+                    "projected_ppg": 50,
+                    "projection_confidence": "high",
+                    "source_trace": "historical projection",
+                },
+            ]
+        )
+        roster = pd.DataFrame(
+            [
+                {"player_id": "active-low", "nfl_team": "AAA", "availability_scope": "current_season_snapshot"},
+                {"player_id": "active-high", "nfl_team": "BBB", "availability_scope": "current_season_snapshot"},
+                {"player_id": "conditional", "nfl_team": "", "availability_scope": "current_season_snapshot"},
+            ]
+        )
+
+        signals = build_player_signal_scores(
+            projections,
+            roster,
+            pd.DataFrame(),
+            pd.DataFrame(),
+            pd.DataFrame(),
+            pd.DataFrame(),
+            {},
+        ).set_index("player_id")
+
+        self.assertEqual(float(signals.loc["active-low", "projection_percentile"]), 25.0)
+        self.assertEqual(float(signals.loc["active-high", "projection_percentile"]), 75.0)
+        self.assertTrue(pd.isna(signals.loc["conditional", "projection_percentile"]) or signals.loc["conditional", "projection_percentile"] == "")
+        self.assertEqual(float(signals.loc["conditional", "market_gap_score"]), 0.0)
+        self.assertEqual(signals.loc["conditional", "market_gap_status"], "availability_conditioned_unavailable")
+
     def test_no_current_team_cannot_reappear_in_actionable_secondary_queues(self) -> None:
         """Design source: AGENTS.md; one availability fact must constrain every rating seam."""
 

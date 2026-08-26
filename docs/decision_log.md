@@ -1772,3 +1772,16 @@ Current reporter status also requires the manifest receipt to match the
 configured writer model and, when an editor receipt exists, to be approved.
 Held drafts and pre-Luna articles therefore remain visible as history or
 fallback, never as current publication.
+
+## 2026-08-26 - Conditional free-agent baselines cannot calibrate current signals
+
+The projection layer intentionally preserves historical PPG for a player with
+no current NFL team, but that row is not a current-role peer. The signal layer
+now excludes those rows from the active projection percentile cohort and leaves
+their own current projection percentile and market-gap signal unavailable.
+Their `market_gap_status` is explicitly
+`availability_conditioned_unavailable`, rather than a misleading aligned or
+disagreement label. This keeps the historical context useful for dynasty
+research without letting a free-agent veteran distort current
+projection-versus-market rankings. An adversarial test covers both the cohort
+and the conditional row.

@@ -99,9 +99,13 @@ def build_player_signal_scores(
 
     market = _market_value_map(player_market_values_df, team_asset_inventory_df)
     market_values_by_position = _market_values_by_position(player_market_values_df)
-    projection_values_by_position = _values_by_position(projections_df, "projected_ppg")
     ages = _age_map(roster_players_df)
     availability = _availability_map(roster_players_df)
+    # A historical baseline for a current free agent remains useful context,
+    # but it is not a usable current-production peer. Keep it out of the
+    # active percentile cohort so it cannot depress or inflate other players'
+    # projection ranks.
+    projection_values_by_position = _projection_values_by_position(projections_df, availability)
     needs = _row_map(team_needs_df, "roster_id")
     behavior = _row_map(manager_behavior_df, "roster_id")
     news = _news_map(news_impact_df)
@@ -114,13 +118,17 @@ def build_player_signal_scores(
         roster_id = _int(projection.get("roster_id"))
         position = str(projection.get("position", ""))
         age = ages.get(player_id, 0.0)
-        availability_record = availability.get(player_id, {})
+        availability_record = availability.get(player_id) or projection.to_dict()
         availability_status = current_availability_status(availability_record)
         availability_note = shared_availability_note(availability_record)
         market_record = market.get(player_id) or market.get(player_name.lower()) or {}
         market_value = _num(market_record.get("market_value"))
         normalized_market = _normalize_market(market_value)
-        projection_percentile = _percentile(_num(projection.get("projected_ppg")), projection_values_by_position.get(position, []))
+        projection_percentile = (
+            None
+            if availability_status == "no_current_nfl_team"
+            else _percentile(_num(projection.get("projected_ppg")), projection_values_by_position.get(position, []))
+        )
         external_market = bool(market_record) and not _is_proxy_market(market_record)
         market_percentile = (
             _percentile(normalized_market, market_values_by_position.get(position, []))
@@ -149,7 +157,11 @@ def build_player_signal_scores(
             projection_percentile,
             market_percentile,
         )
-        market_gap_status = _market_gap_status(market_record, market_percentile, market_gap)
+        market_gap_status = (
+            "availability_conditioned_unavailable"
+            if availability_status == "no_current_nfl_team"
+            else _market_gap_status(market_record, market_percentile, market_gap)
+        )
         timeline_fit = _timeline_fit_score(position, age, config)
         breakout = _breakout_score(position, age, ppg, market_gap, projection_confidence, news_signal, opportunity_score, role_uncertainty)
         sell = _sell_score(position, age, ppg, normalized_market, roster_id, config, projection_confidence, news_signal)
@@ -1352,6 +1364,31 @@ def _values_by_position(frame: pd.DataFrame, value_column: str) -> dict[str, lis
     for _, row in frame.fillna("").iterrows():
         position = str(row.get("position", "")).strip()
         value = _num(row.get(value_column))
+        if position and value > 0:
+            values.setdefault(position, []).append(value)
+    return values
+
+
+def _projection_values_by_position(
+    frame: pd.DataFrame,
+    availability: dict[str, dict[str, Any]],
+) -> dict[str, list[float]]:
+    """Return current-role projection cohorts, excluding current free agents.
+
+    Season baselines can remain on a no-team row as conditional historical
+    evidence. They must not calibrate the current production percentile used
+    by the signal layer, because that percentile feeds market-gap research.
+    """
+
+    values: dict[str, list[float]] = {}
+    if frame.empty or "projected_ppg" not in frame.columns:
+        return values
+    for _, row in frame.fillna("").iterrows():
+        record = availability.get(str(row.get("player_id", ""))) or row.to_dict()
+        if current_availability_status(record) == "no_current_nfl_team":
+            continue
+        position = str(row.get("position", "")).strip()
+        value = _num(row.get("projected_ppg"))
         if position and value > 0:
             values.setdefault(position, []).append(value)
     return values
