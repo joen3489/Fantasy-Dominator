@@ -10,6 +10,16 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-26 - Keep the aggregate operator receipt total
+
+The authenticated aggregate `/api/operator/status` route must always return
+the user's safe multi-league summary when no `league_id` query is supplied.
+An unreachable return left the homepage status request as `None`, which
+FastAPI rejected with a 500 even though the league-scoped status route still
+worked. The route now returns the aggregate summary and includes the operator
+enabled flag in the empty-workspace case; the regression test protects this
+user-facing seam.
+
 ## 2026-08-25 - Separate bootstrap from maintenance refreshes
 
 The refresh pipeline now has two lifecycle modes. Bootstrap is the first-time

@@ -1830,6 +1830,19 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertNotIn("traceback", payload)
         status.assert_called_once_with(LeaguePaths.for_user_league(str(user_id), "status-league"))
 
+    def test_operator_status_without_league_returns_user_summary(self) -> None:
+        """Design source: AGENTS.md; the homepage status seam must fail closed with a safe summary."""
+        token = self._token("user_status_summary")
+        self.client.get("/", cookies={"__session": token})
+
+        response = self.client.get("/api/operator/status", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["state"], "idle")
+        self.assertEqual(payload["leagues"], [])
+        self.assertFalse(payload["operator_enabled"])
+
     def test_generation_plan_is_operator_gated_and_league_scoped(self) -> None:
         token = self._token("user_generation_plan")
         self.client.get("/", cookies={"__session": token})

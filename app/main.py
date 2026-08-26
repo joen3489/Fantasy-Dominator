@@ -513,7 +513,7 @@ def create_app() -> FastAPI:
         if league_id:
             league = _owned_enabled_league(user, league_id)
             return _operator_status_for_user(user_id, league)
-            return _operator_status_for_user(user_id)
+        return _operator_status_for_user(user_id)
 
     @app.get("/api/operator/generation-plan")
     def operator_generation_plan(
@@ -2038,7 +2038,12 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             | {"league_id": str(league["league_id"]), "league_name": league.get("name", "")}
         )
     if not statuses:
-        return {"state": "idle", "message": "No enabled league workspaces yet.", "leagues": []}
+        return {
+            "state": "idle",
+            "message": "No enabled league workspaces yet.",
+            "leagues": [],
+            "operator_enabled": front_operator.operator_enabled(),
+        }
     if any(item.get("state") == "running" for item in statuses):
         state = "running"
     elif any(item.get("state") == "failed" for item in statuses):
