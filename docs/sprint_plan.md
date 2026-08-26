@@ -1493,3 +1493,10 @@ through its explicit all-editions control.
 HTML now exposes the deployed source revision as a safe meta tag and body data
 attribute. Browser verification can therefore detect a stale open shell in
 addition to checking the private edition manifest and content receipts.
+
+2026-08-26 production acceptance amendment: revision-aware public smoke and a
+fresh authenticated headquarters navigation matched commit
+`bef160de254ca9d28eeef5c55c7f2f3fe067838a`, including the selected-edition
+writer guard and current `Lulu’s Potatoe’s` identity. The protected Luna run
+has not yet produced article receipts; Release 1 remains open on that paid
+publication proof.

@@ -1911,3 +1911,12 @@ tag and body data attribute. This makes an authenticated browser entry
 inspectable when an already-open tab may be stale, while the edition manifest,
 private bundle, and publication receipts remain the authoritative proof of
 what content is served.
+
+## 2026-08-26 production acceptance for the current shell
+
+The revision-aware public smoke passed for commit
+`bef160de254ca9d28eeef5c55c7f2f3fe067838a`. A fresh authenticated headquarters
+navigation rendered that same source revision, the selected-edition fail-closed
+writer guard, and the verified current team label `Lulu’s Potatoe’s`. The
+edition is still `0/6` deterministic fallback, so the paid Luna publication
+boundary remains open rather than being implied by a successful deployment.

@@ -1981,3 +1981,12 @@ distinguish from a current deployment. The home response now emits a safe
 source-revision meta tag and body data attribute for browser verification; it
 contains no user data or secret and does not replace the stronger private
 bundle and manifest checks.
+
+## 2026-08-26 - Production acceptance for the authenticated shell receipt
+
+Commit `bef160de254ca9d28eeef5c55c7f2f3fe067838a` passed the revision-aware
+public smoke after Railway reported the deployment successful. A fresh
+authenticated headquarters navigation rendered the same full source revision,
+the selected-edition writer guard, and the verified current team label
+`Lulu’s Potatoe’s`. The writer receipt remains `0/6` deterministic fallback;
+this confirms deployment and entry-path integrity, not paid publication.
