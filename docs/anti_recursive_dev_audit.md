@@ -105,6 +105,16 @@ state. Public revision smoke passed; automated authenticated smoke remains
 not run because no session token was supplied. This verifies deployment and
 identity continuity, not successful Luna publication.
 
+## 2026-08-26 smoke gate hardening
+
+The prior deployment notes intentionally recorded an authenticated smoke skip,
+but the script also returned exit code zero when no session token was present.
+That made a public health check too easy to mistake for private production
+proof. The smoke gate now fails closed unless
+`FRONT_OFFICE_SESSION_TOKEN` is supplied. `FRONT_OFFICE_PUBLIC_ONLY=1` is an
+explicit diagnostic escape hatch and must be reported as public-only; it is
+not deployment verification.
+
 ## 2026-08-25 timing and migration follow-up
 
 The manager-season depth slice found a new instance of the anti-recursive

@@ -50,8 +50,10 @@ migration when explicitly configured.
    python scripts\smoke_live.py
    ```
 
-   Set `FRONT_OFFICE_SESSION_TOKEN` when checking the authenticated home page,
-   continuity receipt, and owned league editions. Set
+   Set `FRONT_OFFICE_SESSION_TOKEN` for the deployment gate; without it the
+   command fails closed rather than claiming production is verified. For an
+   intentional public-only diagnostic, set `FRONT_OFFICE_PUBLIC_ONLY=1` and
+   record that the private check was not done. Set
    `FRONT_OFFICE_OPERATOR_TOKEN` locally only when checking the safe operator
    storage audit. Never paste either token into Git, an issue, or a chat log.
 

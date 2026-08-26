@@ -1,18 +1,63 @@
 from __future__ import annotations
 
+import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.smoke_live import (
     validate_authenticated_edition,
     validate_edition_bundle,
     validate_edition_manifest,
     validate_health_payload,
+    main,
+    resolve_smoke_credentials,
     validate_storage_audit_payload,
 )
 
 
 class LiveSmokeContractTests(unittest.TestCase):
+    def test_smoke_fails_closed_without_a_session_token(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(SystemExit, "FRONT_OFFICE_SESSION_TOKEN is missing"):
+                resolve_smoke_credentials()
+
+    def test_smoke_allows_an_explicit_public_only_diagnostic(self) -> None:
+        with patch.dict(os.environ, {"FRONT_OFFICE_PUBLIC_ONLY": "1"}, clear=True):
+            self.assertEqual(resolve_smoke_credentials(), ("", True))
+
+    def test_smoke_prefers_an_authenticated_token_over_public_only_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_SESSION_TOKEN": "session", "FRONT_OFFICE_PUBLIC_ONLY": "1"},
+            clear=True,
+        ):
+            self.assertEqual(resolve_smoke_credentials(), ("session", False))
+
+    def test_smoke_entrypoint_fails_closed_before_private_requests(self) -> None:
+        health = Mock(status_code=200)
+        health.json.return_value = {
+            "ok": True,
+            "auth_mode": "live",
+            "auth_configuration_ready": True,
+            "public_url_ready": True,
+            "data_root_configured": True,
+            "database_present": True,
+            "database_schema_ready": True,
+            "operator_token_configured": True,
+            "scheduler_enabled": True,
+            "writer_api_configured": True,
+        }
+        login = Mock(status_code=200, text="Sign in to the Front Office")
+        health.raise_for_status.return_value = None
+        login.raise_for_status.return_value = None
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "scripts.smoke_live._get", side_effect=[health, login]
+        ) as get:
+            with self.assertRaisesRegex(SystemExit, "Authenticated smoke not done"):
+                main("https://example.test")
+
+        self.assertEqual(get.call_count, 2)
+
     def test_health_requires_live_auth_and_durable_schema(self) -> None:
         errors, warnings = validate_health_payload(
             {

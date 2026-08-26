@@ -2720,7 +2720,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("data/manifest.json", text)
         self.assertIn("source revision", text)
         self.assertIn("/healthz", text)
-        self.assertIn("Authenticated smoke skipped", text)
+        self.assertIn("FRONT_OFFICE_PUBLIC_ONLY", text)
 
     def test_projection_scoring_uses_league_settings_and_te_bonus(self) -> None:
         points = calculate_fantasy_points(

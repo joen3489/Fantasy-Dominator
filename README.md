@@ -146,9 +146,12 @@ Normal scheduled refreshes now honor those expiry windows. A stale source is
 refetched; if that refetch fails, the last cached payload can still support the
 last complete edition but its receipt is marked limited rather than current.
 
-The production smoke check can validate the public deployment and, when
+The production smoke check validates the public deployment and, when
 `FRONT_OFFICE_SESSION_TOKEN` is supplied locally, the authenticated home page,
-continuity receipt, and every owned league edition. If
+continuity receipt, and every owned league edition. The normal command fails
+closed when that token is missing so a public check cannot be mistaken for
+private production proof. For an intentional public-only diagnostic, set
+`FRONT_OFFICE_PUBLIC_ONLY=1`. If
 `FRONT_OFFICE_OPERATOR_TOKEN` is also supplied locally, it checks the
 operator-safe storage audit and verifies that the current identity has at least
 one preserved league. It fails when live Clerk or durable SQLite configuration

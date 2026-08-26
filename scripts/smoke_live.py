@@ -238,6 +238,33 @@ def validate_storage_audit_payload(payload: dict) -> list[str]:
     return errors
 
 
+def resolve_smoke_credentials(
+    session_token: str | None = None,
+    public_only: bool | None = None,
+) -> tuple[str, bool]:
+    """Resolve the authenticated gate, failing closed unless public-only is explicit."""
+
+    token = session_token or os.environ.get("FRONT_OFFICE_SESSION_TOKEN", "").strip()
+    if token:
+        return token, False
+
+    if public_only is None:
+        public_only = os.environ.get("FRONT_OFFICE_PUBLIC_ONLY", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+    if public_only:
+        return "", True
+
+    raise SystemExit(
+        "Authenticated smoke not done: FRONT_OFFICE_SESSION_TOKEN is missing. "
+        "Set it for the deployment gate, or set FRONT_OFFICE_PUBLIC_ONLY=1 "
+        "for an explicit public-only diagnostic."
+    )
+
+
 def _assert_authenticated_surface(response: requests.Response, url: str) -> None:
     if response.status_code != 200:
         raise SystemExit(
@@ -274,11 +301,11 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
     if "Sign in to the Front Office" not in login.text and "Auth is not configured" not in login.text:
         raise SystemExit(f"Public smoke failed for {base_url}: login surface is missing its auth marker")
 
-    token = session_token or os.environ.get("FRONT_OFFICE_SESSION_TOKEN", "").strip()
+    token, _ = resolve_smoke_credentials(session_token=session_token)
     if not token:
         print(
             f"Public smoke passed for {base_url} ({health.status_code} health, {login.status_code} login). "
-            "Authenticated smoke skipped; set FRONT_OFFICE_SESSION_TOKEN to verify a league edition."
+            "Authenticated smoke not run because FRONT_OFFICE_PUBLIC_ONLY is enabled."
         )
         return
 
