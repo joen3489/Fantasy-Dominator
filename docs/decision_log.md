@@ -1938,3 +1938,14 @@ deployment gate verifies.
 Durable-bundle self-healing also treats a missing lineage field as stale when
 the authenticated league row has a linked Sleeper user, even if the source SHA
 is current. This prevents a deploy from serving an old receipt indefinitely.
+
+## 2026-08-26 - Shared writer receipts need owner-aware recovery
+
+The protected newsroom runs in a daemon thread but its progress receipt lives
+on the durable store. A request handled by another web worker can therefore
+observe `state=running` while its own interpreter has no active thread. The
+recovery check now preserves that receipt when the recorded owner process is
+still alive, and only converts it to an interrupted failure when the owner is
+missing, malformed, or dead. A real process restart still fails closed, while
+multi-worker status reads no longer manufacture a false interruption during a
+valid paid run.

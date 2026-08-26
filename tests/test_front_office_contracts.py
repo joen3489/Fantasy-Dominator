@@ -69,6 +69,72 @@ class FrontOfficeContractsTests(unittest.TestCase):
             saved = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["state"], "failed")
 
+    def test_running_status_from_live_worker_is_not_marked_interrupted(self) -> None:
+        """Design source: AGENTS.md; a shared receipt must not be mistaken for a dead job."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status_dir = Path(tmp) / "operator" / "status"
+            status_path = status_dir / "operator_status.json"
+            status_dir.mkdir(parents=True)
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "state": "running",
+                        "job": "generate-insights",
+                        "message": "The reporters are writing.",
+                        "owner_pid": 987654,
+                        "updated_at": "2026-08-26T12:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(operator, "STATUS_PATH", status_path), patch.object(
+                operator, "OPERATOR_STATUS_DIR", status_dir
+            ), patch.object(operator, "_ACTIVE_JOB", False), patch.object(
+                operator, "_owner_process_is_alive", return_value=True
+            ) as owner_alive:
+                observed = operator.status()
+
+            self.assertEqual(observed["state"], "running")
+            self.assertNotIn("recovered_from_restart", observed)
+            owner_alive.assert_called_once_with(987654)
+            saved = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["state"], "running")
+
+    def test_running_status_from_dead_worker_is_recovered(self) -> None:
+        """Design source: AGENTS.md; orphaned paid work must fail closed with a retryable receipt."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status_dir = Path(tmp) / "operator" / "status"
+            status_path = status_dir / "operator_status.json"
+            status_dir.mkdir(parents=True)
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "state": "running",
+                        "job": "generate-insights",
+                        "message": "The reporters are writing.",
+                        "owner_pid": 987654,
+                        "updated_at": "2026-08-26T12:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(operator, "STATUS_PATH", status_path), patch.object(
+                operator, "OPERATOR_STATUS_DIR", status_dir
+            ), patch.object(operator, "_ACTIVE_JOB", False), patch.object(
+                operator, "_owner_process_is_alive", return_value=False
+            ) as owner_alive:
+                recovered = operator.status()
+
+            self.assertEqual(recovered["state"], "failed")
+            self.assertTrue(recovered["recovered_from_restart"])
+            owner_alive.assert_called_once_with(987654)
+            saved = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["state"], "failed")
+
     def test_start_job_returns_the_durable_run_receipt(self) -> None:
         """Design source: AGENTS.md; an accepted paid action must be bound to a persisted receipt."""
 

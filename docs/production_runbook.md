@@ -76,8 +76,10 @@ migration when explicitly configured.
    service until the writer status is terminal: a newsroom run spans refresh,
    six desk calls, optional editor calls, and bundle publication. A service
    restart during that window will recover the durable checkpoint as
-   interrupted and no article should be treated as published; retry on the
-   stable revision instead.
+   interrupted and no article should be treated as published; a status read by
+   another live worker will preserve the running receipt instead of calling it
+   interrupted. Retry on the stable revision only after the owner is actually
+   gone and the receipt is terminal.
 
 ## Data lifecycle
 

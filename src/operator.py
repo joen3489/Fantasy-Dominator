@@ -2092,6 +2092,16 @@ def _reconcile_interrupted_status(status_path: Path, payload: dict[str, Any]) ->
 
     if payload.get("state") != "running" or _ACTIVE_JOB:
         return payload
+
+    # Status receipts are shared by the web workers through the durable data
+    # root.  A request can therefore read a running receipt written by a
+    # different worker even though this interpreter has no active thread. Do
+    # not convert that receipt into a false failure while its recorded owner
+    # process is still alive. A missing, malformed, or dead owner remains an
+    # orphan and is recovered below.
+    owner_pid = _status_owner_pid(payload)
+    if owner_pid and owner_pid != os.getpid() and _owner_process_is_alive(owner_pid):
+        return payload
     recovered = dict(payload)
     recovered.update(
         {
@@ -2105,6 +2115,27 @@ def _reconcile_interrupted_status(status_path: Path, payload: dict[str, Any]) ->
     )
     _write_json(status_path, recovered)
     return recovered
+
+
+def _status_owner_pid(payload: dict[str, Any]) -> int:
+    try:
+        owner_pid = int(payload.get("owner_pid") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return owner_pid if owner_pid > 0 else 0
+
+
+def _owner_process_is_alive(owner_pid: int) -> bool:
+    """Return whether a different worker still owns a running receipt."""
+
+    try:
+        os.kill(owner_pid, 0)
+    except PermissionError:
+        # The process exists but this worker cannot signal it.
+        return True
+    except (ProcessLookupError, OSError, ValueError):
+        return False
+    return True
 
 
 def _safe_json(path: Path) -> dict[str, Any]:
