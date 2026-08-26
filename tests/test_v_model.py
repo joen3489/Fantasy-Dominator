@@ -2759,6 +2759,9 @@ class VModelTests(unittest.TestCase):
         self.assertIn("source revision", text)
         self.assertIn("/healthz", text)
         self.assertIn("FRONT_OFFICE_PUBLIC_ONLY", text)
+        self.assertIn("operatorRunId: ''", text)
+        self.assertIn("pollOperatorStatus(expectedRunId = '')", text)
+        self.assertIn("accepted writer request has no durable run receipt", text)
 
     def test_projection_scoring_uses_league_settings_and_te_bonus(self) -> None:
         points = calculate_fantasy_points(

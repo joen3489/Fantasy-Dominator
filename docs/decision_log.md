@@ -2001,3 +2001,7 @@ run ID, waits briefly for that exact receipt, and fails closed when production
 returns a different or missing run. The authenticated headquarters already
 used this contract; both writer entry paths must share it because the league
 bundle is a real production entry point.
+
+The authenticated smoke verifier now requires the same static-shell markers,
+so a future deploy cannot pass on generic health and data tables while
+silently reintroducing the stale writer poller.

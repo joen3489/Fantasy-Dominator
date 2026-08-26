@@ -36,7 +36,18 @@ REQUIRED_MARKERS = [
     "Data Diagnostics",
 ]
 BOOT_ONLY_MARKER = "Data refresh is running; reload shortly"
-REQUIRED_EDITION_MARKERS = ["The Front Office", "Draft Room", "News Desk", "Data Room"]
+REQUIRED_EDITION_MARKERS = [
+    "The Front Office",
+    "Draft Room",
+    "News Desk",
+    "Data Room",
+    # Design source: AGENTS.md and docs/production_runbook.md. The direct
+    # league route is a real writer entry point and must bind its poller to
+    # the accepted durable run rather than trusting any stale receipt.
+    "operatorRunId: ''",
+    "pollOperatorStatus(expectedRunId = '')",
+    "The accepted writer request has no durable run receipt",
+]
 EXPECTED_ARTICLE_KEYS = ("daily_brief", "team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel")
 FALLBACK_ARTICLE_SCHEMA_VERSION = "deterministic_fallback_v2"
 

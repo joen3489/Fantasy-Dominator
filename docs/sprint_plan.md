@@ -1507,3 +1507,7 @@ edition's legacy operator surface now binds polling to the accepted durable
 league route aligned with the authenticated headquarters and prevents stale
 writer status from masquerading as a current run. Local bundle contract tests
 pass; production paid-publication verification remains outstanding.
+
+The authenticated smoke gate now requires the direct league shell's run-ID
+binding markers, making the duplicate writer entry path part of deployment
+verification rather than a manual-only check.

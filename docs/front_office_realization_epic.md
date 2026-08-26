@@ -1930,3 +1930,6 @@ a failed handoff instead of an apparently active writer. This closes the
 duplicate-entry-path seam that could make a stale browser tab look like a
 current paid run. Local browser-bundle contract tests cover the new guard; no
 provider call or production deployment is claimed by this code checkpoint.
+
+The authenticated smoke gate now checks the direct league HTML for this
+receipt-binding contract as well as the headquarters and bundle revisions.
