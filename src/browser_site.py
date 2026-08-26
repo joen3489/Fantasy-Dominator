@@ -891,6 +891,7 @@ def _write_data_chunks(
     identity_receipt = {
         "status": "verified" if context.get("user_id") and context.get("roster_id") not in (None, "") else "unverified",
         "user_id": context.get("user_id"),
+        "sleeper_user_id": context.get("sleeper_user_id"),
         "league_id": str(league_id or context.get("league_id") or ""),
         "season": str(context.get("season") or config.get("current_season") or ""),
         "roster_id": context.get("roster_id"),

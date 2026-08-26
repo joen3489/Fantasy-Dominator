@@ -1869,3 +1869,10 @@ it previews five evidence-ranked dossiers with exact roster links and points
 to the full manager index. This preserves the newspaper reading flow while
 keeping the deep manager history reachable. Current LLM Manager Intel remains
 the editorial surface when its article receipt is current.
+
+## 2026-08-26 Sleeper identity-lineage receipt
+
+The private reader bundle now carries the linked Sleeper user ID alongside the
+exact league and roster receipt. This makes the full identity chain inspectable
+after refresh or deployment while preserving the important boundary: the
+Sleeper user establishes ownership, but `roster_id` selects the managed team.

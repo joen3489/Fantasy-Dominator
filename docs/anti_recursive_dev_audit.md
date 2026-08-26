@@ -554,3 +554,12 @@ deterministic shell migration, and the migration updates only known historical
 team-name presentation plus receipt hashes. The direct route must be tested in
 addition to the home route; a current header alone is not evidence that the
 publication body is current.
+
+## 2026-08-26 - Identity receipts must prove the whole chain
+
+The reader bundle carried an exact roster receipt, but the production smoke
+gate did not require the linked Sleeper user ID to travel with it. That allowed
+the verifier to prove a team number without proving the owner lineage that
+selected the league. User-league rows, scoped context, and the browser bundle
+now retain the Sleeper user ID, while the smoke gate requires both it and the
+exact `roster_id`.

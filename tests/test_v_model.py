@@ -2036,6 +2036,7 @@ class VModelTests(unittest.TestCase):
                 config={
                     "context": {
                         "user_id": "17",
+                        "sleeper_user_id": "sleeper-17",
                         "league_id": "league",
                         "season": "2026",
                         "roster_id": 2,
@@ -2048,6 +2049,7 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(bundle["myRosterId"], 2)
         self.assertEqual(bundle["myTeamName"], "Lulu’s Potatoe’s")
         self.assertEqual(bundle["identityReceipt"]["roster_id"], 2)
+        self.assertEqual(bundle["identityReceipt"]["sleeper_user_id"], "sleeper-17")
 
     def test_browser_available_market_route_has_identity_and_boundary_contract(self) -> None:
         """Design source: AGENTS.md identity boundary and available-market research contract.

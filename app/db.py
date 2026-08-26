@@ -268,10 +268,12 @@ def list_user_leagues(user_id: int) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id,
+            SELECT leagues.user_id, league_id, season, league_type, name, roster_id,
+                   users.sleeper_user_id AS sleeper_user_id,
                    identity_status, identity_checked_at, enabled
-            FROM user_leagues
-            WHERE user_id = ?
+            FROM user_leagues AS leagues
+            JOIN users ON users.id = leagues.user_id
+            WHERE leagues.user_id = ?
             ORDER BY enabled DESC, name COLLATE NOCASE, league_id
             """,
             (user_id,),

@@ -224,7 +224,7 @@ class LiveSmokeContractTests(unittest.TestCase):
         payload = {
             "leagueId": "alpha",
             "sourceRevision": "new",
-            "identityReceipt": {"status": "verified", "roster_id": 2},
+            "identityReceipt": {"status": "verified", "sleeper_user_id": "sleeper-17", "roster_id": 2},
             "tables": {
                 "today_priority_board": [{}],
                 "player_dossiers": [{}],
@@ -249,6 +249,7 @@ class LiveSmokeContractTests(unittest.TestCase):
 
         errors = validate_authenticated_edition({**payload, "identityReceipt": {"status": "unverified"}}, "new", "alpha")
         self.assertIn("edition bundle does not carry a verified Sleeper roster receipt", errors)
+        self.assertIn("edition bundle identity receipt has no linked Sleeper user ID", errors)
         self.assertIn("edition bundle identity receipt has no exact roster_id", errors)
 
         stale = {**payload, "analysis": {**payload["analysis"], "articleReceipts": {**receipts, "daily_brief": {**receipts["daily_brief"], "structured": {**receipts["daily_brief"]["structured"], "fallback_schema_version": "old"}}}}}
@@ -262,13 +263,14 @@ class LiveSmokeContractTests(unittest.TestCase):
     def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
         self.assertEqual(
             validate_edition_manifest(
-                {"sourceRevision": "new", "identityReceipt": {"roster_id": 2}},
+                {"sourceRevision": "new", "identityReceipt": {"sleeper_user_id": "sleeper-17", "roster_id": 2}},
                 "new",
             ),
             [],
         )
         errors = validate_edition_manifest({"sourceRevision": "old", "identityReceipt": {}}, "new")
         self.assertIn("edition manifest source revision='old'; expected 'new'", errors)
+        self.assertIn("edition manifest identity receipt has no linked Sleeper user ID", errors)
         self.assertIn("edition manifest identity receipt has no exact roster_id", errors)
 
     def test_storage_audit_requires_current_identity_and_league(self) -> None:

@@ -151,6 +151,8 @@ def validate_authenticated_edition(
     identity = payload.get("identityReceipt") if isinstance(payload.get("identityReceipt"), dict) else {}
     if str(identity.get("status") or "").lower() not in {"verified", "verified_roster_match"}:
         errors.append("edition bundle does not carry a verified Sleeper roster receipt")
+    if not str(identity.get("sleeper_user_id") or "").strip():
+        errors.append("edition bundle identity receipt has no linked Sleeper user ID")
     if identity.get("roster_id") in (None, ""):
         errors.append("edition bundle identity receipt has no exact roster_id")
     errors.extend(_validate_publication_receipts(payload))
@@ -214,6 +216,8 @@ def validate_edition_manifest(payload: dict, expected_revision: str = "") -> lis
             f"{payload.get('sourceRevision')!r}; expected {expected_revision!r}"
         )
     identity = payload.get("identityReceipt") if isinstance(payload.get("identityReceipt"), dict) else {}
+    if not str(identity.get("sleeper_user_id") or "").strip():
+        errors.append("edition manifest identity receipt has no linked Sleeper user ID")
     if identity.get("roster_id") in (None, ""):
         errors.append("edition manifest identity receipt has no exact roster_id")
     return errors

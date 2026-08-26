@@ -28,6 +28,7 @@ class FantasyContext:
     league_name: str = ""
     team_name: str = ""
     display_name: str = ""
+    sleeper_user_id: str | None = None
     strategy_profile: dict[str, Any] = field(default_factory=dict)
     writer_preferences: dict[str, Any] = field(default_factory=dict)
     manager_trade_profiles: list[dict[str, Any]] = field(default_factory=list)
@@ -98,6 +99,7 @@ def scoped_config(base_config: Mapping[str, Any], context: FantasyContext) -> di
         "league_name": context.league_name,
         "team_name": context.team_name,
         "display_name": context.display_name,
+        "sleeper_user_id": context.sleeper_user_id,
         "identity_status": context.identity_status,
         "identity_checked_at": context.identity_checked_at,
         "writer_preferences": normalize_writer_preferences(context.writer_preferences),
@@ -148,6 +150,7 @@ def context_from_league_row(
         league_name=str(league.get("name", league.get("league_name", ""))),
         team_name=str(profile.get("team_name", "")) if identity_verified else "",
         display_name=str(profile.get("display_name", "")) if identity_verified else "",
+        sleeper_user_id=str(league.get("sleeper_user_id") or "") or None,
         strategy_profile=deepcopy(dict(strategy)),
         writer_preferences=deepcopy(dict(writer_preferences)),
         manager_trade_profiles=[deepcopy(dict(item)) for item in (manager_trade_profiles or []) if isinstance(item, Mapping)],

@@ -97,6 +97,7 @@ class ContextIsolationTests(unittest.TestCase):
             {
                 "league_id": "league-a",
                 "season": "2026",
+                "sleeper_user_id": "sleeper-17",
                 "identity_status": "unverified",
                 "roster_id": None,
             },
@@ -105,6 +106,45 @@ class ContextIsolationTests(unittest.TestCase):
 
         self.assertIsNone(context.roster_id)
         self.assertEqual(context.team_name, "")
+        self.assertEqual(context.sleeper_user_id, "sleeper-17")
+
+    def test_scoped_config_carries_sleeper_identity_without_using_it_as_roster_identity(self) -> None:
+        """Design source: AGENTS.md; the Sleeper user is lineage, roster_id is team identity."""
+        context = FantasyContext(
+            user_id="17",
+            sleeper_user_id="sleeper-17",
+            league_id="league-a",
+            season="2026",
+            roster_id=2,
+        )
+
+        scoped = scoped_config({}, context)
+
+        self.assertEqual(scoped["context"]["sleeper_user_id"], "sleeper-17")
+        self.assertEqual(scoped["context"]["roster_id"], 2)
+
+    def test_user_league_rows_retain_linked_sleeper_user_id(self) -> None:
+        """Design source: docs/front_office_principles.md; league rows retain owner lineage."""
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(db, "DB_PATH", Path(temporary) / "app.db"):
+                db.init_db()
+                user = db.get_or_create_user("clerk-17")
+                db.set_sleeper_account(int(user["id"]), "sleeperjoe", "sleeper-17")
+                db.upsert_user_league(
+                    int(user["id"]),
+                    {
+                        "league_id": "league-a",
+                        "season": "2026",
+                        "league_type": "dynasty",
+                        "name": "Alpha",
+                        "roster_id": 2,
+                        "identity_status": "verified_roster_match",
+                    },
+                )
+
+                stored = db.list_user_leagues(int(user["id"]))
+
+        self.assertEqual(stored[0]["sleeper_user_id"], "sleeper-17")
 
     def test_user_league_paths_are_private_and_reject_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

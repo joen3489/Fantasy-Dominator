@@ -1465,3 +1465,9 @@ Intel fallback now previews five evidence-ranked dossiers as a compact
 homepage entry point and links to the complete structured index. This keeps
 the media facade readable without discarding the validated manager depth;
 current LLM copy remains authoritative when its receipt is current.
+
+2026-08-26 Sleeper-lineage receipt amendment: authenticated user-league rows
+now carry the resolved Sleeper user ID into scoped context and the browser
+identity receipt. The exact `roster_id` remains the team selector; the added
+lineage field makes the promised Clerk -> Sleeper -> league -> roster chain
+inspectable at the reader boundary.

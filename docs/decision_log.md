@@ -1916,3 +1916,17 @@ path. The fallback now previews five evidence-ranked manager dossiers, gives
 each an exact roster route, and links to the complete index. A successful LLM
 article remains untouched, so editorial copy can still own the feature surface
 when its receipt is current.
+
+## 2026-08-26 - Carry Sleeper lineage into the reader receipt
+
+The authenticated boundary already selected the exact `roster_id`, but the
+browser bundle only exposed the app user ID. That made the final team choice
+verifiable without making the promised Clerk user -> Sleeper user -> league ->
+roster chain inspectable in one receipt. User-league rows now carry the linked
+Sleeper user ID into scoped context and the bundle's identity receipt. The
+Sleeper ID remains lineage metadata; `roster_id` remains the only team
+selector.
+
+The deployment smoke gate now fails closed when either half of that receipt is
+missing. A verified roster number without a linked Sleeper user is not enough
+evidence of identity continuity.
