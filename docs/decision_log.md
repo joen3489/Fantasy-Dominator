@@ -1934,3 +1934,7 @@ evidence of identity continuity.
 The Data Room diagnostics now prints the linked Sleeper user ID, exact managed
 roster, and receipt source so the manager can inspect the same lineage that the
 deployment gate verifies.
+
+Durable-bundle self-healing also treats a missing lineage field as stale when
+the authenticated league row has a linked Sleeper user, even if the source SHA
+is current. This prevents a deploy from serving an old receipt indefinitely.

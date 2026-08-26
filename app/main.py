@@ -852,7 +852,7 @@ def _paths_for_user_league(user: dict[str, Any], league: dict[str, Any] | None) 
         if (
             browser_bundle_is_complete(candidate.site_dir)
             and _bundle_matches_identity(candidate, league)
-            and not _bundle_needs_source_rebuild(candidate.site_dir)
+            and not _bundle_needs_source_rebuild(candidate.site_dir, league)
         ):
             return candidate
     for candidate in (private, legacy):
@@ -958,7 +958,7 @@ def _reader_shell_has_recommendation_learning_contract(shell: str) -> bool:
     return all(marker in shell for marker in _RECOMMENDATION_LEARNING_SHELL_MARKERS)
 
 
-def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
+def _bundle_needs_source_rebuild(site_dir: Path, expected_identity: dict[str, Any] | None = None) -> bool:
     """Invalidate persisted content when code or its durable receipt contract changed.
 
     A source SHA alone is not sufficient: an older boot or migration can stamp
@@ -987,6 +987,11 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         return True
     if not isinstance(manifest, dict):
         return True
+    expected_sleeper_user_id = str((expected_identity or {}).get("sleeper_user_id") or "").strip()
+    if expected_sleeper_user_id:
+        manifest_identity = manifest.get("identityReceipt") if isinstance(manifest.get("identityReceipt"), dict) else {}
+        if str(manifest_identity.get("sleeper_user_id") or "").strip() != expected_sleeper_user_id:
+            return True
     if str(manifest.get("sourceRevision") or "") != expected:
         return True
     if _payload_has_stale_fallback_receipts(manifest) or _payload_has_stale_data_quality(manifest):
@@ -998,6 +1003,10 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         return True
     if not isinstance(app_bundle, dict):
         return True
+    if expected_sleeper_user_id:
+        bundle_identity = app_bundle.get("identityReceipt") if isinstance(app_bundle.get("identityReceipt"), dict) else {}
+        if str(bundle_identity.get("sleeper_user_id") or "").strip() != expected_sleeper_user_id:
+            return True
     # Empty/minimal migration fixtures intentionally model a generic reader and
     # do not carry a canonical data room. Only genuine generated bundles need
     # the source-label migration marker.
@@ -1083,7 +1092,7 @@ def _reader_bundle_snapshot(
     if not identity_match:
         reasons.append("identity_receipt")
 
-    stale = bool(_bundle_needs_source_rebuild(site_dir))
+    stale = bool(_bundle_needs_source_rebuild(site_dir, league))
     if stale and "source_revision" not in reasons and expected_revision:
         reasons.append("reader_contract")
     if complete and not stale and identity_match:
@@ -1228,13 +1237,13 @@ def _rebuild_missing_bundle(user: dict[str, Any], league: dict[str, Any]) -> Non
         if (
             browser_bundle_is_complete(paths.site_dir)
             and (paths is candidates[0] or _bundle_matches_identity(paths, league))
-            and not _bundle_needs_source_rebuild(paths.site_dir)
+            and not _bundle_needs_source_rebuild(paths.site_dir, league)
         ):
             return
         if (
             browser_bundle_is_complete(paths.site_dir)
             and (paths is candidates[0] or _bundle_matches_identity(paths, league))
-            and _bundle_needs_source_rebuild(paths.site_dir)
+            and _bundle_needs_source_rebuild(paths.site_dir, league)
         ):
             try:
                 rebuild_browser_shell(
@@ -1289,7 +1298,7 @@ def _serve_league_file(
         # SECURITY: repeat containment after default-document resolution to keep nested directory requests boxed in.
         if not target.is_relative_to(site_dir):
             raise HTTPException(status_code=404, detail="league file not found")
-    source_rebuild_needed = _bundle_needs_source_rebuild(site_dir)
+    source_rebuild_needed = _bundle_needs_source_rebuild(site_dir, league)
     if not target.exists() or not target.is_file() or not browser_bundle_is_complete(site_dir) or source_rebuild_needed:
         if requested_path in {"", "index.html"} or browser_bundle_missing(site_dir) or source_rebuild_needed:
             _rebuild_missing_bundle(user, league)
@@ -1303,7 +1312,7 @@ def _serve_league_file(
                 and target.is_file()
                 and browser_bundle_is_complete(site_dir)
                 and _bundle_matches_identity(paths, league)
-                and not _bundle_needs_source_rebuild(site_dir)
+                and not _bundle_needs_source_rebuild(site_dir, league)
             )
             if post_rebuild_ready:
                 return FileResponse(target, headers=_browser_file_headers(target))

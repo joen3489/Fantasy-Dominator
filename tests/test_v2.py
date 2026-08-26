@@ -1218,6 +1218,41 @@ class FastAPIClerkAppTests(unittest.TestCase):
         revision.assert_called()
         rebuild.assert_called_once()
 
+    def test_persisted_bundle_is_rebuilt_when_sleeper_lineage_receipt_is_missing(self) -> None:
+        """Encodes AGENTS.md identity continuity: a current SHA cannot hide a missing owner receipt."""
+        site_dir = self.tmp_path / "identity-receipt" / "site"
+        shell = " ".join(app_main._CORE_READER_SHELL_MARKERS + app_main._RECOMMENDATION_LEARNING_SHELL_MARKERS)
+        receipt = {
+            "mode": "deterministic_template",
+            "structured": {"fallback_schema_version": "deterministic_fallback_v2"},
+        }
+        manifest = {
+            "sourceRevision": "release-current",
+            "articleReceipts": {"daily_brief": receipt},
+            "dataQuality": _empty_data_quality(),
+            "identityReceipt": {"roster_id": 2},
+        }
+        bundle = {
+            "identityReceipt": {"roster_id": 2},
+            "articleReceipts": {"daily_brief": receipt},
+            "dataQuality": _empty_data_quality(),
+            "tables": {},
+        }
+        _write_complete_bundle(site_dir, shell)
+        (site_dir / "data" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (site_dir / "data" / "app_bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-current"}, clear=False):
+            self.assertTrue(app_main._bundle_needs_source_rebuild(site_dir, {"sleeper_user_id": "sleeper-17"}))
+
+        manifest["identityReceipt"]["sleeper_user_id"] = "sleeper-17"
+        bundle["identityReceipt"]["sleeper_user_id"] = "sleeper-17"
+        (site_dir / "data" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (site_dir / "data" / "app_bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+
+        with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "release-current"}, clear=False):
+            self.assertFalse(app_main._bundle_needs_source_rebuild(site_dir, {"sleeper_user_id": "sleeper-17"}))
+
     def test_persisted_bundle_is_rebuilt_when_fallback_receipt_schema_is_old(self) -> None:
         """A current SHA must not hide a stale durable fallback payload."""
         token = self._token("user_stale_fallback_schema")

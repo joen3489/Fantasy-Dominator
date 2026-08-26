@@ -1877,6 +1877,10 @@ exact league and roster receipt. This makes the full identity chain inspectable
 after refresh or deployment while preserving the important boundary: the
 Sleeper user establishes ownership, but `roster_id` selects the managed team.
 
+The serving path also treats a bundle with a missing lineage field as stale
+when the authenticated league row has a linked Sleeper user, so a deploy can
+self-heal older durable artifacts before they reach the reader.
+
 The Data Room diagnostics exposes those receipt fields to the signed-in
 manager, turning identity continuity into a reader-visible check rather than
 an internal-only contract.

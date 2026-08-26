@@ -555,6 +555,15 @@ team-name presentation plus receipt hashes. The direct route must be tested in
 addition to the home route; a current header alone is not evidence that the
 publication body is current.
 
+## 2026-08-26 - Durable bundles must carry current identity lineage
+
+The reader bundle could have a current source SHA while still lacking the
+linked Sleeper user ID introduced by the identity receipt contract. The
+staleness check now compares that field in both manifest and app bundle when
+the authenticated league row has it, forcing a rebuild before serving the
+scope. The adversarial test proves that a missing lineage receipt cannot hide
+behind a current revision.
+
 ## 2026-08-26 - Identity receipts must prove the whole chain
 
 The reader bundle carried an exact roster receipt, but the production smoke

@@ -1471,3 +1471,6 @@ now carry the resolved Sleeper user ID into scoped context and the browser
 identity receipt. The exact `roster_id` remains the team selector; the added
 lineage field makes the promised Clerk -> Sleeper -> league -> roster chain
 inspectable at the reader boundary.
+
+The durable-bundle migration check also invalidates a current-SHA bundle when
+that linked Sleeper lineage is missing from the manifest or app payload.
