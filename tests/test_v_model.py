@@ -2733,6 +2733,9 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(editorial["reporter_persona"]["name"], "The Scout")
         self.assertIn("projectionPpgText", html)
         self.assertIn("conditional baseline PPG if signed", html)
+        self.assertIn("function playerAvailabilityLabel", html)
+        self.assertIn("No current NFL team", html)
+        self.assertIn("function playerMetricLabel", html)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"

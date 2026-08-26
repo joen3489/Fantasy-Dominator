@@ -2622,7 +2622,7 @@ def _page(
         rank: index + 1,
         playerId: row.player_id,
         entityHash: `player-${{row.player_id}}`,
-        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '', row.injury_status ? `availability ${{row.injury_status}}` : '']
+        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '', playerAvailabilityLabel(row)]
       }})).join('')}}</div>`;
     }}
 
@@ -3259,6 +3259,25 @@ def _page(
       }}
       if (horizonHasCurrentAvailabilityFlag(row)) return `conditional production baseline if active ${{shown}}`;
       return `projected fantasy points ${{shown}}`;
+    }}
+
+    function playerAvailabilityLabel(row, isAvailableMarket = false) {{
+      const status = String(row?.current_availability_status || '').trim().toLowerCase();
+      const note = String(row?.availability_note || '').trim().toLowerCase();
+      if (status === 'no_current_nfl_team' || note.includes('no current nfl team')) return 'No current NFL team';
+      if (status === 'injury_out') return 'Out';
+      if (status === 'injury_doubtful') return 'Doubtful';
+      if (status === 'injury_questionable') return 'Questionable';
+      if (status === 'injury_flagged') return 'Limited / flagged';
+      return row?.injury_status || (isAvailableMarket ? 'snapshot-unrostered' : 'not flagged');
+    }}
+
+    function playerMetricLabel(labelText, row) {{
+      const status = String(row?.current_availability_status || '').trim().toLowerCase();
+      const note = String(row?.availability_note || '').trim().toLowerCase();
+      if (status === 'no_current_nfl_team' || note.includes('no current nfl team')) return `Historical ${{labelText}}`;
+      if (horizonHasCurrentAvailabilityFlag(row)) return `Baseline ${{labelText}}`;
+      return labelText;
     }}
 
     function horizonHasCurrentAvailabilityFlag(row) {{
@@ -4878,14 +4897,14 @@ def _page(
         <div class="tile-row">
           ${{entityTile('Market Value', marketValue)}}
           ${{entityTile('Production baseline', projectionDisplay)}}
-          ${{entityTile('Availability', dossier.injury_status || (isAvailableMarket ? 'snapshot-unrostered' : 'not flagged'))}}
-          ${{entityTile('Opportunity', opp.opportunity_score ?? signal.opportunity_score ?? '', 'score')}}
-          ${{entityTile('Production', opp.production_score ?? '', 'score')}}
-          ${{entityTile('Usage vs Output', opp.xfp_regression_score ?? signal.xfp_regression_score ?? '', 'score')}}
-          ${{entityTile('Role Trend', opp.role_trend_score ?? signal.role_trend_score ?? '', 'score')}}
-          ${{entityTile('Fragility', opp.fragility_score ?? signal.fragility_score ?? '', 'score')}}
-          ${{entityTile('Breakout', signal.breakout_score ?? '', 'score')}}
-          ${{entityTile('Sell', signal.sell_score ?? '', 'score')}}
+          ${{entityTile('Availability', playerAvailabilityLabel(dossier, isAvailableMarket))}}
+          ${{entityTile(playerMetricLabel('Opportunity', dossier), opp.opportunity_score ?? signal.opportunity_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Production', dossier), opp.production_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Usage vs Output', dossier), opp.xfp_regression_score ?? signal.xfp_regression_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Role Trend', dossier), opp.role_trend_score ?? signal.role_trend_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Fragility', dossier), opp.fragility_score ?? signal.fragility_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Breakout', dossier), signal.breakout_score ?? '', 'score')}}
+          ${{entityTile(playerMetricLabel('Sell', dossier), signal.sell_score ?? '', 'score')}}
         </div>
         ${{playerPacket}}
         ${{playerHorizonMarkup(horizon)}}

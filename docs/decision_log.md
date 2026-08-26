@@ -2023,3 +2023,14 @@ response that does not contain a durable `run_id`, just as the generated
 league bundle does. It will not enter a status-polling loop or claim that a
 paid run is active without that receipt. The homepage contract test names
 `AGENTS.md` as its design source and checks the real rendered writer wiring.
+
+## 2026-08-26 - Reader labels must follow the availability boundary
+
+The player dossier already carried a correct no-current-team receipt and
+conditional baseline language, but its summary tile still displayed the raw
+Sleeper injury field and unlabeled historical score tiles. The reader now
+derives the availability label from `current_availability_status` first and
+labels opportunity, production, role, and market signals as historical or
+baseline when current availability limits their immediate use. This keeps a
+player page useful without making a historical signal look like a current
+weekly recommendation.

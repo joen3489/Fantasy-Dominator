@@ -1950,3 +1950,12 @@ receipt contract as the generated league reader. An accepted response without
 `run_id` resets the control and reports that no durable run was established;
 it cannot begin polling an older status receipt. This closes the remaining
 duplicate launch seam before the next protected Luna run.
+
+### 2026-08-26 availability-aware player summary labels
+
+Player dossier summary tiles now use the deterministic availability status as
+their authority. A player without a current NFL team is labeled accordingly,
+and the historical opportunity/production signals are labeled as historical
+instead of looking like current weekly grades. Injury-limited rows use a
+baseline label while the detailed evidence chain retains the raw Sleeper
+status and source trace.
