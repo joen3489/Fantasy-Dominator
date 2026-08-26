@@ -86,6 +86,10 @@ _RECOVERY_CAVEAT_LANGUAGE = re.compile(
     r"\b(?:not\s+recovery[- ]adjusted|does not model\s+(?:a\s+)?recovery|availability|injur(?:y|ies)|questionable|out|return timeline|conditional)\b",
     re.IGNORECASE,
 )
+_CLEAR_AVAILABILITY_LANGUAGE = re.compile(
+    r"\b(?:active|available|healthy|no\s+current\s+sleeper\s+injury\s+flag|no\s+injury\s+flag)\b",
+    re.IGNORECASE,
+)
 
 _SHARED_SAFETY_RULES = (
     "Forbidden language (do not use these words or their forms, in any tense, anywhere in your output): "
@@ -810,9 +814,14 @@ def _review_evidence_boundaries(
             for field in ("current_availability_status", "availability_scope", "availability_note")
         )
         no_current_team = "no_current_nfl_team" in status or "no current nfl team" in status
-        injury_flag = bool(str(packet.get("injury_status") or "").strip()) or any(
-            marker in status for marker in ("questionable", "out", "injury", "injured")
-        )
+        raw_injury_status = str(packet.get("injury_status") or "").strip().lower()
+        clear_injury_statuses = {"", "active", "available", "healthy", "no injury flag", "no current sleeper injury flag"}
+        injury_flag = raw_injury_status not in clear_injury_statuses
+        if not injury_flag:
+            injury_flag = bool(
+                re.search(r"\b(?:questionable|out|injured|injury|ir|pup)\b", status, re.IGNORECASE)
+                and not _CLEAR_AVAILABILITY_LANGUAGE.search(status)
+            )
         name_pattern = re.compile(rf"(?<!\w){re.escape(player_name)}(?!\w)", re.IGNORECASE)
         mentioned_indexes = [index for index, sentence in enumerate(sentences) if name_pattern.search(sentence)]
         if not mentioned_indexes:

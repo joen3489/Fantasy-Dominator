@@ -680,3 +680,12 @@ horizon and data-room surfaces preserve conditional dynasty context. Scope
 generated player packets also carry `player_name` for the shared validator;
 that validator strips the display name before checking caveat language so
 player names cannot accidentally satisfy the availability contract.
+
+## 2026-08-26 - Healthy availability is not an injury caveat
+
+Editorial receipts should report only meaningful limitations. The boundary
+checker now treats `Active`, `Available`, `Healthy`, and
+`No current Sleeper injury flag` as clear availability, while preserving
+warnings for real limited statuses such as `Questionable`, `Out`, `IR`, and
+`PUP`. This keeps healthy articles quiet without relaxing the requirement that
+injury-sensitive rest-of-season claims acknowledge the missing recovery model.

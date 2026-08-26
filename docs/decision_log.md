@@ -1798,3 +1798,13 @@ their conditional dynasty context. Evidence packets also carry a canonical
 `player_name` field so the article boundary validator can inspect the actual
 scope output. Display names are removed before caveat-word matching so a name
 like “Conditional Veteran” cannot satisfy its own availability check.
+
+## 2026-08-26 - Availability warnings must distinguish clear status from injury status
+
+The article boundary checker originally treated any non-empty injury field and
+the phrase “No current Sleeper injury flag” as evidence of an injury. That
+created noisy recovery warnings on healthy rows and made the receipt less
+useful to an editor. The checker now recognizes clear statuses such as Active,
+Available, Healthy, and No current Sleeper injury flag, while preserving a
+warning for Questionable, Out, IR, PUP, and similar limited statuses. Display
+names are still excluded from caveat matching.

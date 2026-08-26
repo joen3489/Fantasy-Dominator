@@ -115,6 +115,40 @@ class FrontOfficeContractsTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIn("no current nfl team", " ".join(result["errors"]).lower())
 
+    def test_article_boundary_review_distinguishes_clear_and_limited_availability(self) -> None:
+        """Design source: docs/data_contract.md; a healthy marker is not an injury observation."""
+        healthy = articles._evidence(
+            "player",
+            "healthy-1",
+            1,
+            "Healthy Player",
+            "Current production context.",
+            source_trace="source:stats",
+            injury_status="Active",
+            availability_note="No current Sleeper injury flag; baseline projection",
+        )
+        questionable = articles._evidence(
+            "player",
+            "questionable-1",
+            2,
+            "Questionable Player",
+            "Current production context.",
+            source_trace="source:stats",
+            injury_status="Questionable (knee)",
+            availability_note="Questionable (knee); baseline projection does not adjust for availability",
+        )
+        healthy_check = operator._review_evidence_boundaries(
+            "## Read\nHealthy Player's rest-of-season projection is 16 PPG.",
+            [healthy],
+        )
+        questionable_check = operator._review_evidence_boundaries(
+            "## Read\nQuestionable Player's rest-of-season projection is 16 PPG.",
+            [questionable],
+        )
+
+        self.assertEqual(healthy_check["injury_baseline_warnings"], 0)
+        self.assertEqual(questionable_check["injury_baseline_warnings"], 1)
+
     def test_article_validation_returns_structured_contract_without_breaking_legacy_fallbacks(self) -> None:
         """Encodes the epic's structured article contract; old deterministic mocks remain readable."""
         result = operator.validate_article_output(
