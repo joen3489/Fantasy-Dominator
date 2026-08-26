@@ -70,7 +70,12 @@ migration when explicitly configured.
    verification failure rather than trusting the server revision alone.
 5. Trigger a writer action only after source freshness and identity are green.
    Confirm the receipt records the selected reporter, provider, model, and
-   reasoning effort.
+   reasoning effort. Once accepted, do not deploy or restart the Railway
+   service until the writer status is terminal: a newsroom run spans refresh,
+   six desk calls, optional editor calls, and bundle publication. A service
+   restart during that window will recover the durable checkpoint as
+   interrupted and no article should be treated as published; retry on the
+   stable revision instead.
 
 ## Data lifecycle
 
