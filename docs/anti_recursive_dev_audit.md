@@ -572,3 +572,11 @@ the verifier to prove a team number without proving the owner lineage that
 selected the league. User-league rows, scoped context, and the browser bundle
 now retain the Sleeper user ID, while the smoke gate requires both it and the
 exact `roster_id`.
+
+## 2026-08-26 fallback byline smoke guard
+
+The revision-aware edition validator now fails closed when a deterministic
+fallback receipt claims a named reporter as its effective byline or omits the
+assigned reporter lens. This pairs the local provenance tests with the live
+edition contract and protects the exact regression where evidence-led copy
+looked like paid newsroom output.

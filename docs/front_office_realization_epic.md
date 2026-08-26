@@ -20,6 +20,14 @@ career scenario. The new card carries projected points, years, blended PPG,
 status, and calculation basis; it does not change the deterministic formula or
 present the scenario as a lifetime forecast or trade price.
 
+## 2026-08-26 fallback byline verification guard
+
+The live smoke contract now verifies the provenance boundary introduced for
+deterministic fallback articles: The Front Office must be the effective
+byline, while the intended newsroom desk remains an explicit assigned lens.
+This prevents a healthy deployment from quietly reintroducing the appearance
+that a named Luna reporter authored evidence-led fallback copy.
+
 ## Data lifecycle boundary (2026-08-25)
 
 Historical league assembly and recurring upkeep are separate operations. A
