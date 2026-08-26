@@ -2680,7 +2680,7 @@ def _page(
       document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
       document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
       document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
-      document.getElementById('manager-dossiers').innerHTML = markdownBrief(analysis.managerDossiers);
+      document.getElementById('manager-dossiers').innerHTML = managerDossierCards();
       const dossierReceipt = analysis.managerDossierReceipt || {{}};
       document.getElementById('manager-dossier-receipt').textContent = dossierReceipt.item_count
         ? `${{dossierReceipt.item_count}} dossiers · ${{dossierReceipt.updated_count || 0}} updated · ${{dossierReceipt.unchanged_count || 0}} unchanged this refresh`
@@ -4107,6 +4107,48 @@ def _page(
       const withoutFrontMatter = String(text).replace(/^---[\\s\\S]*?---\\n/, '');
       const lines = withoutFrontMatter.split('\\n').filter(line => line.trim()).slice(0, 18);
       return `<div class="brief-list">${{lines.map(line => `<div class="brief-card-evidence">${{escapeHtml(line.replace(/^#+\\s*/, '').replace(/^-\\s*/, ''))}}</div>`).join('')}}</div>`;
+    }}
+
+    function managerDossierCards() {{
+      const items = (analysis.managerDossierItems || [])
+        .filter(row => row && row.roster_id !== undefined && row.roster_id !== null)
+        .slice()
+        .sort((a, b) => Number(a.roster_id) - Number(b.roster_id));
+      if (!items.length) {{
+        return analysis.managerDossiers
+          ? articleBody(analysis.managerDossiers)
+          : '<p class="note">No structured manager dossiers are available. Refresh can rebuild them without blocking the fact tables.</p>';
+      }}
+      const cards = items.map(dossier => {{
+        const sample = dossier.sample_size || {{}};
+        const outcome = dossier.outcome_summary || {{}};
+        const construction = dossier.roster_construction || {{}};
+        const observations = (dossier.behavior_observations || [])
+          .slice(0, 4)
+          .map(row => `${{row.label || 'Observed signal'}}: ${{row.value || 'not recorded'}}`)
+          .join(' · ');
+        const evidence = [
+          sample.seasons ? `${{sample.seasons}} seasons` : '',
+          sample.trades ? `${{sample.trades}} trades` : '',
+          sample.waiver_claims ? `${{sample.waiver_claims}} waivers` : '',
+          outcome.record && outcome.record !== 'not_recorded' ? `record ${{outcome.record}}` : '',
+          dossier.confidence ? `confidence ${{dossier.confidence}}` : ''
+        ].filter(Boolean).join(' · ');
+        const rosterId = Number(dossier.roster_id);
+        const openLink = Number.isFinite(rosterId)
+          ? `<a class="button-link" href="#team-${{rosterId}}">Open full manager dossier →</a>`
+          : '';
+        return `<details class="brief-card manager-dossier-index" data-testid="manager-dossier-card" data-manager-roster-id="${{escapeHtml(String(dossier.roster_id))}}">
+          <summary class="brief-card-top"><strong>${{escapeHtml(dossier.team_name || `Roster ${{dossier.roster_id}}`)}}</strong><span class="tag">${{escapeHtml(dossier.dossier_id ? 'Evidence dossier' : 'Deterministic profile')}}</span></summary>
+          ${{evidence ? `<p class="brief-card-meta">${{escapeHtml(evidence)}}</p>` : ''}}
+          <p class="article-p">${{escapeHtml(dossier.analysis_text || 'No manager narrative is available yet.')}}</p>
+          <div class="tile-row">${{entityTile('Seasons', sample.seasons ?? '')}}${{entityTile('Trades', sample.trades ?? '')}}${{entityTile('Waivers', sample.waiver_claims ?? '')}}${{entityTile('Roster assets', construction.asset_count ?? '')}}${{entityTile('Market value', construction.market_value_total ?? '')}}${{entityTile('Outcome record', outcome.record || 'not recorded')}}</div>
+          ${{observations ? `<p class="note"><strong>Observed signals:</strong> ${{escapeHtml(observations)}}</p>` : ''}}
+          ${{dossier.unknowns?.length ? `<p class="note"><strong>Known limits:</strong> ${{escapeHtml(dossier.unknowns.join(' '))}}</p>` : ''}}
+          ${{openLink}}
+        </details>`;
+      }}).join('');
+      return `<div class="brief-list manager-dossier-index-list" data-testid="manager-dossier-index">${{cards}}</div>`;
     }}
 
     function articleBody(text) {{

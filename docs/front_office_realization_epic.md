@@ -1850,3 +1850,14 @@ This gives the manager a direct answer to “who is actually priced higher?” w
 preserving the separate questions of weekly utility, season value, dynasty
 window, fit, and repricing. It does not create a fifth score or reinterpret a
 clock percentile as a universal market ranking.
+
+## 2026-08-26 manager dossier index correction
+
+The Manager Room no longer uses the first 18 non-empty lines of
+`manager_dossiers.md` as its dossier surface. That preview could make a deep
+manager data set look sparse by hiding most managers. The browser now consumes
+the structured `managerDossierItems` payload, renders one evidence summary per
+roster, and links each summary to the exact `#team-{roster_id}` dossier route.
+The fallback path shows the complete Markdown artifact only when the
+structured payload is unavailable. This keeps the durable manager intelligence
+reachable without spending another writer call.

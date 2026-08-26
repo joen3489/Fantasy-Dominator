@@ -20,6 +20,16 @@ without confusing that question with weekly utility, strategy fit, or a
 same-position repricing lead. This is a presentation path over existing market
 receipts, not a new valuation formula.
 
+## 2026-08-26 - Manager dossiers must not be hidden by a preview slice
+
+The Manager Room was rendering the combined Markdown dossier through an
+18-line preview, which showed only the earliest managers and obscured the
+structured dossiers already present in the bundle. It now renders every
+structured manager dossier as an evidence summary with an exact roster link to
+the full team page. Markdown remains a fail-safe only when the structured
+payload is unavailable, and is rendered as a full article rather than silently
+truncated. This is a reader entry-path correction, not a new manager model.
+
 ## 2026-08-26 - Availability must travel with projection baselines
 
 The projection model intentionally preserves historical production when a

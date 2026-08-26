@@ -2511,6 +2511,15 @@ class VModelTests(unittest.TestCase):
         self.assertIn("evidence-drawer", html)
         self.assertIn("topTags('manager'", html)
         self.assertIn("insightFor('player'", html)
+        # The Manager Room must expose every structured dossier as an
+        # entry-point to the full team page. It must not collapse the dossier
+        # collection into the first arbitrary Markdown lines.
+        self.assertIn("function managerDossierCards", html)
+        self.assertIn("analysis.managerDossierItems", html)
+        self.assertIn('data-testid="manager-dossier-index"', html)
+        self.assertIn('data-testid="manager-dossier-card"', html)
+        self.assertIn("document.getElementById('manager-dossiers').innerHTML = managerDossierCards();", html)
+        self.assertNotIn("innerHTML = markdownBrief(analysis.managerDossiers)", html)
         # Sprint 15 visual system: color-by-category, rank/headshot media, and
         # delta/score table cells all route through these shared helpers -- guard
         # against an accidental deletion the way the other function-name checks do.

@@ -1452,3 +1452,10 @@ canonical `market_value` anchor, keeps missing prices below priced rows, and
 labels the four clock values as secondary position-relative percentiles. This
 separates the universal price question from the clock and roster-fit questions
 without adding another valuation formula.
+
+2026-08-26 manager-dossier entry-path amendment: the Manager Room now renders
+all structured manager dossier items instead of truncating the combined
+Markdown artifact to an 18-line preview. Each roster receives an evidence
+summary and an exact team-page link; the full structured dossier remains the
+depth surface. The Markdown artifact is a complete fallback only when the
+structured payload is unavailable.
