@@ -1971,3 +1971,13 @@ across every enabled league. The browser now stops locally with a truthful
 message and sends no writer request when the selected-edition control has no
 league ID. The all-edition button remains the only path that intentionally
 uses aggregate scope.
+
+## 2026-08-26 - Bind the authenticated home shell to the source revision
+
+The private edition and manifest already carried source-revision receipts, but
+the authenticated headquarters shell did not expose the SHA that produced its
+HTML and inline writer controls. That left a stale open tab difficult to
+distinguish from a current deployment. The home response now emits a safe
+source-revision meta tag and body data attribute for browser verification; it
+contains no user data or secret and does not replace the stronger private
+bundle and manifest checks.

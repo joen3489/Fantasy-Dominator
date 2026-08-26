@@ -256,6 +256,7 @@ def create_app() -> FastAPI:
                 "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
                 "writer_api_key_env": writer_config["api_key_env"],
                 "writer_retry_keys": writer_retry_keys,
+                "source_revision": _deployment_revision(),
                 "continuity": _continuity_view(user_id),
                 "deployment_gate": _production_gate(),
             },

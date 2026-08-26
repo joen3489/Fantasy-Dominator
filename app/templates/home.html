@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="front-office-source-revision" content="{{ source_revision or 'local' }}">
     <title>The Front Office</title>
     <style>
       :root {
@@ -664,7 +665,7 @@
       @media (max-width: 420px) { .article-shelf-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
-  <body>
+  <body data-front-office-source-revision="{{ source_revision or 'local' }}">
     <header class="topbar">
       <div class="topbar-inner">
         <div>

@@ -983,6 +983,24 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Select a league before running this edition. No writer request was sent.", response.text)
         self.assertIn("Choose a league before retrying selected desks. No writer request was sent.", response.text)
 
+    def test_home_exposes_the_running_source_revision_for_authenticated_verification(self) -> None:
+        """Design source: docs/front_office_principles.md; a live SHA alone must not hide a stale reader shell."""
+
+        token = self._token("user_home_revision_receipt")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_home_revision_receipt")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "home-revision", "season": "2026", "league_type": "dynasty", "name": "Home Revision", "roster_id": 1},
+        )
+
+        with patch("app.main._deployment_revision", return_value="release-home-receipt"):
+            response = self.client.get("/", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('name="front-office-source-revision" content="release-home-receipt"', response.text)
+        self.assertIn('data-front-office-source-revision="release-home-receipt"', response.text)
+
     def test_generate_insights_preserves_failed_workflow_diagnostics(self) -> None:
         league = {
             "league_id": "diagnostic-league",

@@ -1903,3 +1903,11 @@ does not yield an exact `league_id`. An empty selector can no longer fall
 through to the server's deliberately aggregate all-edition scope, and the UI
 states that no writer request was sent. This preserves the paid-action and
 identity boundaries while keeping aggregate generation explicit.
+
+## 2026-08-26 authenticated shell revision receipt
+
+The headquarters HTML now exposes the running source revision in a safe meta
+tag and body data attribute. This makes an authenticated browser entry
+inspectable when an already-open tab may be stale, while the edition manifest,
+private bundle, and publication receipts remain the authoritative proof of
+what content is served.

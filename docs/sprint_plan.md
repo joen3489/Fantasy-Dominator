@@ -1488,3 +1488,8 @@ Because the API intentionally interprets a missing `league_id` as an
 all-edition run, the previous UI fallthrough could widen an ambiguous click
 into a paid aggregate request. Aggregate generation remains available only
 through its explicit all-editions control.
+
+2026-08-26 authenticated-shell receipt amendment: the private headquarters
+HTML now exposes the deployed source revision as a safe meta tag and body data
+attribute. Browser verification can therefore detect a stale open shell in
+addition to checking the private edition manifest and content receipts.
