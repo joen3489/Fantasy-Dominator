@@ -1846,3 +1846,13 @@ all-edition runs use the user-scoped receipt unless a newer selected-league
 writer checkpoint is present. These statuses are operational receipts only; a
 current article receipt bound to the reader bundle is still required before
 content is called published.
+
+## 2026-08-26 - Bind writer polling to the accepted run
+
+An accepted writer request is not enough evidence that a paid newsroom run is
+actually present. The browser now polls only for the `run_id` returned by that
+request; an older or missing durable receipt produces an explicit error within
+seconds rather than a stale “writer started” state or an invitation to click a
+second paid run. This is an observability and duplicate-spend guard, not a
+publication receipt: the per-article evidence, editor, and bundle receipts
+remain authoritative.

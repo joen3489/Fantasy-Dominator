@@ -1794,3 +1794,14 @@ was printed. A newer selected-league writer checkpoint takes precedence over
 an older aggregate terminal receipt. The behavior is covered by
 selected-league and all-edition entry-path tests and has passed the public
 production smoke gate.
+
+## 2026-08-26 writer request receipt binding
+
+The browser writer control now binds its polling loop to the `run_id` returned
+by the accepted operator request. If the durable status endpoint returns an
+older receipt or no receipt after a short grace window, the control stops and
+states that the request was not observed rather than leaving a stale “writer
+started” message on screen. This keeps a paid action from being retried blindly
+and makes a process restart, wrong scope, or storage failure visible at the
+entry path. The server response and durable receipt are covered by an
+adversarial contract test; this does not claim that a provider call completed.

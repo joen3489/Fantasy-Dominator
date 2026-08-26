@@ -1488,7 +1488,7 @@
             button.dataset.reload = '';
             button.textContent = allEditions ? 'Generate all editions' : 'Generate this edition';
           };
-          const watchWriter = async (leagueId, button, allEditions = false) => {
+          const watchWriter = async (leagueId, button, allEditions = false, expectedRunId = '') => {
             // Luna/max plus the refresh and bundle rebuild can legitimately
             // exceed the old two-minute watch window. Keep the browser watch
             // bounded but long enough to observe a complete newsroom run.
@@ -1505,6 +1505,19 @@
                   return;
                 }
                 if (!response.ok) throw new Error(status.detail || 'writer status failed (' + response.status + ')');
+                const observedRunId = String(status.run_id || '');
+                if (expectedRunId && observedRunId !== expectedRunId) {
+                  if (attempt < 4) {
+                    writerStatus.textContent = 'Waiting for the durable receipt for this writer request.';
+                    continue;
+                  }
+                  writerStatus.className = 'writer-status error';
+                  writerStatus.textContent = observedRunId
+                    ? 'The writer request was accepted, but production returned a different run receipt. No new run was started from this page.'
+                    : 'The writer request was accepted, but its durable receipt did not appear. No new run was started from this page.';
+                  resetWriterButton(button, allEditions);
+                  return;
+                }
                 if (status.state === 'running') {
                   const progress = status.total_count
                     ? ` · ${status.completed_count || 0}/${status.total_count} desks complete`
@@ -1575,7 +1588,7 @@
               }
               writerStatus.textContent = allEditions ? 'All-edition writer run started. Watching every league for completion.' : 'Writer run started. Watching the selected league for completion.';
               button.textContent = allEditions ? 'All writers running' : 'Writer running';
-              void watchWriter(leagueId, button, allEditions);
+              void watchWriter(leagueId, button, allEditions, String(payload.run_id || ''));
             } catch (error) {
               resetWriterButton(button, allEditions);
               if (writerButton && writerButton !== button) resetWriterButton(writerButton);

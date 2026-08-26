@@ -69,6 +69,38 @@ class FrontOfficeContractsTests(unittest.TestCase):
             saved = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["state"], "failed")
 
+    def test_start_job_returns_the_durable_run_receipt(self) -> None:
+        """Design source: AGENTS.md; an accepted paid action must be bound to a persisted receipt."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status_dir = Path(tmp) / "operator" / "status"
+            status_path = status_dir / "operator_status.json"
+
+            class InlineThread:
+                def __init__(self, target: object, args: tuple[object, ...], daemon: bool) -> None:
+                    del daemon
+                    self.target = target
+                    self.args = args
+
+                def start(self) -> None:
+                    self.target(*self.args)
+
+            with patch.object(operator, "STATUS_PATH", status_path), patch.object(
+                operator, "OPERATOR_STATUS_DIR", status_dir
+            ), patch.object(operator, "_ACTIVE_JOB", False), patch.object(
+                operator.threading, "Thread", InlineThread
+            ):
+                response = operator.start_job(
+                    "generate-insights",
+                    lambda: {"state": "complete", "message": "Writer complete."},
+                )
+                receipt = json.loads(status_path.read_text(encoding="utf-8"))
+
+            self.assertTrue(response["accepted"])
+            self.assertTrue(response["run_id"])
+            self.assertEqual(response["run_id"], receipt["run_id"])
+            self.assertEqual(receipt["state"], "complete")
+
     def test_outer_job_failure_preserves_the_last_writer_checkpoint(self) -> None:
         """Design source: AGENTS.md; a wrapper failure must not erase per-desk progress."""
 
