@@ -1403,3 +1403,11 @@ history and fit evidence. The explicit generation workflow supports a scoped
 desk retry, and the reader persists a first-class source receipt for each LLM
 article so the media facade can open the evidence path without regenerating
 copy.
+
+2026-08-26 article-boundary gate amendment: the writer validator now checks
+the rendered narrative against the same evidence packet for high-risk
+availability language. An article is held when it gives a player with no
+current NFL team an unqualified projection or PPG claim; injury-sensitive
+rest-of-season production receives a visible missing-caveat warning. This is
+an editorial seam check, not a new projection model, and it keeps historical
+context useful without letting it masquerade as current production.

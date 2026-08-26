@@ -66,6 +66,27 @@ FORBIDDEN_LANGUAGE_PATTERNS = (
     re.compile(r"\bwill overpay\b", re.IGNORECASE),
 )
 
+# These are deliberately narrow claim-boundary checks, not a second language
+# model. The deterministic layer already owns availability and projection
+# facts; this seam prevents a writer from laundering a conditional historical
+# baseline into a current forecast just because the prose sounds confident.
+_PROJECTION_LANGUAGE = re.compile(
+    r"\b(?:project(?:ed|ion|s)?|ppg|points per game|expected points|rest[- ]of[- ]season|next[- ]game)\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_AVAILABILITY_LANGUAGE = re.compile(
+    r"\b(?:conditional|if\s+(?:he|the player|they)\s+(?:is\s+)?signed|if\s+active|if\s+he\s+returns|assuming\s+(?:he\s+)?(?:is\s+)?signed|subject\s+to\s+(?:a\s+)?signing)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_UNAVAILABLE_LANGUAGE = re.compile(
+    r"\b(?:unavailable|not available|cannot\s+(?:be\s+)?project(?:ed)?|no usable projection|not a forecast)\b",
+    re.IGNORECASE,
+)
+_RECOVERY_CAVEAT_LANGUAGE = re.compile(
+    r"\b(?:not\s+recovery[- ]adjusted|does not model\s+(?:a\s+)?recovery|availability|injur(?:y|ies)|questionable|out|return timeline|conditional)\b",
+    re.IGNORECASE,
+)
+
 _SHARED_SAFETY_RULES = (
     "Forbidden language (do not use these words or their forms, in any tense, anywhere in your output): "
     "accepted, executed, guaranteed, messaged, offered, sent, submitted, will overpay. "
@@ -639,6 +660,7 @@ EDITOR_TOOL["input_schema"]["properties"].update(
         },
     }
 )
+
 EDITOR_TOOL["input_schema"]["required"] = list(EDITOR_TOOL["input_schema"]["properties"])
 
 _CITATION_RULES = (
@@ -750,6 +772,78 @@ def _editorial_room_context(
 def _editorial_excerpt(value: Any, limit: int = 900) -> str:
     text = " ".join(str(value or "").split())
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _review_evidence_boundaries(
+    narrative: str,
+    evidence_packets: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Check high-risk availability and horizon wording before publication.
+
+    Writers receive the full deterministic packet and an explicit prompt, but
+    prompts are not contracts.  This small seam catches the most damaging
+    regression from the old product: a player with no current NFL team being
+    described as if a historical PPG number were an active forecast.  The
+    injury check is a warning because an article can still be useful when it
+    states the limitation elsewhere in the same short paragraph.
+    """
+
+    text = str(narrative or "")
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if part.strip()
+    ]
+    errors: list[str] = []
+    warnings: list[str] = []
+    no_team_claims_reviewed = 0
+    injury_baseline_warnings = 0
+
+    for packet in evidence_packets or []:
+        if not isinstance(packet, dict):
+            continue
+        player_name = str(packet.get("player_name") or "").strip()
+        if not player_name:
+            continue
+        status = " ".join(
+            str(packet.get(field) or "").strip().lower()
+            for field in ("current_availability_status", "availability_scope", "availability_note")
+        )
+        no_current_team = "no_current_nfl_team" in status or "no current nfl team" in status
+        injury_flag = bool(str(packet.get("injury_status") or "").strip()) or any(
+            marker in status for marker in ("questionable", "out", "injury", "injured")
+        )
+        name_pattern = re.compile(rf"(?<!\w){re.escape(player_name)}(?!\w)", re.IGNORECASE)
+        mentioned_indexes = [index for index, sentence in enumerate(sentences) if name_pattern.search(sentence)]
+        if not mentioned_indexes:
+            continue
+
+        for index in mentioned_indexes:
+            context = " ".join(sentences[max(0, index - 1): min(len(sentences), index + 2)])
+            if no_current_team and _PROJECTION_LANGUAGE.search(context):
+                no_team_claims_reviewed += 1
+                if not (
+                    _CONDITIONAL_AVAILABILITY_LANGUAGE.search(context)
+                    or _EXPLICIT_UNAVAILABLE_LANGUAGE.search(context)
+                ):
+                    errors.append(
+                        f"{player_name} is unavailable with no current NFL team; projection/PPG language must be conditional or explicitly unavailable."
+                    )
+                    break
+            if injury_flag and re.search(r"\brest[- ]of[- ]season\b", context, re.IGNORECASE) and _PROJECTION_LANGUAGE.search(context):
+                if not _RECOVERY_CAVEAT_LANGUAGE.search(context):
+                    injury_baseline_warnings += 1
+                    warnings.append(
+                        f"{player_name} has an availability or injury flag; rest-of-season production should state that the baseline is not recovery-adjusted."
+                    )
+                    break
+
+    return {
+        "errors": list(dict.fromkeys(errors)),
+        "warnings": list(dict.fromkeys(warnings)),
+        "no_current_team_claims_reviewed": no_team_claims_reviewed,
+        "injury_baseline_warnings": injury_baseline_warnings,
+    }
 
 
 def generate_article_via_llm(
@@ -989,10 +1083,15 @@ def validate_article_output(
     elif unknown_citations:
         warnings.append(f"Article cited some unknown evidence IDs (kept): {','.join(sorted(unknown_citations))}")
 
+    boundary_checks = _review_evidence_boundaries(narrative, evidence_packets)
+    errors.extend(boundary_checks["errors"])
+    warnings.extend(boundary_checks["warnings"])
+
     return {
         "valid": not errors,
         "errors": errors,
         "warnings": warnings,
+        "boundary_checks": boundary_checks,
         "narrative": narrative,
         "structured": structured,
         "evidence_ids": sorted(valid_citations),
@@ -1200,6 +1299,7 @@ def generate_articles_workflow(
                         else "single_source" if final_validation.get("source_ids")
                         else "unattributed"
                     ),
+                    "boundary_checks": final_validation.get("boundary_checks") or {},
                 }
                 output_path.write_text(
                     _render_article_markdown(

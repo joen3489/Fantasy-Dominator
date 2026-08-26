@@ -1666,3 +1666,16 @@ entry path, and the rebuild replaces only known historical `team_name` labels
 in the six preserved publication bodies, refreshing their content hashes while
 leaving evidence fingerprints and paid writer decisions intact. This is a
 presentation migration, not an LLM regeneration.
+
+## 2026-08-26 - Writer prompts are not enough for availability truth
+
+The six-desk writer packet already carried current availability, conditional
+historical baselines, and horizon limits, and the editor prompt named those
+rules. That was necessary but not sufficient: a confident writer could still
+turn a no-current-team player's historical PPG into an active-sounding
+projection. The article validator now runs a deterministic, evidence-aware
+claim-boundary check before an article can be recorded as generated. It holds
+unqualified projection/PPG language for a player with no current NFL team and
+warns when injury-sensitive rest-of-season production lacks the
+not-recovery-adjusted caveat. The packet remains the source of facts; the
+check does not invent a replacement score or recovery forecast.

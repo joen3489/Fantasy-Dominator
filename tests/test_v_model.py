@@ -760,6 +760,65 @@ class VModelTests(unittest.TestCase):
         self.assertTrue(partial_result["valid"])
         self.assertTrue(partial_result["warnings"])
 
+    def test_article_editor_blocks_unqualified_projection_for_player_without_team(self) -> None:
+        """Design source: AGENTS.md; historical baselines cannot print as active forecasts."""
+        evidence = [
+            {
+                "evidence_id": "player:hill:1",
+                "player_name": "Tyreek Hill",
+                "current_availability_status": "no_current_nfl_team",
+                "availability_note": "No current NFL team in Sleeper; historical baseline is conditional on signing",
+                "source_ids": ["sleeper:players"],
+            }
+        ]
+        bad = {
+            "narrative_markdown": (
+                "## Cornerstones\nTyreek Hill is projected for 15 points per game.\n\n"
+                "## Shop Candidates\nReview the market."
+            ),
+            "cited_evidence_ids": ["player:hill:1"],
+        }
+        result = operator.validate_article_output(bad, {"player:hill:1"}, ("## Cornerstones", "## Shop Candidates"), evidence)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("no current NFL team" in error for error in result["errors"]))
+
+        safe = {
+            "narrative_markdown": (
+                "## Cornerstones\nTyreek Hill has no current NFL team; his conditional baseline "
+                "PPG is 15 if signed.\n\n## Shop Candidates\nReview the market."
+            ),
+            "cited_evidence_ids": ["player:hill:1"],
+        }
+        safe_result = operator.validate_article_output(
+            safe, {"player:hill:1"}, ("## Cornerstones", "## Shop Candidates"), evidence
+        )
+        self.assertTrue(safe_result["valid"], safe_result["errors"])
+        self.assertEqual(safe_result["boundary_checks"]["no_current_team_claims_reviewed"], 1)
+
+    def test_article_editor_warns_when_injury_baseline_lacks_recovery_caveat(self) -> None:
+        """Design source: docs/data_contract.md; rest-of-season PPG is not recovery-adjusted."""
+        evidence = [
+            {
+                "evidence_id": "player:mix:1",
+                "player_name": "Joe Mixon",
+                "current_availability_status": "available",
+                "injury_status": "Questionable",
+                "source_ids": ["sleeper:players"],
+            }
+        ]
+        output = {
+            "narrative_markdown": (
+                "## Cornerstones\nJoe Mixon projects for 15 points per game for the rest of season.\n\n"
+                "## Shop Candidates\nReview the market."
+            ),
+            "cited_evidence_ids": ["player:mix:1"],
+        }
+        result = operator.validate_article_output(
+            output, {"player:mix:1"}, ("## Cornerstones", "## Shop Candidates"), evidence
+        )
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertTrue(any("not recovery-adjusted" in warning for warning in result["warnings"]))
+
     def test_reporter_persona_contract_is_bounded_and_reaches_article_prompt(self) -> None:
         from src import articles
         from src.context import FantasyContext

@@ -462,3 +462,11 @@ validator and the deterministic gate. A persisted LLM hold suppresses the
 article body on the reader facade, while the review note, errors, and provider
 receipt remain inspectable. The editor is an evidence-bound repair layer, not a
 new source of player facts, projections, scores, manager motives, or actions.
+
+The writer validator also runs an evidence-aware claim-boundary check. A
+generated article is held if it uses unqualified projection or PPG language
+for a player whose current Sleeper status is no current NFL team. Injury-
+sensitive rest-of-season production produces a warning when the article omits
+the not-recovery-adjusted limitation. These checks protect the publication
+seam without changing the underlying deterministic score or historical
+baseline.
