@@ -73,6 +73,7 @@ def _write_writer_brief(
     *,
     persona_id: str = "scout",
     mode: str = "deterministic_template",
+    team_name: str = "",
 ) -> None:
     """Write the private markdown artifact surfaced by the headquarters preview."""
 
@@ -85,9 +86,10 @@ def _write_writer_brief(
                 "generated_at: 2026-08-22T19:19:09+00:00",
                 f"model_mode: {mode}",
                 f"reporter_persona: {persona_id}",
+                *( [f"team_name: {team_name}"] if team_name else [] ),
                 "---",
                 "",
-                "# Daily GM Brief: Private Team",
+                f"# Daily GM Brief: {team_name or 'Private Team'}",
                 "",
                 text,
                 "",
@@ -1326,6 +1328,34 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Evidence-led fallback", beta.text)
         self.assertNotIn("Alpha-only writer read.", beta.text)
         self.assertNotIn("Foreign user's writer read.", beta.text)
+
+    def test_writer_preview_follows_current_source_team_label(self) -> None:
+        token = self._token("user_writer_label")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_label")
+        _write_writer_brief(
+            self.tmp_path / "users" / str(user_id) / "leagues" / "alpha" / "analysis",
+            "The Melkor Lord of Light edition has a live read.",
+            team_name="Melkor Lord of Light",
+        )
+        league = {
+            "league_id": "alpha",
+            "season": "2026",
+            "roster_id": 1,
+            "sleeper_team_name": "Lulu’s Potatoe’s",
+        }
+        with patch.object(
+            app_main,
+            "_source_team_rows_for_league",
+            return_value=[
+                {"league_id": "alpha", "season": "2026", "roster_id": 1, "owner_id": "joe", "team_name": "Lulu’s Potatoe’s"},
+                {"league_id": "prior", "season": "2025", "roster_id": 1, "owner_id": "joe", "team_name": "Melkor Lord of Light"},
+            ],
+        ):
+            preview = app_main._load_writer_preview(user_id, league)
+
+        self.assertIn("Lulu’s Potatoe’s", preview["text"])
+        self.assertNotIn("Melkor Lord of Light", preview["text"])
 
     def test_manager_trade_profiles_are_private_league_scoped_and_reach_writer_context(self) -> None:
         token = self._token("user_manager_trade_profiles")

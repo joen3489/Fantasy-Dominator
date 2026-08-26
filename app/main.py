@@ -1748,6 +1748,21 @@ def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]
     preview = "\n".join(preview_lines).strip()
     if not preview:
         return empty
+    stored_team_name = str(front_matter.get("team_name") or "").strip()
+    current_team_name = str(league.get("sleeper_team_name") or "").strip()
+    if stored_team_name and current_team_name and stored_team_name.casefold() != current_team_name.casefold():
+        source_rows = _source_team_rows_for_league(user_id, league)
+        resolved_preview_name = resolve_team_name(
+            stored_team_name,
+            source_rows,
+            league_id=str(league.get("league_id") or ""),
+            season=str(league.get("season") or ""),
+            roster_id=league.get("roster_id"),
+        )
+        if resolved_preview_name.casefold() == current_team_name.casefold():
+            # Do not regenerate a paid brief for a mutable source-label rename;
+            # repair the stale source presentation in this short reader preview.
+            preview = preview.replace(stored_team_name, current_team_name)
     if len(preview) > 900:
         preview = preview[:897].rsplit(" ", 1)[0].rstrip() + "…"
 
