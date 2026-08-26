@@ -2995,22 +2995,22 @@ def _page(
 
     function signalBreakoutRows() {{
       let rows = tables.breakout_candidates.slice();
-      if (state.signalScope === 'team') rows = rows.filter(row => currentRosterPlayerNames().has(String(row.player_name)));
+      if (state.signalScope === 'team') rows = rows.filter(row => currentRosterPlayerIds().has(String(row.player_id)));
       if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
       return sortRows(applySearch(rows), ['breakout_score']).reverse();
     }}
 
     function signalSellRows() {{
       let rows = tables.sell_candidates.slice();
-      if (state.signalScope === 'team') rows = rows.filter(row => String(row.current_team_name) === activeTeamName());
+      if (state.signalScope === 'team') rows = rows.filter(row => currentRosterPlayerIds().has(String(row.player_id)));
       if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
       return sortRows(applySearch(rows), ['sell_score']).reverse();
     }}
 
     function filteredSignalGaps() {{
-      const names = currentRosterPlayerNames();
+      const playerIds = currentRosterPlayerIds();
       let rows = tables.projection_market_gaps.slice();
-      if (state.signalScope === 'team') rows = rows.filter(row => names.has(String(row.player_name)));
+      if (state.signalScope === 'team') rows = rows.filter(row => playerIds.has(String(row.player_id)));
       if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
       return sortRows(applySearch(rows), ['gap_score']).reverse().slice(0, 80);
     }}
@@ -3333,8 +3333,11 @@ def _page(
       return applySearch(rows).slice(0, 12);
     }}
 
-    function currentRosterPlayerNames() {{
-      return new Set(currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId).map(row => String(row.player_name)));
+    function currentRosterPlayerIds() {{
+      return new Set(currentSeasonRoster()
+        .filter(row => Number(row.roster_id) === state.teamId)
+        .map(row => String(row.player_id || '').trim())
+        .filter(Boolean));
     }}
 
     function activeTeamName() {{

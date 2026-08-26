@@ -1815,3 +1815,14 @@ fallbacks, and held editor drafts in that summary while keeping the full
 receipt drawer available. The change is presentation-only, but it preserves
 the product rule that the media facade must never overstate the paid editorial
 layer.
+
+
+## 2026-08-26 signal identity checkpoint
+
+The Signal Board team filters had retained a legacy name-based seam: breakout
+rows matched `player_name`, and sell rows matched the fantasy team label. That
+could reintroduce the wrong-team regression after a rename even though the
+selected league and roster identity were correct underneath. The browser now
+derives the active roster's exact `player_id` set from the scoped roster table
+and uses it for breakout, sell, and projection-gap views. The entry-path test
+also asserts that those team filters do not fall back to display names.

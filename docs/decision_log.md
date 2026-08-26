@@ -1865,3 +1865,13 @@ file proves that a reader artifact exists; it does not prove that a provider
 call produced it or that the editor approved it. This keeps the newspaper
 facade aligned with the actual writer state while retaining every receipt for
 inspection.
+
+
+## 2026-08-26 - Signal Board team filters use player identity, not names
+
+The Signal Board still filtered breakout rows by player name and sell rows by
+the current fantasy team label. That was unsafe after a manager renamed a
+team, and it violated the identity boundary even when the underlying tables
+carried stable `player_id` values. Team-scoped breakout, sell, and projection-
+gap views now derive exact player membership from the selected `roster_id` and
+filter every row by `player_id`. A display name remains presentation only.
