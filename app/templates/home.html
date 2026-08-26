@@ -601,7 +601,7 @@
       }
       .writer-panel h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
       .writer-panel p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
-      .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px; align-items: center; }
+      .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 9px; align-items: center; }
       .writer-actions input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fbfcf8; }
       .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
       .writer-note { margin: 0; color: #70551b; font-size: 12px; line-height: 1.4; }
@@ -609,6 +609,8 @@
       .writer-readiness span { border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; color: var(--muted); background: #fbfcf8; font-size: 11px; }
       .writer-readiness strong { color: var(--ink); font-weight: 700; }
       .writer-status.error { color: var(--sell); }
+      .writer-plan-output { margin: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px; background: #fbfcf8; color: var(--muted); white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+      .writer-plan-output.error { color: var(--sell); }
       .storage-panel { border-color: #c8d5ce; background: #f2f7f3; }
       .storage-panel summary { cursor: pointer; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
       .storage-panel p { margin: 8px 0 0; }
@@ -1010,9 +1012,11 @@
           {% endif %}
           <div class="writer-actions">
             <input type="password" data-writer-token autocomplete="off" placeholder="Operator key (optional locally)" aria-label="Front Office operator key">
+            <button class="refresh-button" type="button" data-writer-plan-button>Review run plan</button>
             <button class="primary-button" type="button" data-writer-button>Generate this edition</button>
             <button class="refresh-button" type="button" data-writer-all-button>Generate all editions</button>
           </div>
+          <pre class="writer-plan-output" data-writer-plan-output hidden role="status"></pre>
           <span class="writer-status{% if selected_writer_state == "failed" %} error{% endif %}" data-writer-status data-testid="writer-run-status" role="status">
             {% if selected_writer_job == "generate-insights" and selected_writer_state == "running" %}
               {{ selected_operator_status.get("message") or "Writer run is in progress." }}{% if selected_operator_status.get("total_count") is not none %} ({{ selected_operator_status.get("completed_count") or 0 }}/{{ selected_operator_status.get("total_count") }} desks complete){% endif %}
@@ -1418,10 +1422,59 @@
 
         const writerButton = document.querySelector('[data-writer-button]');
         const writerAllButton = document.querySelector('[data-writer-all-button]');
-        if (writerButton || writerAllButton) {
+        const writerPlanButton = document.querySelector('[data-writer-plan-button]');
+        const writerPlanOutput = document.querySelector('[data-writer-plan-output]');
+        if (writerButton || writerAllButton || writerPlanButton) {
           const writerStatus = document.querySelector('[data-writer-status]');
           const writerToken = document.querySelector('[data-writer-token]');
           const writerSleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+          const selectedWriterLeagueId = () => profileForm?.querySelector('[data-profile-league]')?.value || '';
+          const writerPlanLabel = (entry) => {
+            const decision = String(entry?.decision || 'fallback').replaceAll('_', ' ');
+            const evidence = Number(entry?.evidence_count || 0);
+            const sources = Number(entry?.source_count || 0);
+            const counts = `${evidence} evidence / ${sources} source${sources === 1 ? '' : 's'}`;
+            return `${entry?.title || entry?.article || 'Desk'} — ${decision} · ${counts}. ${entry?.reason || ''}`;
+          };
+          const reviewWriterPlan = async () => {
+            if (!writerPlanButton || !writerPlanOutput) return;
+            const leagueId = selectedWriterLeagueId();
+            if (!leagueId) {
+              writerPlanOutput.hidden = false;
+              writerPlanOutput.className = 'writer-plan-output error';
+              writerPlanOutput.textContent = 'Choose a league before reviewing its writer plan.';
+              return;
+            }
+            writerPlanButton.disabled = true;
+            writerPlanButton.textContent = 'Reviewing plan';
+            writerPlanOutput.hidden = false;
+            writerPlanOutput.className = 'writer-plan-output';
+            writerPlanOutput.textContent = 'Inspecting scoped evidence; no provider request will be made.';
+            const headers = {};
+            if (writerToken?.value) headers['x-front-office-token'] = writerToken.value;
+            try {
+              const response = await fetch('/api/operator/generation-plan?league_id=' + encodeURIComponent(leagueId), {headers, cache: 'no-store'});
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                if (response.status === 401) throw new Error('Your Clerk session expired. Sign in again before reviewing the writer plan.');
+                if (response.status === 403) throw new Error('Reviewing the production writer plan requires FRONT_OFFICE_OPERATOR_TOKEN. Enter the operator key above; no provider request was made.');
+                throw new Error(payload.detail || 'writer plan failed (' + response.status + ')');
+              }
+              const entries = Object.values(payload.articles || {});
+              writerPlanOutput.textContent = [
+                payload.message || 'No provider request was made.',
+                'Model: ' + (payload.model || 'not configured') + ' · reasoning: ' + (payload.reasoning_effort || 'not recorded') + ' · editor: ' + (payload.editor_mode || 'deterministic'),
+                '',
+                ...entries.map(writerPlanLabel),
+              ].join('\n');
+            } catch (error) {
+              writerPlanOutput.className = 'writer-plan-output error';
+              writerPlanOutput.textContent = error.message;
+            } finally {
+              writerPlanButton.disabled = false;
+              writerPlanButton.textContent = 'Review run plan';
+            }
+          };
           const markWriterSessionExpired = (button, allEditions = false) => {
             writerStatus.className = 'writer-status error';
             writerStatus.textContent = 'Your Clerk session expired. Sign in again before running the writer.';
@@ -1489,7 +1542,7 @@
               window.location.reload();
               return;
             }
-            const leagueId = profileForm?.querySelector('[data-profile-league]')?.value || '';
+            const leagueId = selectedWriterLeagueId();
             button.disabled = true;
             if (writerButton) writerButton.disabled = true;
             if (writerAllButton) writerAllButton.disabled = true;
@@ -1533,6 +1586,7 @@
           };
           if (writerButton) writerButton.addEventListener('click', () => startWriter(writerButton));
           if (writerAllButton) writerAllButton.addEventListener('click', () => startWriter(writerAllButton, true));
+          if (writerPlanButton) writerPlanButton.addEventListener('click', reviewWriterPlan);
         }
 
         const storageAuditButton = document.querySelector('[data-storage-audit-button]');
