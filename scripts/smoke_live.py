@@ -198,6 +198,15 @@ def _validate_publication_receipts(payload: dict) -> list[str]:
                 errors.append(f"publication receipt {article_key} is missing visual direction")
         if not str(receipt.get("reporter_id") or "").strip():
             errors.append(f"publication receipt {article_key} has no reporter identity")
+        if mode == "deterministic_template":
+            if str(receipt.get("reporter_id") or "").strip().lower() != "front_office":
+                errors.append(
+                    f"publication receipt {article_key} fallback is not owned by The Front Office"
+                )
+            if not str(receipt.get("assigned_reporter_id") or "").strip():
+                errors.append(
+                    f"publication receipt {article_key} fallback has no assigned reporter lens"
+                )
         editorial_review = receipt.get("editorial_review")
         if editorial_review is not None:
             if not isinstance(editorial_review, dict):

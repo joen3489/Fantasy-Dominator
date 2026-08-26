@@ -208,7 +208,8 @@ class LiveSmokeContractTests(unittest.TestCase):
         receipts = {
             key: {
                 "mode": "deterministic_template",
-                "reporter_id": key,
+                "reporter_id": "front_office",
+                "assigned_reporter_id": key,
                 "structured": {
                     "headline": key,
                     "lede": "A grounded fallback lead.",
@@ -259,6 +260,75 @@ class LiveSmokeContractTests(unittest.TestCase):
         self.assertEqual(validate_authenticated_edition(reviewed, "new", "alpha"), [])
         invalid_review = {**reviewed, "analysis": {**reviewed["analysis"], "articleReceipts": {**reviewed["analysis"]["articleReceipts"], "daily_brief": {**reviewed["analysis"]["articleReceipts"]["daily_brief"], "editorial_review": {"mode": "llm", "status": "maybe", "decision": "approve"}}}}}
         self.assertIn("unknown editorial review status", " ".join(validate_authenticated_edition(invalid_review, "new", "alpha")))
+
+    def test_authenticated_edition_rejects_a_named_fallback_byline(self) -> None:
+        receipts = {
+            key: {
+                "mode": "deterministic_template",
+                "reporter_id": "front_office",
+                "assigned_reporter_id": "look_ahead_lonnie",
+                "structured": {
+                    "headline": key,
+                    "lede": "A grounded fallback lead.",
+                    "thesis": "Use the evidence.",
+                    "what_changed": "The receipt boundary is explicit.",
+                    "action": "Open the Data Room.",
+                    "visual_brief": "Use accessible HTML evidence rails.",
+                    "fallback_schema_version": "deterministic_fallback_v2",
+                },
+            }
+            for key in ("daily_brief", "team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel")
+        }
+        payload = {
+            "leagueId": "alpha",
+            "sourceRevision": "new",
+            "identityReceipt": {"status": "verified", "sleeper_user_id": "sleeper-17", "roster_id": 2},
+            "tables": {
+                "today_priority_board": [{}],
+                "player_dossiers": [{}],
+                "player_horizon_market_scores": [{}],
+                "available_player_horizon_scores": [{}],
+                "horizon_market_movements": [{}],
+                "manager_dossiers": [{}],
+                "manager_season_history": [{}],
+                "team_asset_inventory": [{}],
+                "source_freshness": [{}],
+                "news_source_freshness": [{}],
+                "projection_source_freshness": [{}],
+            },
+            "analysis": {"articleReceipts": receipts},
+            "draftRoom": {"schema_version": "draft_room_v1"},
+        }
+
+        named_fallback = {
+            **payload,
+            "analysis": {
+                "articleReceipts": {
+                    **receipts,
+                    "daily_brief": {
+                        **receipts["daily_brief"],
+                        "reporter_id": "look_ahead_lonnie",
+                    },
+                }
+            },
+        }
+        errors = validate_authenticated_edition(named_fallback, "new", "alpha")
+        self.assertTrue(any("fallback is not owned by The Front Office" in error for error in errors))
+
+        missing_lens = {
+            **payload,
+            "analysis": {
+                "articleReceipts": {
+                    **receipts,
+                    "daily_brief": {
+                        **receipts["daily_brief"],
+                        "assigned_reporter_id": "",
+                    },
+                }
+            },
+        }
+        errors = validate_authenticated_edition(missing_lens, "new", "alpha")
+        self.assertTrue(any("fallback has no assigned reporter lens" in error for error in errors))
 
     def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
         self.assertEqual(
