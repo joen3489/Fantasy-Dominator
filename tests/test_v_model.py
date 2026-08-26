@@ -1402,6 +1402,66 @@ class VModelTests(unittest.TestCase):
             self.assertEqual(review["status"], "approved")
             self.assertEqual(review["decision"], "modify")
 
+    def test_editor_provider_failure_persists_a_held_receipt_instead_of_silent_fallback(self) -> None:
+        from src import articles
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            narrative = (
+                "## Cornerstones\nCore report.\n\n## Shop Candidates\nNames.\n"
+                "\n## Buy-Low Targets\nBuys.\n\n## Sell-High Windows\nSells.\n"
+                "\n## Best Fits\nFits.\n\n## Steer Clear\nFades.\n"
+                "\n## Contenders\nContenders.\n\n## Rebuilders\nRebuilders.\n"
+                "\n## Target Theses\nTargets.\n\n## Sell Windows\nWindows.\n"
+                "\n## Manager Angles\nAngles.\n\n## This Week\nThis week.\n"
+                "\n## Rest of Season\nSeason.\n\n## Dynasty Window\nDynasty.\n"
+                "\n## Market vs Clock\nCompare the clocks.\n\n## Contender vs Rebuilder\nFit."
+            )
+
+            def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
+                return {
+                    "headline": "Desk read",
+                    "dek": "A bounded read.",
+                    "lede": "The packet supports a bounded read.",
+                    "thesis": "The evidence supports a measured decision.",
+                    "what_changed": "The current packet changed.",
+                    "counter_evidence": "The sample remains limited.",
+                    "action": "Compare the evidence before acting.",
+                    "risk": "The estimate may be wrong.",
+                    "confidence": "medium",
+                    "visual_brief": "Use a simple evidence rail.",
+                    "narrative_markdown": narrative,
+                    "cited_evidence_ids": [evidence[0]["evidence_id"]],
+                }
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FRONT_OFFICE_LLM_PROVIDER": "anthropic",
+                    "ANTHROPIC_API_KEY": "test-key",
+                    "FRONT_OFFICE_EDITOR_MODE": "llm",
+                },
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                articles, "PROCESSED_DIR", processed
+            ), patch.object(operator, "generate_article_via_llm", side_effect=fake_article), patch.object(
+                operator, "review_article_via_llm", side_effect=RuntimeError("provider unavailable")
+            ):
+                result = operator.generate_articles_workflow()
+
+            self.assertEqual(result["state"], "partial", result)
+            self.assertEqual(result["articles"]["team_report"]["state"], "held")
+            report = (analysis / "team_report.md").read_text(encoding="utf-8")
+            front_matter = report.split("editorial_review_json: ", 1)[1].split("\n---", 1)[0]
+            review = json.loads(front_matter)
+            self.assertEqual(review["status"], "held")
+            self.assertEqual(review["decision"], "hold")
+            self.assertIn("RuntimeError", review["errors"][-1])
+
     def test_article_generation_plan_is_read_only_and_reports_missing_writer_key(self) -> None:
         """Encodes the cost gate: plan the six desks without invoking the provider."""
         from app import db

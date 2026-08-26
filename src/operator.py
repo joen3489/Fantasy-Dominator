@@ -1263,13 +1263,18 @@ def generate_articles_workflow(
                 final_validation = validation
                 editorial_review: dict[str, Any] | None = None
                 if editor_mode == "llm":
-                    editor_output = review_article_via_llm(
-                        _editor_system_prompt(article, ctx.writer_preferences, context),
-                        evidence,
-                        output,
-                        api_key,
-                        model,
-                    )
+                    editor_failure = ""
+                    try:
+                        editor_output = review_article_via_llm(
+                            _editor_system_prompt(article, ctx.writer_preferences, context),
+                            evidence,
+                            output,
+                            api_key,
+                            model,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - preserve the writer draft as an explicit held receipt.
+                        editor_output = None
+                        editor_failure = f"The desk editor request failed: {type(exc).__name__}."
                     final_output, editorial_review = _editor_review_result(
                         article,
                         output,
@@ -1278,6 +1283,15 @@ def generate_articles_workflow(
                         evidence,
                         model,
                     )
+                    if editor_failure:
+                        editorial_review.update(
+                            {
+                                "status": "held",
+                                "decision": "hold",
+                                "errors": list(dict.fromkeys([*(editorial_review.get("errors") or []), editor_failure])),
+                                "note": "Held from publication because the desk editor request failed; retry the editor pass before printing this report.",
+                            }
+                        )
                     final_validation = validate_article_output(
                         final_output,
                         evidence_ids,

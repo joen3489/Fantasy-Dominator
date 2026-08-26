@@ -120,6 +120,33 @@ class FrontOfficeContractsTests(unittest.TestCase):
         payload = json.loads(request["json"]["input"][1]["content"])
         self.assertEqual(payload["editorial_context"][0]["kind"], "peer_edition")
 
+    def test_transient_openai_rate_limit_is_retried_with_a_bound(self) -> None:
+        rate_limited = MagicMock(status_code=429, headers={})
+        final = MagicMock(status_code=200)
+        final.json.return_value = {
+            "output": [
+                {
+                    "type": "function_call",
+                    "name": "emit_article",
+                    "arguments": json.dumps({"narrative_markdown": "retried", "cited_evidence_ids": ["p:1"]}),
+                }
+            ]
+        }
+        post = MagicMock(side_effect=[rate_limited, final])
+        with patch("src.llm.time.sleep") as sleep:
+            result = call_structured_tool(
+                system_prompt="system",
+                evidence=[{"evidence_id": "p:1"}],
+                api_key="secret",
+                model="gpt-5.6-luna",
+                tool={"name": "emit_article", "input_schema": {"type": "object", "properties": {}}},
+                request_post=post,
+            )
+
+        self.assertEqual(result["narrative_markdown"], "retried")
+        self.assertEqual(post.call_count, 2)
+        sleep.assert_called_once()
+
     def test_desk_editor_holds_an_article_without_a_source_receipt(self) -> None:
         """Design source: AGENTS.md; publication must fail closed at the writer-to-reader seam."""
 

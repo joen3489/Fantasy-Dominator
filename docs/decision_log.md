@@ -1700,3 +1700,16 @@ unqualified projection/PPG language for a player with no current NFL team and
 warns when injury-sensitive rest-of-season production lacks the
 not-recovery-adjusted caveat. The packet remains the source of facts; the
 check does not invent a replacement score or recovery forecast.
+
+## 2026-08-26 - Provider turbulence and editor failures must remain visible
+
+Writer calls now use a bounded retry policy for transient provider responses
+such as rate limiting, timeouts, and 5xx errors. The retry is deliberately
+small and capped so a paid newsroom run cannot become an unbounded background
+job. A final provider failure still flows through the normal receipt path.
+
+When the optional LLM desk editor itself fails, the workflow now preserves the
+validated reporter draft but records a held editor receipt instead of silently
+leaving the prior deterministic publication in place. The reader can therefore
+distinguish an approved article, an evidence-led fallback, and a draft waiting
+for editor review; a failed provider cannot masquerade as editorial approval.

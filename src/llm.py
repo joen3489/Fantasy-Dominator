@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -21,6 +22,7 @@ ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_API_VERSION = "2023-06-01"
 DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 
 
 @dataclass(frozen=True)
@@ -106,7 +108,8 @@ def _call_anthropic(
     tool: dict[str, Any],
     timeout: int,
 ) -> dict[str, Any]:
-    response = post(
+    response = _post_with_retry(
+        post,
         ANTHROPIC_API_URL,
         headers={
             "x-api-key": api_key,
@@ -159,7 +162,8 @@ def _call_openai(
         "parameters": _strict_schema(tool.get("input_schema", {"type": "object", "properties": {}})),
         "strict": True,
     }
-    response = post(
+    response = _post_with_retry(
+        post,
         OPENAI_API_URL,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -198,6 +202,46 @@ def _call_openai(
                 }
             }
     raise ValueError(f"OpenAI response did not include a {tool['name']} function call.")
+
+
+def _post_with_retry(
+    post: Callable[..., Any],
+    url: str,
+    *,
+    timeout: int,
+    attempts: int = 3,
+    **kwargs: Any,
+) -> Any:
+    """Retry bounded transient provider failures without masking a final error.
+
+    A newsroom run can make several sequential structured calls. A single
+    transient rate-limit or gateway response should not turn the whole issue
+    into silent deterministic fallback content, but retries must remain bounded
+    so a real provider failure returns to the editor receipt promptly.
+    """
+
+    response: Any = None
+    for attempt in range(max(1, int(attempts))):
+        response = post(url, timeout=timeout, **kwargs)
+        status_code = getattr(response, "status_code", None)
+        if status_code not in _RETRYABLE_STATUS_CODES or attempt + 1 >= attempts:
+            return response
+        delay = _retry_after_seconds(response, attempt)
+        time.sleep(delay)
+    return response
+
+
+def _retry_after_seconds(response: Any, attempt: int) -> float:
+    """Return a small, capped delay from a provider receipt."""
+
+    try:
+        headers = getattr(response, "headers", {}) or {}
+        retry_after = headers.get("Retry-After", "") if hasattr(headers, "get") else ""
+        if retry_after:
+            return min(10.0, max(1.0, float(retry_after)))
+    except (TypeError, ValueError):
+        pass
+    return float(min(10, 2 ** (attempt + 1)))
 
 
 def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
