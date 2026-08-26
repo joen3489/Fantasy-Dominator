@@ -328,6 +328,51 @@ class DeterministicArticleTests(unittest.TestCase):
         self.assertNotIn("Anchor QB: \n", report)
         self.assertNotIn("Shop RB: \n", report)
 
+    def test_team_report_keeps_conditional_free_agents_out_of_current_action_sections(self) -> None:
+        """Design source: docs/reporter_personas.md; Topline Tony is a current-role desk."""
+        dataframes = {
+            "player_dossiers": pd.DataFrame(
+                [
+                    {
+                        "roster_id": 2,
+                        "player_name": "Active Anchor",
+                        "position": "WR",
+                        "roster_status": "starter",
+                        "market_value": 40,
+                        "projected_ppg": 12,
+                        "projection_confidence": "high",
+                        "signal_label": "productive_hold",
+                        "breakout_score": 40,
+                        "sell_score": 5,
+                    },
+                    {
+                        "roster_id": 2,
+                        "player_name": "Conditional Veteran",
+                        "position": "WR",
+                        "roster_status": "bench",
+                        "market_value": 3,
+                        "projected_ppg": 15,
+                        "projection_confidence": "high",
+                        "current_availability_status": "no_current_nfl_team",
+                        "availability_note": "No current NFL team in Sleeper; historical baseline is conditional on signing",
+                        "signal_label": "role_uncertain_watch",
+                        "news_impact": "sell_pressure",
+                        "breakout_score": 10,
+                        "sell_score": 80,
+                    },
+                ]
+            )
+        }
+
+        report = build_team_report(dataframes, 2, "Test Team", "2026-08-22T00:00:00+00:00")
+        shop_section = report.split("## Shop Candidates", 1)[1]
+
+        self.assertIn("1 carry current-role baselines", report)
+        self.assertIn("1 retain conditional historical baselines", report)
+        self.assertNotIn("Conditional Veteran", shop_section)
+        self.assertNotIn("Conditional Veteran", report.split("## Cornerstones", 1)[1].split("## Shop Candidates", 1)[0])
+        self.assertIn("Active Anchor", report)
+
     def test_team_report_fallback_respects_reporter_persona(self) -> None:
         dataframes = {
             "player_dossiers": pd.DataFrame(

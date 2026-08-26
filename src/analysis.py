@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import pandas as pd
 
-from .availability import baseline_ppg_text
+from .availability import baseline_ppg_text, current_availability_status
 from .manager_preferences import HORIZON_FIELD_LABELS
 from .personas import normalize_writer_preferences, persona_metadata
 from .utils import ANALYSIS_DIR
@@ -1601,11 +1601,12 @@ def build_team_report(
         dataframes.get("player_horizon_market_scores", pd.DataFrame()),
         active_league_id,
     )
-    cornerstone_pool = [row for row in players if not _is_shop_candidate(row)]
-    cornerstones = sorted(cornerstone_pool or players, key=_cornerstone_score, reverse=True)[:4]
+    current_role_players = [row for row in players if not _is_no_current_team(row)]
+    cornerstone_pool = [row for row in current_role_players if not _is_shop_candidate(row)]
+    cornerstones = sorted(cornerstone_pool or current_role_players, key=_cornerstone_score, reverse=True)[:4]
     cornerstone_names = {_normalize_name(row.get("player_name")) for row in cornerstones}
     shop = sorted(
-        [row for row in players if _normalize_name(row.get("player_name")) not in cornerstone_names],
+        [row for row in current_role_players if _normalize_name(row.get("player_name")) not in cornerstone_names],
         key=_shop_score,
         reverse=True,
     )[:4]
@@ -3214,7 +3215,8 @@ def _team_report_intro(
     writer_preferences: dict[str, Any] | None,
     article_key: str = "team_report",
 ) -> str:
-    projected = sum(1 for row in players if _num(row.get("projected_ppg")) > 0)
+    projected = sum(1 for row in players if _num(row.get("projected_ppg")) > 0 and not _is_no_current_team(row))
+    conditional = sum(1 for row in players if _num(row.get("projected_ppg")) > 0 and _is_no_current_team(row))
     valued = sum(1 for row in players if _has_value(row.get("market_value")))
     persona_id = persona_metadata(writer_preferences, article_key)["persona_id"]
     if not players:
@@ -3227,7 +3229,12 @@ def _team_report_intro(
         lead = "Ranking blends market value, baseline PPG, breakout score, and starter status; it is not a league-wide trade value claim."
     else:
         lead = "The roster is sorted for decision value, not name recognition, with the market and projection doing most of the arguing."
-    return f"{lead} {len(players)} players are in scope; {valued} have market values and {projected} carry non-zero projections."
+    conditional_note = (
+        f" {conditional} retain conditional historical baselines outside the current-role action view."
+        if conditional
+        else ""
+    )
+    return f"{lead} {len(players)} players are in scope; {valued} have market values and {projected} carry current-role baselines.{conditional_note}"
 
 
 def _market_watch_intro(writer_preferences: dict[str, Any] | None, article_key: str = "market_watch") -> str:
@@ -3505,6 +3512,15 @@ def _is_shop_candidate(row: dict[str, Any]) -> bool:
     signal = str(row.get("signal_label", "")).lower()
     news = str(row.get("news_impact", "")).lower()
     return _shop_score(row) >= 90.0 or "sell" in signal or "sell" in news
+
+
+def _is_no_current_team(row: Mapping[str, Any]) -> bool:
+    """Keep conditional free-agent baselines out of current-role article lanes."""
+
+    explicit_status = _clean(row.get("current_availability_status")).lower()
+    if explicit_status:
+        return explicit_status == "no_current_nfl_team"
+    return current_availability_status(row) == "no_current_nfl_team"
 
 
 def _clean(value: Any, fallback: str = "") -> str:
