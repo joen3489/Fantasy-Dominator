@@ -1440,7 +1440,10 @@
                 }
                 if (!response.ok) throw new Error(status.detail || 'writer status failed (' + response.status + ')');
                 if (status.state === 'running') {
-                  writerStatus.textContent = allEditions ? 'The reporters are writing every enabled edition' : (status.message || 'The reporters are writing this edition');
+                  const progress = status.total_count
+                    ? ` · ${status.completed_count || 0}/${status.total_count} desks complete`
+                    : '';
+                  writerStatus.textContent = (allEditions ? 'The reporters are writing every enabled edition' : (status.message || 'The reporters are writing this edition')) + progress;
                   continue;
                 }
                 if (status.state === 'complete' || status.state === 'partial') {

@@ -2200,7 +2200,10 @@ def _page(
     }}
 
     async function pollOperatorStatus() {{
-      for (let index = 0; index < 30; index += 1) {{
+      // Luna plus an explicit editor pass can legitimately take several
+      // minutes. Keep the receipt visible long enough to observe completion;
+      // the durable status endpoint remains the authority if this tab sleeps.
+      for (let index = 0; index < 150; index += 1) {{
         await sleep(2000);
         await refreshOperatorStatus();
         render();

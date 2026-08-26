@@ -1746,3 +1746,15 @@ poller. Aggregate receipts now live under the authenticated user's workspace,
 and a persisted `running` receipt is converted to an explicit interrupted
 failure after a process restart so a daemon restart cannot permanently block
 the next run. League-scoped jobs continue to use their exact league workspace.
+
+## 2026-08-26 newsroom progress must be durable and per-desk
+
+The asynchronous writer action previously wrote a single `running` receipt
+until refresh, six desk calls, optional editor calls, and browser rebuild all
+finished. That made a healthy Luna run look frozen and gave the UI no way to
+distinguish no progress from a slow provider response. The writer now persists
+compact progress after each desk with the active reporter, completed/total
+counts, model, reasoning effort, and per-desk state; it never includes prose,
+evidence, secrets, or host paths in that progress payload. Reader polling also
+waits long enough for the configured multi-call newsroom to finish, while the
+durable final receipt remains authoritative after a tab sleeps or reloads.

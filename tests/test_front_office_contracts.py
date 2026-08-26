@@ -14,6 +14,31 @@ from src.editorial import review_publication_article
 
 
 class FrontOfficeContractsTests(unittest.TestCase):
+    def test_writer_progress_receipt_names_the_active_desk(self) -> None:
+        """Design source: AGENTS.md; a long newsroom run must expose truthful progress before publication."""
+        with tempfile.TemporaryDirectory() as tmp:
+            status_path = Path(tmp) / "operator" / "status" / "operator_status.json"
+            article = articles.ARTICLES[0]
+            with patch.object(operator, "STATUS_PATH", status_path):
+                operator._write_writer_progress(
+                    {"team_report": {"state": "complete", "message": "Team Report written."}},
+                    current_article=article,
+                    completed_count=1,
+                    total_count=6,
+                    model="gpt-5.6-luna",
+                    reasoning_effort="max",
+                    editor_mode="deterministic",
+                )
+                receipt = json.loads(status_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(receipt["state"], "running")
+            self.assertEqual(receipt["completed_count"], 1)
+            self.assertEqual(receipt["total_count"], 6)
+            self.assertEqual(receipt["current_article"], article.key)
+            self.assertEqual(receipt["model"], "gpt-5.6-luna")
+            self.assertEqual(receipt["reasoning_effort"], "max")
+            self.assertIn("team_report", receipt["articles"])
+
     def test_persisted_running_status_fails_closed_after_process_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             status_dir = Path(tmp) / "operator" / "status"

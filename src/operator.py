@@ -1204,16 +1204,35 @@ def generate_articles_workflow(
         writer_preferences=context.writer_preferences if context else {},
     )
     results: dict[str, Any] = {}
+    article_queue = [
+        article
+        for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary)
+        if article_keys is None or article.key in article_keys
+    ]
+    if article_keys is not None:
+        # A targeted retry still needs existing section prose available if a
+        # selected summary follows an unselected desk in the same run.
+        for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
+            if article.key in article_keys or article.is_summary:
+                continue
+            existing_narrative = _article_narrative_from_file(ANALYSIS_DIR / article.output_filename)
+            if existing_narrative:
+                ctx.section_outputs[article.key] = existing_narrative
+    def record_progress(current_article: articles.Article | None, completed_count: int) -> None:
+        _write_writer_progress(
+            results,
+            current_article=current_article,
+            completed_count=completed_count,
+            total_count=len(article_queue),
+            model=model,
+            reasoning_effort=llm.reasoning_effort,
+            editor_mode=editor_mode,
+        )
 
-    for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
-        if article_keys is not None and article.key not in article_keys:
-            # A targeted retry still needs existing section prose available if
-            # a selected summary follows this desk in the same run.
-            if not article.is_summary:
-                existing_narrative = _article_narrative_from_file(ANALYSIS_DIR / article.output_filename)
-                if existing_narrative:
-                    ctx.section_outputs[article.key] = existing_narrative
-            continue
+    record_progress(None, 0)
+
+    for article_index, article in enumerate(article_queue, start=1):
+        record_progress(article, article_index - 1)
         output_path = ANALYSIS_DIR / article.output_filename
         reporter = persona_metadata(ctx.writer_preferences, article.key)
         evidence_fingerprint = ""
@@ -1225,6 +1244,7 @@ def generate_articles_workflow(
                 evidence = articles.apply_entity_dedup(ctx, evidence)
             if not evidence:
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
+                record_progress(article, article_index)
                 continue
 
             output_path = ANALYSIS_DIR / article.output_filename
@@ -1247,6 +1267,7 @@ def generate_articles_workflow(
                     "evidence_fingerprint": evidence_fingerprint,
                     "content_hash": _content_hash(output_path),
                 }
+                record_progress(article, article_index)
                 continue
 
             output = generate_article_via_llm(
@@ -1379,6 +1400,7 @@ def generate_articles_workflow(
                     "evidence_fingerprint": evidence_fingerprint,
                     "content_hash": content_hash,
                 }
+                record_progress(article, article_index)
             else:
                 _record_article_artifact(
                     context,
@@ -1393,6 +1415,7 @@ def generate_articles_workflow(
                     fallback_reason="; ".join(validation["errors"]),
                 )
                 results[article.key] = {"state": "failed", "message": f"{article.title} failed validation.", "errors": validation["errors"]}
+                record_progress(article, article_index)
         except Exception as exc:  # noqa: BLE001 - one article failing must not sink the rest.
             _record_article_artifact(
                 context,
@@ -1407,6 +1430,7 @@ def generate_articles_workflow(
                 fallback_reason=str(exc),
             )
             results[article.key] = {"state": "failed", "message": f"{article.title} generation failed: {exc}"}
+            record_progress(article, article_index)
 
     attempted = [state for state in results.values() if state["state"] != "skipped"]
     completed = [state for state in attempted if state["state"] in {"complete", "unchanged"}]
@@ -1874,6 +1898,63 @@ def _evidence_items(generated_at: str) -> list[dict[str, Any]]:
                 }
             )
     return items
+
+
+def _write_writer_progress(
+    results: dict[str, Any],
+    *,
+    current_article: articles.Article | None,
+    completed_count: int,
+    total_count: int,
+    model: str,
+    reasoning_effort: str,
+    editor_mode: str,
+) -> None:
+    """Persist a safe, per-desk receipt while the newsroom is still running.
+
+    A writer run is deliberately asynchronous and can spend several minutes
+    across refresh, six desk calls, and optional editor calls. The old status
+    receipt stayed at ``running`` with no indication of whether work was
+    advancing. Keep the payload private and compact: enough for the reader to
+    explain progress, never enough to expose evidence, prose, or host paths.
+    """
+
+    article_receipts: dict[str, dict[str, Any]] = {}
+    for key, result in results.items():
+        reporter = result.get("reporter") if isinstance(result, dict) else {}
+        article_receipts[key] = {
+            "state": result.get("state", "unknown") if isinstance(result, dict) else "unknown",
+            "message": result.get("message", "") if isinstance(result, dict) else "",
+            "reporter": {
+                "persona_id": reporter.get("persona_id", "") if isinstance(reporter, dict) else "",
+                "name": reporter.get("name", "") if isinstance(reporter, dict) else "",
+            },
+        }
+    current_label = current_article.title if current_article is not None else "Preparing the newsroom"
+    if current_article is not None:
+        current_label = f"{current_article.title} ({completed_count}/{total_count})"
+    _write_status(
+        _base_status(
+            "running",
+            f"{current_label} is in progress.",
+            job="generate-insights",
+        )
+        | {
+            "provider": writer_api_configuration().get("provider", ""),
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "editor_mode": editor_mode,
+            "completed_count": completed_count,
+            "total_count": total_count,
+            "current_article": current_article.key if current_article is not None else "",
+            "current_reporter": (
+                persona_metadata({}, current_article.key)
+                if current_article is not None
+                else {}
+            ),
+            "articles": article_receipts,
+        },
+    )
 
 
 def _base_status(
