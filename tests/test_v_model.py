@@ -57,13 +57,13 @@ EXPECTED_TABLE_COLUMNS = {
     "player_news_matches": ["event_id", "source", "input_player_name", "player_id", "matched_player_name", "match_method", "match_confidence", "is_ambiguous", "source_trace"],
     "league_news_impact": ["event_id", "source", "published_at", "player_id", "player_name", "league_id", "season", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"],
     "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
-    "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
-    "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
+    "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "availability_scope", "current_availability_status", "availability_note", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
+    "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "availability_scope", "current_availability_status", "availability_note", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
     "player_horizon_market_scores": ["season", "league_id", "as_of_week", "horizon_model_version", "horizon_score_basis", "next_game_week", "player_id", "availability_scope", "current_availability_status", "market_value", "market_percentile", "next_game_market_score", "next_game_minus_market_delta", "next_game_opponent", "next_game_home_away", "next_game_schedule_status", "next_game_matchup_factor", "next_game_matchup_validation_status", "next_game_matchup_validation_games", "next_game_matchup_validation_mae_delta", "next_game_matchup_adjustment_status", "rest_of_season_market_score", "rest_of_season_minus_market_delta", "rest_of_season_minus_next_game_delta", "rest_of_season_games", "rest_of_season_bye_weeks", "dynasty_market_score", "dynasty_minus_market_delta", "dynasty_minus_rest_of_season_delta", "career_projection_years", "career_projection_points", "career_projection_ppg", "career_projection_score", "career_minus_market_delta", "career_minus_dynasty_delta", "career_projection_status", "career_projection_basis", "career_history_join_method", "career_history_source_player_id", "career_history_status", "career_history_seasons", "career_history_games", "career_history_ppg", "career_history_latest_season", "contender_fit_score", "rebuilder_fit_score", "fit_coverage", "fit_basis", "rebuilder_contender_spread", "value_lane", "evidence", "risk", "confidence", "source_trace"],
     "available_player_horizon_scores": ["league_id", "availability_status", "identity_status", "market_rank", "market_source_count", "market_source_confidence", "market_disagreement_score", "player_id", "market_value", "market_percentile", "fit_coverage", "evidence", "risk", "confidence", "source_trace"],
     "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "fantasy_nerds_projection_source": ["source", "fn_player_id", "player_name", "normalized_name", "position", "team", "projected_fantasy_points", "source_confidence", "source_trace", "checked_at"],
-    "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
+    "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "availability_scope", "current_availability_status", "availability_note", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
     "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
     "today_priority_board": ["item_type", "item_type_label", "entity_type", "entity_id", "entity_name", "roster_id", "team_name", "priority_score", "why", "evidence", "risk", "confidence", "source_trace"],
     "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "opportunity_score", "xfp_regression_score", "role_trend_score", "fragility_score", "signal_label", "projection_percentile", "market_percentile", "market_gap_status", "evidence", "risk", "confidence", "source_trace"],
@@ -2387,10 +2387,11 @@ class VModelTests(unittest.TestCase):
         self.assertIn("rest-of-season baseline is not recovery-adjusted", html)
         self.assertIn("function horizonRestSeasonPpgLabel", html)
         self.assertIn("function horizonHasCurrentAvailabilityFlag", html)
+        self.assertIn("function projectionPointsText", html)
         self.assertIn("['none', 'healthy', 'active', 'available', 'no current injury', 'no current sleeper injury flag']", html)
         self.assertIn("['questionable', 'doubtful', 'out', 'injured', 'injury', 'ir', 'pup'", html)
         self.assertIn("conditional baseline PPG if active", html)
-        self.assertIn("Season baseline PPG", html)
+        self.assertIn("Baseline PPG (availability-aware)", html)
         self.assertIn("position-relative percentiles from 0–100, not dollar market values", html)
         self.assertIn("horizon_score_basis", html)
         self.assertIn("next_game_matchup_adjustment_status", html)
@@ -2685,12 +2686,15 @@ class VModelTests(unittest.TestCase):
             )
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
             editorial = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
+            html = (site / "index.html").read_text(encoding="utf-8")
 
         self.assertEqual(bundle["currentSeason"], "2099")
         self.assertEqual(bundle["strategyProfile"]["name"], "League-specific rebuild")
         self.assertEqual(bundle["trackedPicks"][0]["round"], 1)
         self.assertEqual(bundle["reporterPersona"]["persona_id"], "scout")
         self.assertEqual(editorial["reporter_persona"]["name"], "The Scout")
+        self.assertIn("projectionPpgText", html)
+        self.assertIn("conditional baseline PPG if signed", html)
 
     def test_live_smoke_script_exists_with_required_markers(self) -> None:
         script = Path(__file__).resolve().parents[1] / "scripts" / "smoke_live.py"
@@ -2792,6 +2796,43 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(row["projection_method"], "recent_nflverse_per_game_1yr")
         self.assertEqual(len(tables["projection_source_components"]), 1)
         self.assertEqual(tables["projection_source_components"].iloc[0]["source"], "nflverse_history")
+
+    def test_projection_rows_carry_current_availability_into_the_projection_contract(self) -> None:
+        raw_stats = pd.DataFrame(
+            [
+                {"player_display_name": "Unsigned Historical RB", "position": "RB", "recent_team": "AAA", "season": 2025, "week": week, "season_type": "REG", "rushing_yards": 80, "rushing_tds": 1, "receptions": 2, "receiving_yards": 10, "receiving_tds": 0, "passing_yards": 0, "passing_tds": 0, "interceptions": 0, "receiving_tds": 0}
+                for week in range(1, 6)
+            ]
+        )
+        roster_players = pd.DataFrame(
+            [{
+                "season": "2026",
+                "player_id": "unsigned-rb",
+                "player_name": "Unsigned Historical RB",
+                "position": "RB",
+                "nfl_team": "",
+                "availability_scope": "current_season_snapshot",
+                "injury_status": "Questionable",
+                "roster_id": 2,
+                "team_name": "Lulu's Potatoe's",
+            }]
+        )
+        leagues = pd.DataFrame([{"scoring_settings": json.dumps({"rec": 1, "rec_yd": 0.1, "rec_td": 6})}])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stats_path = Path(tmp) / "raw_external" / "nflverse" / "2026" / "player_stats.csv"
+            stats_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_stats.to_csv(stats_path, index=False)
+            with patch("src.projections.RAW_EXTERNAL_DIR", Path(tmp) / "raw_external"):
+                tables = build_projection_tables({"current_season": "2026"}, leagues, roster_players)
+
+        season_row = tables["player_projection_season"].iloc[0]
+        weekly_row = tables["player_projection_weekly"].iloc[0]
+        component_row = tables["projection_source_components"].iloc[0]
+        for row in (season_row, weekly_row, component_row):
+            self.assertEqual(row["current_availability_status"], "no_current_nfl_team")
+            self.assertIn("No current NFL team", row["availability_note"])
+        self.assertIn("historical production evidence", season_row["projection_note"])
 
     def test_fantasy_nerds_source_is_disabled_without_api_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):

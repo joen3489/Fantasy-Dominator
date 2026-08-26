@@ -86,7 +86,7 @@ class FrontOfficeContractsTests(unittest.TestCase):
 
         self.assertEqual(config.provider, "openai")
         self.assertEqual(config.model, "gpt-5.6-luna")
-        self.assertEqual(config.reasoning_effort, "medium")
+        self.assertEqual(config.reasoning_effort, "max")
         self.assertEqual(config.api_key_env, "OPENAI_API_KEY")
 
     def test_luna_configuration_is_explicit_and_uses_openai_key(self) -> None:

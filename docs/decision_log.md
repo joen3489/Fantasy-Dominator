@@ -10,6 +10,28 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-26 - Availability must travel with projection baselines
+
+The projection model intentionally preserves historical production when a
+current Sleeper player has no NFL team, but that number is not a current
+season or next-game forecast. Projection season, weekly, and source-component
+rows now carry the current Sleeper availability scope, status, and note into
+the consensus contract. The browser formats those values as `conditional
+baseline PPG if signed` (or `if active`) and the player dossier uses the same
+status precedence. This keeps useful history while preventing an unsigned or
+injured player from reading like a healthy current projection.
+The local trust gate also fails when the status is missing its corresponding
+availability note or signing caveat, so a structurally complete but
+semantically stale artifact cannot pass.
+
+## 2026-08-26 - Default the personal newsroom to Luna max reasoning
+
+The personal product's writer target is OpenAI `gpt-5.6-luna` with maximum
+reasoning effort. The provider boundary now defaults to `reasoning.effort=max`
+when Railway or a local secret store does not provide an override; operators
+can still choose a lower setting explicitly for a deliberate cost or latency
+tradeoff. The model slug and reasoning setting remain separate receipts.
+
 ## 2026-08-26 - Keep the aggregate operator receipt total
 
 The authenticated aggregate `/api/operator/status` route must always return

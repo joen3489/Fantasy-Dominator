@@ -20,6 +20,9 @@ REQUIRED_TABLES = {
     "player_dossiers": ["source_trace"],
     "league_news_impact": ["source_trace"],
     "player_signal_scores": ["source_trace"],
+    "player_projection_season": ["season", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
+    "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "projected_fantasy_points", "projection_method", "projection_confidence", "source_trace"],
+    "projection_source_components": ["season", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "source", "projected_fantasy_points", "projected_ppg", "source_confidence", "source_trace", "checked_at"],
     "player_horizon_market_scores": ["league_id", "horizon_model_version", "horizon_score_basis", "market_value", "market_percentile", "next_game_status", "next_game_matchup_adjustment_status", "next_game_minus_market_delta", "rest_of_season_status", "rest_of_season_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_status", "dynasty_minus_market_delta", "dynasty_minus_rest_of_season_delta", "career_projection_status", "career_projection_basis", "career_history_join_method", "career_history_source_player_id", "career_history_status", "career_history_seasons", "career_history_games", "career_history_ppg", "career_history_latest_season", "career_minus_market_delta", "career_minus_dynasty_delta", "fit_coverage", "fit_basis", "evidence", "risk", "confidence", "source_trace"],
 }
 
@@ -80,6 +83,17 @@ class LocalDataValidationTests(unittest.TestCase):
                         "value_lane": "balanced_window",
                     }
                 )
+            elif table in {"player_projection_season", "player_projection_weekly", "projection_source_components"}:
+                rows[0] = {column: "value" for column in columns}
+                rows[0].update(
+                    {
+                        "availability_scope": "current_season_snapshot",
+                        "current_availability_status": "available",
+                        "availability_note": "No current Sleeper injury flag; baseline projection",
+                    }
+                )
+                if table == "player_projection_season":
+                    rows[0]["projection_note"] = "fixture projection"
             else:
                 rows[0] = {"source_trace": "source_table"}
             with (processed / f"{table}.csv").open("w", encoding="utf-8", newline="") as handle:
@@ -113,6 +127,64 @@ class LocalDataValidationTests(unittest.TestCase):
         self.assertTrue(audit["ok"])
         self.assertEqual(audit["news_event_count"], 1)
         self.assertTrue(any("explicitly disabled" in warning for warning in audit["warnings"]))
+
+    def test_projection_contract_cannot_drop_availability_context(self) -> None:
+        """Design source: docs/data_contract.md; baselines need explicit current availability."""
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            projection_path = processed / "player_projection_season.csv"
+            rows = list(csv.DictReader(projection_path.read_text(encoding="utf-8").splitlines()))
+            fieldnames = [
+                column
+                for column in REQUIRED_TABLES["player_projection_season"]
+                if column != "current_availability_status"
+            ]
+            with projection_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(
+                    {
+                        column: row.get(column, "")
+                        for column in fieldnames
+                    }
+                    for row in rows
+                )
+
+            audit = audit_local_data(
+                processed,
+                analysis,
+                now=datetime(2026, 8, 22, 13, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertFalse(audit["ok"])
+        self.assertTrue(any("player_projection_season.csv is missing columns" in error for error in audit["errors"]))
+
+    def test_projection_contract_cannot_label_unsigned_history_without_a_signing_caveat(self) -> None:
+        """Design source: docs/data_contract.md; status and caveat must agree."""
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            projection_path = processed / "player_projection_season.csv"
+            rows = list(csv.DictReader(projection_path.read_text(encoding="utf-8").splitlines()))
+            rows[0].update(
+                {
+                    "current_availability_status": "no_current_nfl_team",
+                    "availability_note": "availability limited",
+                    "projection_note": "historical production evidence",
+                }
+            )
+            with projection_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=REQUIRED_TABLES["player_projection_season"])
+                writer.writeheader()
+                writer.writerows(rows)
+
+            audit = audit_local_data(
+                processed,
+                analysis,
+                now=datetime(2026, 8, 22, 13, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertFalse(audit["ok"])
+        self.assertTrue(any("without a signing caveat" in error for error in audit["errors"]))
 
     def test_invalid_analysis_and_duplicate_untraced_news_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

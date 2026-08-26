@@ -634,3 +634,20 @@ now has a dedicated Market vs Clock section, and the Trade Desk exposes
 position-scoped sorting for disagreement, clock lead, and market lead. The
 surface remains explicit that these are repricing leads, not dollar gaps or
 proof of a bad market.
+
+## 2026-08-26 - Availability context must survive the projection table
+
+The prior availability repair stopped signals from entering actionable lanes,
+but the projection table still carried the historical number without enough
+context. Availability scope, status, and note now travel through source
+components, season consensus, and weekly allocation. The trust gate checks
+both the columns and their semantic caveats, while the generic table formatter
+uses conditional signing/active language. A green projection row is therefore
+not allowed to mean more than its source snapshot supports.
+
+## 2026-08-26 - Personal newsroom quality target is Luna max
+
+The personal writer target is OpenAI `gpt-5.6-luna` with
+`reasoning.effort=max`. The provider boundary defaults to that setting but
+keeps an explicit environment override for intentional cost/latency choices;
+the model and effort must remain visible in preflight and publication receipts.

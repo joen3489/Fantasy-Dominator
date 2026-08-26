@@ -26,9 +26,9 @@ Keep values in Railway variables or a local secret store; never commit them.
   than treating future placeholder matchups as evidence.
 - `OPENAI_API_KEY` and `FRONT_OFFICE_LLM_PROVIDER=openai` for writer actions.
 - `FRONT_OFFICE_LLM_MODEL=gpt-5.6-luna`.
-- `FRONT_OFFICE_LLM_REASONING_EFFORT` chosen per workload: normally `medium`,
-  with `high`, `xhigh`, or `max` reserved for work where extra quality is
-  worth the cost and latency.
+- `FRONT_OFFICE_LLM_REASONING_EFFORT` defaults to `max` for the personal
+  newsroom; set it explicitly when a lower-cost or lower-latency maintenance
+  run is intentionally desired.
 
 The model slug and reasoning setting are separate. `max` is a reasoning-effort
 value, not a model name. Anthropic remains a compatibility option during

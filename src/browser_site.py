@@ -2029,14 +2029,14 @@ def _page(
     const todayOpportunityColumns = ['opportunity_type', 'target_team', 'asset_name', 'position', 'market_gap_score', 'evidence', 'risk', 'confidence'];
     const todayNewsColumns = ['published_at', 'source', 'player_name', 'league_id', 'season', 'roster_id', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
     const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
-    const projectionColumns = ['player_name', 'position', 'team', 'team_name', {{ field: 'projected_fantasy_points', kind: 'score' }}, {{ field: 'projected_ppg', label: 'Season baseline PPG', kind: 'score' }}, 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
-    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, {{ field: 'market_value', label: 'Market price anchor' }}, {{ field: 'projection_percentile', label: 'Projection percentile (position)' }}, {{ field: 'market_percentile', label: 'Market percentile (position)' }}, 'market_gap_status', {{ field: 'gap_score', label: 'Projection minus market percentile', kind: 'delta' }}, 'gap_label', 'risk', 'confidence', 'evidence'];
-    const newsMarketEdgeColumns = ['player_name', 'position', 'team_name', 'news_direction', 'edge_type', 'news_impact', 'news_event_count', 'market_value', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, {{ field: 'news_market_edge_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
+    const projectionColumns = ['player_name', 'position', 'team', 'team_name', 'current_availability_status', 'availability_note', {{ field: 'projected_fantasy_points', label: 'Projected fantasy points (availability-aware)', kind: 'score' }}, {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)', kind: 'score' }}, 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
+    const signalGapColumns = ['player_name', 'position', 'current_availability_status', {{ field: 'projected_fantasy_points', label: 'Projected fantasy points (availability-aware)', kind: 'score' }}, {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)' }}, {{ field: 'market_value', label: 'Market price anchor' }}, {{ field: 'projection_percentile', label: 'Projection percentile (position)' }}, {{ field: 'market_percentile', label: 'Market percentile (position)' }}, 'market_gap_status', {{ field: 'gap_score', label: 'Projection minus market percentile', kind: 'delta' }}, 'gap_label', 'risk', 'confidence', 'evidence'];
+    const newsMarketEdgeColumns = ['player_name', 'position', 'team_name', 'news_direction', 'edge_type', 'news_impact', 'news_event_count', 'market_value', {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)' }}, {{ field: 'news_market_edge_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', {{ field: 'timeline_fit_score', kind: 'score' }}, {{ field: 'need_fit_score', kind: 'score' }}, {{ field: 'liquidity_fit_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
-    const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'current_availability_status', 'action_score', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, 'market_value', 'why', 'risk', 'confidence'];
+    const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'current_availability_status', 'action_score', {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)' }}, 'market_value', 'why', 'risk', 'confidence'];
     const managerCycleColumns = ['team_name', 'dynasty_cycle', 'trade_temperature', 'pick_posture', 'waiver_posture', 'likely_needs', 'likely_sells', 'confidence', 'evidence'];
     const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
-    const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', {{ field: 'availability_scope', label: 'Availability source' }}, 'current_availability_status', 'market_value', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, 'projection_confidence', 'availability_note', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
+    const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', {{ field: 'availability_scope', label: 'Availability source' }}, 'current_availability_status', 'market_value', {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)' }}, 'projection_confidence', 'availability_note', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
     const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'identity_method', 'evidence'];
     async function init() {{
       try {{
@@ -2550,7 +2550,7 @@ def _page(
         rank: index + 1,
         playerId: row.player_id,
         entityHash: `player-${{row.player_id}}`,
-        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg ? `baseline ppg ${{row.projected_ppg}}` : '', row.injury_status ? `availability ${{row.injury_status}}` : '']
+        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '', row.injury_status ? `availability ${{row.injury_status}}` : '']
       }})).join('')}}</div>`;
     }}
 
@@ -3153,6 +3153,29 @@ def _page(
       return horizonHasCurrentAvailabilityFlag(row)
         ? `conditional baseline PPG if active ${{ppg}}`
         : `season baseline PPG ${{ppg}}`;
+    }}
+
+    function projectionPpgText(row, value) {{
+      const status = String(row?.current_availability_status || '').toLowerCase();
+      const note = String(row?.availability_note || row?.projection_note || '').toLowerCase();
+      const shown = value === undefined || value === null || value === '' ? 'n/a' : value;
+      if (status === 'no_current_nfl_team' || note.includes('no current nfl team') || note.includes('sleeper currently lists no nfl team')) {{
+        return `conditional baseline PPG if signed ${{shown}}`;
+      }}
+      return horizonHasCurrentAvailabilityFlag(row)
+        ? `conditional baseline PPG if active ${{shown}}`
+        : `season baseline PPG ${{shown}}`;
+    }}
+
+    function projectionPointsText(row, value) {{
+      const status = String(row?.current_availability_status || '').toLowerCase();
+      const note = String(row?.availability_note || row?.projection_note || '').toLowerCase();
+      const shown = value === undefined || value === null || value === '' ? 'n/a' : value;
+      if (status === 'no_current_nfl_team' || note.includes('no current nfl team') || note.includes('sleeper currently lists no nfl team')) {{
+        return `conditional production baseline if signed ${{shown}}`;
+      }}
+      if (horizonHasCurrentAvailabilityFlag(row)) return `conditional production baseline if active ${{shown}}`;
+      return `projected fantasy points ${{shown}}`;
     }}
 
     function horizonHasCurrentAvailabilityFlag(row) {{
@@ -4175,7 +4198,7 @@ def _page(
         chips: [
           row.position,
           row.market_value ? `market ${{row.market_value}}` : '',
-          row.projected_ppg ? `baseline ppg ${{row.projected_ppg}}` : '',
+          row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '',
           row.availability_note ? row.availability_note : '',
           row.availability_scope === 'current_season_snapshot' ? 'current Sleeper snapshot' : row.availability_scope === 'historical_unavailable' ? 'historical availability unavailable' : '',
           row.projection_confidence ? `projection ${{row.projection_confidence}}` : '',
@@ -4183,7 +4206,7 @@ def _page(
         ],
         summary: insightFor('player', row.player_id).one_line_read || `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}.`,
         watchouts: insightFor('player', row.player_id).watchouts || 'Player tags are prompts for review, not outcome guarantees.',
-        evidence: `Market: ${{row.market_value || 'unknown'}}. Season baseline PPG: ${{row.projected_ppg || 'unknown'}}. Availability: ${{row.availability_note || 'not recorded'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
+        evidence: `Market: ${{row.market_value || 'unknown'}}. ${{projectionPpgText(row, row.projected_ppg)}}. Availability: ${{row.availability_note || 'not recorded'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
       }})).join('')}}</div>`;
     }}
 
@@ -4621,12 +4644,17 @@ def _page(
           : isAvailableMarket
             ? 'Current Sleeper player snapshot'
             : 'Availability scope not recorded';
+      const projectionValue = dossier.projected_ppg ?? signal.projected_ppg;
+      const projectionRow = Object.assign({{}}, rosterRow || {{}}, signal || {{}}, dossier || {{}});
+      const projectionDisplay = projectionValue !== undefined && projectionValue !== ''
+        ? projectionPpgText(projectionRow, projectionValue)
+        : '';
       const playerEvidence = [
         {{ label: 'Roster context', value: `${{isAvailableMarket ? 'Available-market research' : ownerScope}}${{ownerName ? ` · ${{ownerName}}` : ''}}`, trace: isAvailableMarket ? 'available_player_horizon_scores' : 'verified_roster_scope' }},
         {{ label: 'Availability source', value: availabilitySource, trace: 'roster_players.availability_scope' }},
         {{ label: 'Market', value: marketValue !== '' ? `value ${{marketValue}} (${{marketDescriptor}})` : '', trace: compactTrace(marketTrace) }},
         {{ label: 'Market source', value: inventoryMarketAvailable ? marketDescriptor : 'profile market value unavailable', trace: compactTrace(marketTrace) }},
-        {{ label: 'Projection', value: (dossier.projected_ppg ?? signal.projected_ppg) !== undefined && (dossier.projected_ppg ?? signal.projected_ppg) !== '' ? `${{dossier.projected_ppg ?? signal.projected_ppg}} ${{horizonHasCurrentAvailabilityFlag({{ injury_status: dossier.injury_status || signal.injury_status || rosterRow.injury_status || '' }}) ? 'conditional baseline PPG if active' : 'season baseline PPG'}} (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}}); rest-of-season baseline is not recovery-adjusted; ${{dossier.availability_note || 'availability not recorded'}}` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
+        {{ label: 'Projection', value: projectionDisplay ? `${{projectionDisplay}} (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}}); rest-of-season baseline is not recovery-adjusted; ${{dossier.availability_note || 'availability not recorded'}}` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
         {{ label: 'Decision horizons', value: horizon.player_id ? `next ${{horizon.next_game_market_score || 'n/a'}} · rest of season ${{horizon.rest_of_season_market_score || 'n/a'}} · dynasty ${{horizon.dynasty_market_score || 'n/a'}} · career window ${{horizon.career_projection_score || 'n/a'}} · contender fit ${{horizon.contender_fit_score || 'n/a'}} · rebuilder fit ${{horizon.rebuilder_fit_score || 'n/a'}} · market evidence ${{horizon.market_source_count || 'n/a'}} source(s) / ${{horizon.market_source_confidence || 'n/a'}} confidence` : '', trace: compactTrace(horizon.source_trace) }},
         {{ label: 'Opportunity', value: opp.opportunity_score !== undefined && opp.opportunity_score !== '' ? `score ${{opp.opportunity_score}} vs production ${{opp.production_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},
         {{ label: 'Role trend', value: opp.role_trend_score !== undefined && opp.role_trend_score !== '' ? `score ${{opp.role_trend_score}}; fragility ${{opp.fragility_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},
@@ -4663,7 +4691,7 @@ def _page(
         </div>
         <div class="tile-row">
           ${{entityTile('Market Value', marketValue)}}
-          ${{entityTile('Season baseline PPG', dossier.projected_ppg ?? signal.projected_ppg ?? '')}}
+          ${{entityTile('Production baseline', projectionDisplay)}}
           ${{entityTile('Availability', dossier.injury_status || (isAvailableMarket ? 'snapshot-unrostered' : 'not flagged'))}}
           ${{entityTile('Opportunity', opp.opportunity_score ?? signal.opportunity_score ?? '', 'score')}}
           ${{entityTile('Production', opp.production_score ?? '', 'score')}}
@@ -4924,8 +4952,19 @@ def _page(
 
     function renderCell(row, column) {{
       const kind = columnKind(column);
-      const value = row[columnField(column)];
+      const field = columnField(column);
+      const value = row[field];
       if (kind === 'delta') return deltaCell(value);
+      if (field === 'projected_fantasy_points') {{
+        const display = projectionPointsText(row, value);
+        if (kind === 'score') return scoreCell(value, display);
+        return formatCell(display);
+      }}
+      if (field === 'projected_ppg') {{
+        const display = projectionPpgText(row, value);
+        if (kind === 'score') return scoreCell(value, display);
+        return formatCell(display);
+      }}
       if (kind === 'score') return scoreCell(value);
       return formatCell(value);
     }}
@@ -4938,11 +4977,11 @@ def _page(
       return `<span class="delta-cell ${{cls}}">${{arrow}} ${{escapeHtml(String(Math.abs(parsed)))}}</span>`;
     }}
 
-    function scoreCell(value) {{
+    function scoreCell(value, displayValue) {{
       const parsed = Number(value);
       const score = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0;
       const band = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
-      return `<span class="score-tile ${{band}}">${{escapeHtml(formatCell(value))}}</span>`;
+      return `<span class="score-tile ${{band}}">${{escapeHtml(formatCell(displayValue === undefined ? value : displayValue))}}</span>`;
     }}
 
     function formatCell(value) {{

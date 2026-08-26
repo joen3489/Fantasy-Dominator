@@ -21,6 +21,10 @@ article models against the configured `gpt-5.6-luna` model before a paid run.
 An older run is labeled as requiring regeneration; it is not counted as current
 publication without matching bundle receipts.
 
+Current writer configuration note (2026-08-26): the personal newsroom defaults
+to `gpt-5.6-luna` with `reasoning.effort=max`; an explicit environment override
+is allowed when cost or latency is intentionally prioritized.
+
 Current data lifecycle note (2026-08-25): league data now has an explicit
 bootstrap/maintenance boundary. Bootstrap builds the historical evidence base;
 maintenance refreshes a bounded current-season scope and merges canonical rows
@@ -1411,3 +1415,11 @@ current NFL team an unqualified projection or PPG claim; injury-sensitive
 rest-of-season production receives a visible missing-caveat warning. This is
 an editorial seam check, not a new projection model, and it keeps historical
 context useful without letting it masquerade as current production.
+
+2026-08-26 projection availability amendment: current Sleeper availability
+now travels through source components, season consensus, and weekly allocation
+rows. Browser projection labels use `conditional baseline PPG if signed` for a
+player with no current NFL team and `if active` for injury-sensitive rows.
+The local validator requires this context on every projection contract, so a
+stale artifact cannot silently turn historical production into a current
+forecast.

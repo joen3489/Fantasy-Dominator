@@ -57,7 +57,7 @@ def configured_llm(model: str | None = None) -> LLMConfig:
     if requested_provider == "openai":
         configured_model = os.environ.get("FRONT_OFFICE_LLM_MODEL", "").strip()
         resolved_model = configured_model or (requested_model if requested_model.startswith("gpt-") else DEFAULT_OPENAI_MODEL)
-        effort = os.environ.get("FRONT_OFFICE_LLM_REASONING_EFFORT", "medium").strip().lower() or "medium"
+        effort = os.environ.get("FRONT_OFFICE_LLM_REASONING_EFFORT", "max").strip().lower() or "max"
         return LLMConfig("openai", resolved_model, effort, "OPENAI_API_KEY")
 
     resolved_model = requested_model or DEFAULT_ANTHROPIC_MODEL

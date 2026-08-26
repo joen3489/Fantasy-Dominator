@@ -25,11 +25,40 @@ REQUIRED_TABLES = {
     "player_dossiers": ("source_trace",),
     "league_news_impact": ("source_trace",),
     "player_signal_scores": ("source_trace",),
+    "player_projection_season": (
+        "season", "player_id", "player_name", "position", "team",
+        "availability_scope", "current_availability_status", "availability_note",
+        "projected_ppg", "projection_method", "projection_confidence",
+        "source_trace", "projection_note",
+    ),
+    "player_projection_weekly": (
+        "season", "week", "player_id", "player_name", "position", "team",
+        "availability_scope", "current_availability_status", "availability_note",
+        "projected_fantasy_points", "projection_method", "projection_confidence",
+        "source_trace",
+    ),
+    "projection_source_components": (
+        "season", "player_id", "player_name", "position", "team",
+        "availability_scope", "current_availability_status", "availability_note",
+        "source", "projected_fantasy_points", "projected_ppg", "source_confidence",
+        "source_trace", "checked_at",
+    ),
     "player_horizon_market_scores": ("league_id", "horizon_model_version", "horizon_score_basis", "market_value", "market_percentile", "next_game_status", "next_game_matchup_adjustment_status", "next_game_minus_market_delta", "rest_of_season_status", "rest_of_season_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_status", "dynasty_minus_market_delta", "dynasty_minus_rest_of_season_delta", "career_projection_status", "career_projection_basis", "career_history_join_method", "career_history_source_player_id", "career_history_status", "career_history_seasons", "career_history_games", "career_history_ppg", "career_history_latest_season", "career_minus_market_delta", "career_minus_dynasty_delta", "fit_coverage", "fit_basis", "evidence", "risk", "confidence", "source_trace"),
 }
 
 REQUIRED_ANALYSIS = "analysis_validation.json"
 CURRENT_STATUSES = {"refreshed", "cached"}
+PROJECTION_AVAILABILITY_SCOPES = {"current_season_snapshot", "historical_unavailable"}
+PROJECTION_AVAILABILITY_STATUSES = {
+    "available",
+    "injury_out",
+    "injury_doubtful",
+    "injury_questionable",
+    "injury_flagged",
+    "no_current_nfl_team",
+    "historical_unavailable",
+    "unknown",
+}
 PLAYER_HISTORY_IDENTITY_METHODS = {"source_id", "normalized_name", "ambiguous_name", "unmatched_name"}
 HORIZON_SCORE_FIELDS = (
     "next_game_market_score",
@@ -194,6 +223,42 @@ REQUIRED_TABLES["player_horizon_market_scores"] = REQUIRED_TABLES["player_horizo
 )
 
 
+def _audit_projection_availability(
+    tables: dict[str, list[dict[str, str]]],
+    errors: list[str],
+) -> None:
+    """Keep projection availability status and reader caveats semantically aligned."""
+
+    for table in ("player_projection_season", "player_projection_weekly", "projection_source_components"):
+        for row in tables.get(table, []):
+            player = str(row.get("player_name") or row.get("player_id") or "unknown player")
+            scope = str(row.get("availability_scope") or "").strip().lower()
+            status = str(row.get("current_availability_status") or "").strip().lower()
+            note = str(row.get("availability_note") or "").strip().lower()
+            if not scope:
+                errors.append(f"{table}.csv has no availability_scope for {player}")
+            elif scope not in PROJECTION_AVAILABILITY_SCOPES:
+                errors.append(f"{table}.csv has unknown availability_scope {scope!r} for {player}")
+            if not status:
+                errors.append(f"{table}.csv has no current_availability_status for {player}")
+            elif status not in PROJECTION_AVAILABILITY_STATUSES:
+                errors.append(f"{table}.csv has unknown current_availability_status {status!r} for {player}")
+            if not note:
+                errors.append(f"{table}.csv has no availability_note for {player}")
+            if status == "no_current_nfl_team" and "conditional on signing" not in note:
+                errors.append(
+                    f"{table}.csv marks {player} as no_current_nfl_team without a signing caveat"
+                )
+            if (
+                table == "player_projection_season"
+                and status == "no_current_nfl_team"
+                and "historical production evidence" not in str(row.get("projection_note") or "").lower()
+            ):
+                errors.append(
+                    f"player_projection_season.csv marks {player} as no_current_nfl_team without historical-production context"
+                )
+
+
 def audit_local_data(
     processed_dir: Path,
     analysis_dir: Path,
@@ -223,6 +288,8 @@ def audit_local_data(
             errors.append(f"{table}.csv is missing columns: {', '.join(missing)}")
         if not rows:
             errors.append(f"{table}.csv has no rows")
+
+    _audit_projection_availability(tables, errors)
 
     player_history_identity = _audit_player_history(processed_dir / "player_transaction_history.csv", errors, warnings)
     if player_history_identity is not None:

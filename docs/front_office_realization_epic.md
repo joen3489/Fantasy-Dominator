@@ -1721,3 +1721,24 @@ The authenticated identity recheck now has a bounded browser wait. A slow
 Sleeper discovery cannot leave the control permanently stuck on “Checking”;
 the saved verified identity remains visible and the manager gets a truthful
 retry message while the server-side request completes or times out.
+
+## 2026-08-26 projection baseline availability repair
+
+The data audit found that the deterministic signals already withheld actionable
+next-game and rest-of-season scores for players without a current NFL team,
+but the projection contract and generic browser table still exposed their
+historical PPG as an unlabeled current-looking number. Availability scope,
+status, and note now travel through every projection source component, the
+season consensus, and weekly allocation. The browser labels those values as
+conditional on signing or active return, and the local trust gate requires the
+availability columns. This keeps historical signal useful without letting it
+masquerade as a present projection.
+
+## 2026-08-26 Luna configuration alignment
+
+The provider boundary now defaults the personal newsroom to OpenAI
+`gpt-5.6-luna` with `reasoning.effort=max` when no explicit environment
+override exists. The setting remains independently configurable and is
+recorded in the writer preflight and article receipts, so a lower-cost run is
+visible as a deliberate operating choice rather than an accidental model
+downgrade.

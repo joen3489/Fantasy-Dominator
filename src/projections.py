@@ -117,6 +117,7 @@ def _build_projection_source_rows(
 
         nflverse_projection = _project_player(player_stats, scoring, position)
         current_availability = current_availability_status(player)
+        current_availability_note = availability_note(player)
         projection_note = str(nflverse_projection.get("projection_note") or "")
         if current_availability == "no_current_nfl_team":
             projection_note = (
@@ -132,6 +133,9 @@ def _build_projection_source_rows(
                 "projected_fantasy_points": nflverse_projection["projected_fantasy_points"],
                 "projected_ppg": nflverse_projection["projected_ppg"],
                 "projected_games": nflverse_projection["projected_games"],
+                "availability_scope": player.get("availability_scope", ""),
+                "current_availability_status": current_availability,
+                "availability_note": current_availability_note,
                 "source_confidence": nflverse_projection["projection_confidence"],
                 "source_trace": nflverse_projection["source_trace"],
                 "projection_method": nflverse_projection["projection_method"],
@@ -166,6 +170,9 @@ def _build_projection_source_rows(
                     "source_confidence": str(fn_row.get("source_confidence", "high")),
                     "source_trace": str(fn_row.get("source_trace", "")),
                     "projection_method": "fantasy_nerds_weekly_projection",
+                    "availability_scope": player.get("availability_scope", ""),
+                    "current_availability_status": current_availability,
+                    "availability_note": current_availability_note,
                     "detail_stats_json": "",
                     "checked_at": now,
                 }
@@ -209,6 +216,9 @@ def _build_projection_consensus(source_df: pd.DataFrame, accuracy_df: pd.DataFra
                 "team": first.get("team", ""),
                 "roster_id": first.get("roster_id", ""),
                 "team_name": first.get("team_name", ""),
+                "availability_scope": first.get("availability_scope", ""),
+                "current_availability_status": first.get("current_availability_status", ""),
+                "availability_note": first.get("availability_note", ""),
                 "projected_games": blended["projected_games"],
                 "projected_passing_yards": detail.get("projected_passing_yards", 0.0),
                 "projected_passing_tds": detail.get("projected_passing_tds", 0.0),
@@ -374,6 +384,9 @@ def _build_weekly_projection_rows(season_df: pd.DataFrame) -> pd.DataFrame:
                     "team": player.get("team", ""),
                     "roster_id": player.get("roster_id", ""),
                     "team_name": player.get("team_name", ""),
+                    "availability_scope": player.get("availability_scope", ""),
+                    "current_availability_status": player.get("current_availability_status", ""),
+                    "availability_note": player.get("availability_note", ""),
                     "projected_fantasy_points": round(weekly_points, 2),
                     "projected_snap_or_usage_note": "weekly allocation from season projection",
                     "projection_method": player.get("projection_method", ""),
@@ -464,6 +477,9 @@ def _season_columns() -> list[str]:
         "team",
         "roster_id",
         "team_name",
+        "availability_scope",
+        "current_availability_status",
+        "availability_note",
         "projected_games",
         "projected_passing_yards",
         "projected_passing_tds",
@@ -492,6 +508,9 @@ def _weekly_columns() -> list[str]:
         "team",
         "roster_id",
         "team_name",
+        "availability_scope",
+        "current_availability_status",
+        "availability_note",
         "projected_fantasy_points",
         "projected_snap_or_usage_note",
         "projection_method",
@@ -513,6 +532,9 @@ def _projection_source_component_columns() -> list[str]:
         "team",
         "roster_id",
         "team_name",
+        "availability_scope",
+        "current_availability_status",
+        "availability_note",
         "source",
         "projected_fantasy_points",
         "projected_ppg",
