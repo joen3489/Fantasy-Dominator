@@ -54,6 +54,7 @@ from src.signals import (
     build_counterparty_asset_interest,
     enrich_counterparty_trade_edges_with_horizons,
 )
+from src.team_identity import resolve_team_name
 from src.utils import ANALYSIS_DIR, PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
 
 
@@ -334,6 +335,24 @@ def main(
 
     if run_mode == "maintenance":
         all_tables = _merge_maintenance_canonical_tables(all_tables, processed_dir)
+
+    # Sleeper's current team label is source data, not a durable profile alias.
+    # Resolve a stale historical name before any analysis artifact or browser
+    # bundle is written, while preserving a genuinely custom Front Office label.
+    resolved_team_name = resolve_team_name(
+        my_team_name,
+        all_tables["teams"],
+        league_id=current_scope_league_id,
+        season=current_season,
+        roster_id=current_my_roster_id or configured_roster_id,
+    )
+    if resolved_team_name:
+        my_team_name = resolved_team_name
+        current_team = dict(config.get("current_team") or {})
+        current_team["team_name"] = resolved_team_name
+        if current_my_roster_id is not None:
+            current_team["roster_id"] = current_my_roster_id
+        config["current_team"] = current_team
 
     dataframes = to_dataframes(all_tables)
     manager_profiles = build_manager_profiles(

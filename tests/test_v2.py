@@ -1635,6 +1635,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         """Design source: AGENTS.md; a new desk must reach the authenticated facade even in an old bundle."""
 
         stale_editorial = {
+            "team_name": "Melkor Lord of Light",
+            "headline": "Melkor Lord of Light needs a new read",
+            "dek": "Melkor Lord of Light is still the old label.",
             "reporter_lineup": [
                 {"article_key": "team_report", "name": "Topline Tony"},
                 {"article_key": "market_watch", "name": "Waiver Wire Waverly"},
@@ -1654,12 +1657,33 @@ class FastAPIClerkAppTests(unittest.TestCase):
         }
         profile = {
             "roster_id": 7,
-            "team_name": "Lulu’s Potatoe’s",
+            "team_name": "Melkor Lord of Light",
             "writer_preferences": {
                 "article_reporters": {"horizon_watch": "scout"},
             },
         }
         with patch.object(db, "get_team_profile", return_value=profile), \
+            patch.object(
+                app_main,
+                "_source_team_rows_for_league",
+                return_value=[
+                    {"league_id": "stale-newsroom", "season": "2026", "roster_id": 7, "owner_id": "joe", "team_name": "Lulu’s Potatoe’s"},
+                    {"league_id": "prior-newsroom", "season": "2025", "roster_id": 7, "owner_id": "joe", "team_name": "Melkor Lord of Light"},
+                ],
+            ), \
+            patch.object(
+                app_main,
+                "_source_bundle_payload_for_league",
+                return_value={
+                    "tables": {
+                        "teams": [
+                            {"league_id": "stale-newsroom", "season": "2026", "roster_id": 7, "owner_id": "joe", "team_name": "Lulu’s Potatoe’s"},
+                            {"league_id": "prior-newsroom", "season": "2025", "roster_id": 7, "owner_id": "joe", "team_name": "Melkor Lord of Light"},
+                        ],
+                    },
+                    "analysis": {},
+                },
+            ), \
             patch.object(app_main, "_refresh_status", return_value={}), \
             patch.object(app_main, "_edition_readiness", return_value={"dot_class": "fresh"}), \
             patch.object(app_main, "_load_editorial_issue", return_value=stale_editorial), \
@@ -1682,6 +1706,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
             ],
         )
         self.assertEqual(view["managed_team_name"], "Lulu’s Potatoe’s")
+        self.assertEqual(view["editorial"]["team_name"], "Lulu’s Potatoe’s")
+        self.assertNotIn("Melkor Lord of Light", view["editorial"].get("headline", ""))
 
     def test_unready_railway_blocks_linking_into_ephemeral_store(self) -> None:
         token = self._token("user_unready_link")

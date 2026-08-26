@@ -16,6 +16,7 @@ from .media_assets import build_media_manifest, materialize_media_assets, media_
 from .manager_profiles import build_manager_season_history
 from .economics import build_league_standings
 from .personas import reporter_lineup
+from .team_identity import resolve_team_name
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
 
@@ -102,13 +103,19 @@ def build_browser_site(
     else:
         my_roster_id = int(my_roster[0]["roster_id"]) if my_roster else None
     my_team_name = _my_team_name(tables["teams"], my_roster_id)
-    # The raw Sleeper name is a useful fallback, but the reader belongs to the
-    # saved league profile.  Keep the presentation identity aligned with the
-    # same scoped customization used by the editorial and draft-room payloads.
+    # A private profile may carry a deliberate Front Office label, but an old
+    # Sleeper name must follow the current exact league/season/roster row.
     configured_team = config.get("current_team") or {}
     configured_name = configured_team.get("team_name") if isinstance(configured_team, Mapping) else ""
-    if str(configured_name or "").strip():
-        my_team_name = str(configured_name).strip()
+    resolved_name = resolve_team_name(
+        configured_name,
+        tables["teams"],
+        league_id=str(league_id or ""),
+        season=str(config.get("current_season") or ""),
+        roster_id=my_roster_id,
+    )
+    if resolved_name:
+        my_team_name = resolved_name
     analysis = _analysis_artifacts(analysis_dir)
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     analysis = upgrade_deterministic_article_receipts(
@@ -157,6 +164,22 @@ def rebuild_browser_shell(
         or {}
     )
     tables = app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {}
+    current_league_id = str(app_payload.get("leagueId") or manifest.get("leagueId") or "")
+    current_season = str(app_payload.get("currentSeason") or "")
+    resolved_name = resolve_team_name(
+        my_team_name,
+        tables.get("teams", []),
+        league_id=current_league_id,
+        season=current_season,
+        roster_id=my_roster_id,
+    )
+    if resolved_name:
+        my_team_name = resolved_name
+    app_payload["myTeamName"] = my_team_name
+    if isinstance(identity, dict):
+        identity = dict(identity)
+        identity["team_name"] = my_team_name
+        app_payload["identityReceipt"] = identity
     tables["manager_season_history"] = _manager_season_history_records(output_dir / "processed", tables)
     tables["league_standings"] = _league_standings_records(output_dir / "processed", tables)
     analysis = dict(app_payload.get("analysis") or {}) if isinstance(app_payload.get("analysis"), dict) else {}
@@ -174,14 +197,16 @@ def rebuild_browser_shell(
     app_payload["dataQuality"] = _data_quality_receipt(tables)
     shell_config = dict(config or {})
     shell_config.setdefault("current_season", app_payload.get("currentSeason") or "")
-    shell_config.setdefault("current_team", {"team_name": my_team_name, "roster_id": my_roster_id})
+    current_team = dict(shell_config.get("current_team") or {})
+    current_team.update({"team_name": my_team_name, "roster_id": my_roster_id})
+    shell_config["current_team"] = current_team
     shell_config.setdefault("strategy_profile", app_payload.get("strategyProfile") or {})
     shell_config.setdefault("writer_preferences", writer_preferences)
     shell_config.setdefault("manager_trade_profiles", app_payload.get("managerTradeProfiles") or [])
     editorial = build_editorial_issue(
         tables,
         analysis,
-        league_id=str(app_payload.get("leagueId") or manifest.get("leagueId") or ""),
+        league_id=current_league_id,
         my_roster_id=my_roster_id,
         my_team_name=my_team_name,
         config=shell_config,

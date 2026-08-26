@@ -58,6 +58,11 @@ The three product layers have distinct jobs:
    and Sleeper identities is the only safe team boundary. If the chain cannot
    be proven, the app must show a limitation instead of guessing.
 
+   The current Sleeper label still matters after identity is proven: resolve it
+   from the exact league/season/roster source row. Keep a separate optional
+   Front Office alias, and treat a persisted value matching a known historical
+   Sleeper label as stale source presentation rather than a deliberate alias.
+
 2. **Depth comes from reusable evidence objects.** A manager dossier should
    be built from season history, transaction timing, roster construction,
    counterparties, and outcomes—not from career totals or a longer paragraph.

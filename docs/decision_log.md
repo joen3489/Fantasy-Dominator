@@ -1639,3 +1639,19 @@ roster data says `Lulu’s Potatoe’s`. The identity recheck returned `invalid
 session token`, so no production identity repair is claimed. A fresh Clerk
 session or an explicit source-name synchronization is still required before
 the edition can be called fully current.
+
+## 2026-08-26 - Current Sleeper labels follow the exact roster source row
+
+The production check exposed a second identity/presentation seam: the exact
+roster was verified, but a private profile had persisted its former Sleeper
+name and the edition printed that historical label. Team names are mutable
+source labels, so the new `src/team_identity.py` resolver selects the current
+exact `league_id` + `season` + `roster_id` row, recognizes same-owner
+historical labels as stale source presentation, and preserves any genuinely
+different Front Office label as a private alias. Refresh, browser-shell
+rebuild, profile reads, and the authenticated home view use the same resolver.
+When a stored editorial issue contains the stale label in its headline or
+dek, the read boundary recompiles the deterministic facade in memory so the
+home page does not print old source presentation while waiting for a paid
+writer run. Roster IDs remain the identity boundary; this change does not infer
+ownership from a name.

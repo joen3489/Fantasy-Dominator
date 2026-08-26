@@ -78,6 +78,14 @@ learning rates must not be blended with recommendation rates.
 | `waivers` | Sleeper normalization | Waiver claim ledger | Sleeper waiver transactions | `season`, `league_id`, `week`, `transaction_id`, `roster_id`, `team_name`, `player_added`, `player_added_ids`, `player_dropped`, `player_dropped_ids`, `waiver_bid`, `status`, `failure_reason` | `transaction_id`, `roster_id`; player ID lists preserve Sleeper identity |
 | `matchups` | Sleeper normalization | One roster/week outcome receipt with exact opponent and score state | Sleeper `/league/{league_id}/matchups/{week}` | `season`, `league_id`, `week`, `matchup_id`, `roster_id`, `team_name`, `opponent_roster_id`, `opponent_team_name`, `points_for`, `points_against`, `margin`, `result`, `source_trace`, `evidence` | `season` + `league_id` + `week` + `roster_id`; missing scores remain `unplayed`, absent rows remain not recorded |
 
+`teams.team_name` and `display_name` are current Sleeper labels for the exact
+`league_id` + `season` + `roster_id` row. They are mutable source data, not
+identity keys. A private team profile may add a Front Office label, but a
+profile value that matches a known historical Sleeper label for the same
+owner/roster lineage follows the current source label (for example, Melkor
+Lord of Light -> Lulu's Potatoe's); an intentionally different private label
+is preserved separately.
+
 ### Canonical External Tables
 
 | Table | Owner | Purpose | Source of truth | Required columns | Trace requirement |

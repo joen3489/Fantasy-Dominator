@@ -23,11 +23,13 @@ from src.browser_site import (
     rebuild_browser_shell,
 )
 from src.context import context_from_league_row, scoped_config
+from src.editorial import build_editorial_issue
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
 from src.llm import writer_api_configuration
 from src.personas import persona_metadata, public_reporter_personas, reporter_lineup
 from src.sleeper_api import SleeperAPI
+from src.team_identity import resolve_team_name
 from src.utils import DATA_DIR, load_config, load_json
 
 from . import db
@@ -314,6 +316,26 @@ def create_app() -> FastAPI:
             except (TypeError, ValueError):
                 profile_matches_identity = False
             if identity_verified and profile_matches_identity:
+                source_rows = _source_team_rows_for_league(int(user["id"]), league)
+                source_name = resolve_team_name(
+                    "",
+                    source_rows,
+                    league_id=str(league.get("league_id") or ""),
+                    season=str(league.get("season") or ""),
+                    roster_id=league.get("roster_id"),
+                )
+                if source_name:
+                    return {
+                        **profile,
+                        "team_name": resolve_team_name(
+                            profile.get("team_name"),
+                            source_rows,
+                            league_id=str(league.get("league_id") or ""),
+                            season=str(league.get("season") or ""),
+                            roster_id=league.get("roster_id"),
+                        ),
+                        "sleeper_team_name": source_name,
+                    }
                 return profile
             # Keep strategy notes available, but never return a stale profile
             # label that the browser could mistake for the owned roster.
@@ -825,6 +847,50 @@ def _bundle_matches_identity(paths: LeaguePaths, league: dict[str, Any]) -> bool
         return int(selected) == int(expected)
     except (TypeError, ValueError):
         return False
+
+
+def _source_bundle_payload(paths: LeaguePaths, league: dict[str, Any]) -> dict[str, Any]:
+    """Read a source bundle only when its identity receipt matches the league."""
+
+    if not _bundle_matches_identity(paths, league):
+        return {}
+    try:
+        payload = load_json(paths.site_dir / "data" / "app_bundle.json")
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _bundle_team_rows(paths: LeaguePaths, league: dict[str, Any]) -> list[dict[str, Any]]:
+    """Read source-backed team rows only from a bundle with the right roster."""
+
+    payload = _source_bundle_payload(paths, league)
+    tables = payload.get("tables") if isinstance(payload, dict) else None
+    rows = tables.get("teams") if isinstance(tables, dict) else None
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _source_bundle_payload_for_league(user_id: int, league: dict[str, Any]) -> dict[str, Any]:
+    """Find current and historical source rows in an identity-matched bundle."""
+
+    candidates = (
+        _private_paths(user_id, str(league.get("league_id") or "")),
+        LeaguePaths.for_league(str(league.get("league_id") or "")),
+    )
+    for paths in candidates:
+        payload = _source_bundle_payload(paths, league)
+        if payload:
+            return payload
+    return {}
+
+
+def _source_team_rows_for_league(user_id: int, league: dict[str, Any]) -> list[dict[str, Any]]:
+    """Find current and historical Sleeper labels in an identity-matched bundle."""
+
+    payload = _source_bundle_payload_for_league(user_id, league)
+    tables = payload.get("tables") if isinstance(payload, dict) else None
+    rows = tables.get("teams") if isinstance(tables, dict) else None
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
 _CORE_READER_SHELL_MARKERS = (
@@ -1452,9 +1518,23 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["identity_verified"] = identity_status in {"verified", "verified_roster_match"} and row.get("roster_id") not in (None, "")
     view["identity_label"] = "Roster verified" if view["identity_verified"] else "Roster needs verification"
     view["managed_team_name"] = ""
+    view["sleeper_team_name"] = ""
     profile: dict[str, Any] | None = None
     profile_matches_identity = False
+    source_bundle: dict[str, Any] = {}
+    source_team_rows: list[dict[str, Any]] = []
+    source_team_name = ""
     if user_id is not None:
+        if view["identity_verified"]:
+            source_team_rows = _source_team_rows_for_league(int(user_id), row)
+            source_team_name = resolve_team_name(
+                "",
+                source_team_rows,
+                league_id=str(row.get("league_id") or ""),
+                season=str(row.get("season") or ""),
+                roster_id=row.get("roster_id"),
+            )
+            view["sleeper_team_name"] = source_team_name
         profile = db.get_team_profile(int(user_id), str(row.get("league_id") or ""))
         profile_roster_id = (profile or {}).get("roster_id")
         if view["identity_verified"]:
@@ -1466,7 +1546,15 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
         # missing or points at another roster. That was the Moose Caboose
         # regression: a stale profile became the apparent source of truth.
         if profile_matches_identity:
-            view["managed_team_name"] = str((profile or {}).get("team_name") or "")
+            view["managed_team_name"] = resolve_team_name(
+                (profile or {}).get("team_name"),
+                source_team_rows,
+                league_id=str(row.get("league_id") or ""),
+                season=str(row.get("season") or ""),
+                roster_id=row.get("roster_id"),
+            )
+        elif source_team_name:
+            view["managed_team_name"] = source_team_name
         if not view["managed_team_name"]:
             private = _private_paths(int(user_id), str(row.get("league_id") or ""))
             if _bundle_matches_identity(private, row):
@@ -1495,6 +1583,50 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
             else {}
         )
         editorial = dict(view["editorial"])
+        stored_team_name = str(editorial.get("team_name") or "").strip()
+        stale_editorial_label = bool(
+            source_team_name
+            and stored_team_name
+            and stored_team_name.casefold() != source_team_name.casefold()
+            and resolve_team_name(
+                stored_team_name,
+                source_team_rows,
+                league_id=str(row.get("league_id") or ""),
+                season=str(row.get("season") or ""),
+                roster_id=row.get("roster_id"),
+            ).casefold()
+            == source_team_name.casefold()
+        )
+        if stale_editorial_label:
+            source_bundle = source_bundle or _source_bundle_payload_for_league(int(user_id), row)
+        if stale_editorial_label and source_bundle:
+            # A persisted issue can contain the old Sleeper name in its
+            # headline/dek/story spine, not only in its team_name field. Rebuild
+            # the deterministic facade in memory so the home page cannot print
+            # historical source labels while waiting for an explicit refresh.
+            source_tables = source_bundle.get("tables") if isinstance(source_bundle, dict) else {}
+            source_analysis = source_bundle.get("analysis") if isinstance(source_bundle, dict) else {}
+            if isinstance(source_tables, dict) and isinstance(source_analysis, dict):
+                editor_profile = dict(profile or {})
+                editor_profile["team_name"] = source_team_name
+                manager_profiles = db.list_manager_trade_profiles(
+                    int(user_id),
+                    str(row.get("league_id") or ""),
+                )
+                editor_context = context_from_league_row(
+                    str(user_id),
+                    row,
+                    editor_profile,
+                    manager_trade_profiles=manager_profiles,
+                )
+                editorial = build_editorial_issue(
+                    source_tables,
+                    source_analysis,
+                    league_id=str(row.get("league_id") or ""),
+                    my_roster_id=row.get("roster_id"),
+                    my_team_name=source_team_name,
+                    config=scoped_config(load_config(), editor_context),
+                )
         editorial["reporter_lineup"] = reporter_lineup(writer_preferences)
         view["editorial"] = editorial
     view["source_receipt"] = _source_receipt_view(view["editorial"])

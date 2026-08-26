@@ -699,7 +699,8 @@
             {% set featured_content = (featured_league.content_status or {}) %}
             <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
               <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
-              {% if featured_league.managed_team_name %}<span>Managing: <strong>{{ featured_league.managed_team_name }}</strong></span>{% endif %}
+              {% if featured_league.sleeper_team_name %}<span>Managing: <strong>{{ featured_league.sleeper_team_name }}</strong></span>{% endif %}
+              {% if featured_league.managed_team_name and featured_league.managed_team_name != featured_league.sleeper_team_name %}<span>Front Office label: <strong>{{ featured_league.managed_team_name }}</strong></span>{% endif %}
               <span>Identity: <strong>{{ featured_league.identity_label or "Roster needs verification" }}</strong></span>
               <button class="refresh-button identity-refresh-button" type="button" data-identity-refresh data-identity-refresh-league="{{ featured_league.league_id }}" aria-label="Recheck this league's Sleeper roster identity">Recheck Sleeper identity</button>
               <span class="profile-status" data-identity-refresh-status role="status"></span>
@@ -886,7 +887,7 @@
       {% if enabled_leagues %}
         <details class="profile-panel">
           <summary class="profile-summary">Customize this edition</summary>
-          <p>These settings belong to the selected league only. They shape manager trade reads and future writer preferences.</p>
+          <p>These settings belong to the selected league only. Sleeper supplies the current team label; an optional Front Office name can add a private alias. They shape manager trade reads and future writer preferences.</p>
           <form data-profile-form>
             <div class="profile-grid">
               <label>League
@@ -896,7 +897,7 @@
                   {% endfor %}
                 </select>
               </label>
-              <label>Team name
+              <label>Front Office name (optional)
                 <input data-profile-field="team_name" autocomplete="organization">
               </label>
               <label>Sleeper display name

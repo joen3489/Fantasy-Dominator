@@ -521,3 +521,18 @@ An attempted identity recheck was rejected by the current browser session as
 `invalid session token`; it is therefore not evidence of a successful Sleeper
 identity refresh. The name-sync boundary remains open and must be rechecked
 after a fresh Clerk session or repaired through a source-backed label path.
+
+## 2026-08-26 source-backed label repair after `260ee055`
+
+The remaining live discrepancy was not a roster identity failure: production
+had the correct verified roster ID, but a historical Sleeper name was still
+stored and printed as current presentation. The repair adds one shared resolver
+for the exact current source row and known same-owner historical aliases. It is
+wired into refresh, bundle rebuild, profile reads, and the authenticated home
+view; custom Front Office labels remain distinct. The home read path also
+recompiles a stale deterministic issue in memory when its headline/dek still
+contains the old source label. Adversarial tests cover current-row selection,
+historical alias repair, custom-label preservation, and the authenticated
+stale-issue entry path. Production verification remains required after the new
+revision, and the prior invalid-session observation remains historical evidence
+rather than a successful identity recheck.

@@ -35,6 +35,10 @@ Sleeper user and the authenticated Clerk user. Names are useful labels, not
 identity keys. If identity cannot be proven, the UI should say so and avoid
 presenting a personalized edition as authoritative.
 
+The current Sleeper team label is source-backed presentation data for the
+exact league, season, and roster. A private Front Office label may supplement
+it, but a historical Sleeper name must never hide a current rename.
+
 ### 3. Data before drama
 
 The app earns the right to tell a story by importing, normalizing, validating,
