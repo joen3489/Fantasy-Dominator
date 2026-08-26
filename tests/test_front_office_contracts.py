@@ -87,6 +87,33 @@ class FrontOfficeContractsTests(unittest.TestCase):
         self.assertEqual(packet["source_quality"], "single_source")
         self.assertIn("Do not infer motive", packet["permitted_interpretation"][1])
         self.assertEqual(packet["source_receipt"]["freshness"], "2026-08-25T12:00:00+00:00")
+        self.assertEqual(packet["player_name"], "Player One")
+
+    def test_article_boundary_review_sees_scope_generated_player_packets(self) -> None:
+        """Design source: AGENTS.md; the writer seam must catch unsupported current-role claims."""
+        packet = articles._evidence(
+            "player",
+            "p1",
+            1,
+            "Conditional Veteran",
+            "Historical production is useful context only.",
+            source_trace="nflverse:usage.csv",
+            current_availability_status="no_current_nfl_team",
+            availability_note="No current NFL team; historical baseline only",
+        )
+
+        result = operator.validate_article_output(
+            {
+                "narrative_markdown": "## Read\nConditional Veteran is projected for 16 PPG this season.",
+                "cited_evidence_ids": [packet["evidence_id"]],
+            },
+            {packet["evidence_id"]},
+            ("## Read",),
+            [packet],
+        )
+
+        self.assertFalse(result["valid"])
+        self.assertIn("no current nfl team", " ".join(result["errors"]).lower())
 
     def test_article_validation_returns_structured_contract_without_breaking_legacy_fallbacks(self) -> None:
         """Encodes the epic's structured article contract; old deterministic mocks remain readable."""

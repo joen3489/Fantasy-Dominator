@@ -820,18 +820,23 @@ def _review_evidence_boundaries(
 
         for index in mentioned_indexes:
             context = " ".join(sentences[max(0, index - 1): min(len(sentences), index + 2)])
+            # A player's display name is evidence identity, not caveat
+            # language. Remove it before checking for words such as
+            # "conditional" or "out" so a name like "Conditional Veteran"
+            # cannot accidentally launder an unsupported claim.
+            claim_context = name_pattern.sub("", context)
             if no_current_team and _PROJECTION_LANGUAGE.search(context):
                 no_team_claims_reviewed += 1
                 if not (
-                    _CONDITIONAL_AVAILABILITY_LANGUAGE.search(context)
-                    or _EXPLICIT_UNAVAILABLE_LANGUAGE.search(context)
+                    _CONDITIONAL_AVAILABILITY_LANGUAGE.search(claim_context)
+                    or _EXPLICIT_UNAVAILABLE_LANGUAGE.search(claim_context)
                 ):
                     errors.append(
                         f"{player_name} is unavailable with no current NFL team; projection/PPG language must be conditional or explicitly unavailable."
                     )
                     break
             if injury_flag and re.search(r"\brest[- ]of[- ]season\b", context, re.IGNORECASE) and _PROJECTION_LANGUAGE.search(context):
-                if not _RECOVERY_CAVEAT_LANGUAGE.search(context):
+                if not _RECOVERY_CAVEAT_LANGUAGE.search(claim_context):
                     injury_baseline_warnings += 1
                     warnings.append(
                         f"{player_name} has an availability or injury flag; rest-of-season production should state that the baseline is not recovery-adjusted."

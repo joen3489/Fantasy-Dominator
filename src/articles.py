@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from .availability import baseline_ppg_text
+from .availability import baseline_ppg_text, current_availability_status
 from .horizons import HORIZON_SCORE_BASIS
 from .utils import PROCESSED_DIR, PROJECT_ROOT, load_config
 
@@ -181,6 +181,10 @@ def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str
         "entity_type": entity_type,
         "entity_id": str(entity_id),
         "name": name,
+        # Keep a canonical player-name field for the shared article-boundary
+        # validator. The human-readable `name` remains the display field, but
+        # validation must not depend on every scope remembering a second key.
+        "player_name": name if entity_type in {"player", "conditional_player"} else "",
         "text": text,
         "claim_candidates": [str(text)] if str(text).strip() else [],
         "supporting_rows": [{
@@ -272,6 +276,14 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
                 if _as_int(row.get("roster_id")) == ctx.active_roster_id
             ] if not roster_rows else []
     players.sort(key=lambda row: _as_float(row.get("market_value")), reverse=True)
+    # The team report is the current-role beat, not a historical free-agent
+    # board. Keep conditional historical baselines in the data room and
+    # horizon surfaces, but do not hand them to Topline Tony as ordinary
+    # actionable player evidence.
+    current_role_players = [
+        row for row in players
+        if current_availability_status(row) != "no_current_nfl_team"
+    ]
     horizon_rows = _load_processed_csv("player_horizon_market_scores.csv", ctx.processed_dir)
     horizon_by_player = {
         (
@@ -286,7 +298,7 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
     }
     rows: list[dict[str, Any]] = []
     player_ids = {str(row.get("player_id", "")) for row in players if str(row.get("player_id", ""))}
-    for index, player in enumerate(players[:25], start=1):
+    for index, player in enumerate(current_role_players[:25], start=1):
         horizon = horizon_by_player.get(
             (
                 str(player.get("player_id")),
@@ -351,6 +363,8 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
                 value_lane=horizon.get("value_lane", ""),
                 horizon_status=horizon.get("next_game_status", ""),
                 injury_status=horizon.get("injury_status", ""),
+                current_availability_status=horizon.get("current_availability_status", player.get("current_availability_status", "")),
+                availability_scope=horizon.get("availability_scope", player.get("availability_scope", "")),
                 availability_note=horizon.get("availability_note", ""),
                 horizon_risk=horizon.get("risk", ""),
                 source_trace=player.get("source_trace", ""),

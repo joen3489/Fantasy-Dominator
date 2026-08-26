@@ -668,3 +668,15 @@ and conditional baselines, and the signal row exposes
 `availability_conditioned_unavailable` when a current market gap cannot be
 trusted. This is implemented locally in `6a0bb71`; production verification and
 publication still require the current writer receipt and authenticated smoke.
+
+## 2026-08-26 - Writer scopes must inherit current-role action boundaries
+
+The fallback Topline report and the paid Topline packet are the same product
+boundary. If the fallback excludes a no-team player from Cornerstones and Shop
+Candidates but the LLM scope still labels that row as ordinary player evidence,
+the writer can recreate the regression. The team-report scope now filters
+`no_current_nfl_team` rows out of its current-role player packet, while deeper
+horizon and data-room surfaces preserve conditional dynasty context. Scope
+generated player packets also carry `player_name` for the shared validator;
+that validator strips the display name before checking caveat language so
+player names cannot accidentally satisfy the availability contract.

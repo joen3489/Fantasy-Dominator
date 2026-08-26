@@ -1785,3 +1785,16 @@ disagreement label. This keeps the historical context useful for dynasty
 research without letting a free-agent veteran distort current
 projection-versus-market rankings. An adversarial test covers both the cohort
 and the conditional row.
+
+## 2026-08-26 - The writer packet must honor the current-role boundary
+
+The deterministic Topline report had already removed no-team players from its
+Cornerstones and Shop Candidates sections, but the LLM team-report scope still
+passed those rows as ordinary player evidence. That left a route for a paid
+writer to reintroduce the old regression even when the fallback was correct.
+The team-report packet now excludes `no_current_nfl_team` rows from its
+current-role player set, while the broader horizon/data-room surfaces retain
+their conditional dynasty context. Evidence packets also carry a canonical
+`player_name` field so the article boundary validator can inspect the actual
+scope output. Display names are removed before caveat-word matching so a name
+like “Conditional Veteran” cannot satisfy its own availability check.

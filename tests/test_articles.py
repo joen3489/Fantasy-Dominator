@@ -59,6 +59,17 @@ class ArticleScopeTests(unittest.TestCase):
                         "projected_ppg": "15",
                         "availability_note": "Active",
                     },
+                    {
+                        "league_id": "league-1",
+                        "season": "2026",
+                        "roster_id": "2",
+                        "player_id": "p3",
+                        "player_name": "Conditional Veteran",
+                        "position": "WR",
+                        "market_value": "22",
+                        "projected_ppg": "16",
+                        "availability_note": "No current NFL team; historical baseline only",
+                    },
                 ],
             )
             self._write_csv(
@@ -82,6 +93,16 @@ class ArticleScopeTests(unittest.TestCase):
                         "next_game_market_score": "55",
                         "rest_of_season_market_score": "65",
                     },
+                    {
+                        "league_id": "league-1",
+                        "season": "2026",
+                        "roster_id": "2",
+                        "player_id": "p3",
+                        "current_availability_status": "no_current_nfl_team",
+                        "availability_scope": "current_sleeper_snapshot",
+                        "availability_note": "No current NFL team; historical baseline only",
+                        "dynasty_market_score": "80",
+                    },
                 ],
             )
 
@@ -99,6 +120,8 @@ class ArticleScopeTests(unittest.TestCase):
         self.assertIn("conditional baseline PPG if active", text_by_name["Questionable Player"])
         self.assertIn("season baseline 15 PPG", text_by_name["Active Player"])
         self.assertNotIn("conditional baseline PPG if active", text_by_name["Active Player"])
+        self.assertNotIn("Conditional Veteran", text_by_name)
+        self.assertTrue(all(row.get("player_name") == row["name"] for row in rows if row.get("entity_type") == "player"))
 
     def test_team_report_does_not_fall_back_to_another_roster(self) -> None:
         """Design source: AGENTS.md; a missing exact roster join must stay unavailable."""
