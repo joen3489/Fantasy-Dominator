@@ -1790,5 +1790,7 @@ aggregate receipt while they are active or terminal, because their work is
 not owned by one selected league. This keeps a cost-incurring run visible
 without treating an in-progress checkpoint as publication: the current
 article/editor receipts and bundle revision remain the only proof that copy
-was printed. The behavior is covered by selected-league and all-edition
-entry-path tests and has passed the public production smoke gate.
+was printed. A newer selected-league writer checkpoint takes precedence over
+an older aggregate terminal receipt. The behavior is covered by
+selected-league and all-edition entry-path tests and has passed the public
+production smoke gate.

@@ -722,6 +722,25 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Writing the newsroom for All Writer Status.", response.text)
 
+        aggregate_complete = aggregate_running | {
+            "state": "complete",
+            "message": "All league writers and browser bundles rebuilt; 1/1 league writer runs current.",
+        }
+        selected_running = league_idle | {
+            "state": "running",
+            "job": "generate-insights",
+            "message": "Writing the six reporter desks for All Writer Status.",
+        }
+        with patch("app.main.front_operator.status", side_effect=[aggregate_complete, selected_running]):
+            response = self.client.get(
+                "/?league_id=all-writer-status",
+                cookies={"__session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Writing the six reporter desks for All Writer Status.", response.text)
+        self.assertNotIn("All league writers and browser bundles rebuilt", response.text)
+
     def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
         clerk_token = self._token("user_two_league_profiles")
         self.client.get("/", cookies={"__session": clerk_token})

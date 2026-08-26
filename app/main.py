@@ -212,13 +212,21 @@ def create_app() -> FastAPI:
             {},
         )
         aggregate_writer_status = user_operator_status
+        selected_has_writer_status = selected_operator_status.get("job") == "generate-insights"
         if (
             aggregate_writer_status.get("job") == "generate-insights"
-            and aggregate_writer_status.get("state") in {"running", "complete", "partial", "failed"}
+            and (
+                aggregate_writer_status.get("aggregate_state", aggregate_writer_status.get("state")) == "running"
+                or (
+                    aggregate_writer_status.get("aggregate_state", aggregate_writer_status.get("state"))
+                    in {"complete", "partial", "failed"}
+                    and not selected_has_writer_status
+                )
+            )
         ):
             # An all-edition run is stored at the user scope, so it has no
             # reliable per-league receipt to select while the aggregate job
-            # is active or at its terminal state.
+            # is active or has no newer per-league writer receipt.
             selected_operator_status = aggregate_writer_status
         return templates.TemplateResponse(
             request,
@@ -2124,6 +2132,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
         state = "idle"
     summary = {
         "state": state,
+        "aggregate_state": aggregate_status.get("state", ""),
         "job": aggregate_status.get("job", ""),
         "message": aggregate_status.get("message", ""),
         "leagues": statuses,

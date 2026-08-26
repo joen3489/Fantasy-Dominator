@@ -1842,6 +1842,7 @@ fallback while a paid run was active, or leave the manager unable to tell an
 interrupted run from a run that never started. The homepage now selects the
 authenticated user's persisted writer status for the focused league and
 renders active progress plus terminal interruption/failure state. Aggregate
-all-edition runs use the user-scoped receipt. These statuses are operational
-receipts only; a current article receipt bound to the reader bundle is still
-required before content is called published.
+all-edition runs use the user-scoped receipt unless a newer selected-league
+writer checkpoint is present. These statuses are operational receipts only; a
+current article receipt bound to the reader bundle is still required before
+content is called published.
