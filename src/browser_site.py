@@ -3770,15 +3770,20 @@ def _page(
         }};
       }}
       if (question === 'disagree') {{
-        const rows = (tables.player_opportunity_scores || []).slice().sort((a, b) => Number(b.xfp_regression_score || 0) - Number(a.xfp_regression_score || 0)).slice(0, 6).map(row => ({{
+        const playerIds = currentRosterPlayerIds();
+        const rows = scopedCurrentRows(tables.player_opportunity_scores || [])
+          .filter(row => playerIds.has(String(row.player_id || '').trim()))
+          .slice()
+          .sort((a, b) => Number(b.xfp_regression_score || 0) - Number(a.xfp_regression_score || 0))
+          .slice(0, 6).map(row => ({{
           label: row.player_name || 'Unknown player',
           value: Number(row.xfp_regression_score) || 0,
           display: `${{row.xfp_regression_score || 0}} usage/output`,
           playerId: row.player_id
         }}));
         return {{
-          title: 'Which signals disagree?',
-          answer: rows.length ? 'Usage-versus-output disagreement is the clearest current contradiction surfaced by the model. It can reveal a buy-low or risk flag, but it still needs role, news, and projection context.' : 'No usage-versus-output comparison is available in the current bundle.',
+          title: 'Which signals disagree for my team?',
+          answer: rows.length ? 'Usage-versus-output disagreement is the clearest current contradiction surfaced for the selected roster. It can reveal a buy-low or risk flag, but it still needs role, news, and projection context.' : 'No league- and roster-scoped usage-versus-output comparison is available in the current bundle.',
           visuals: [decisionVisual('Opportunity versus production', rows, 'Higher bars mean more modeled opportunity outrunning box-score production.')]
         }};
       }}

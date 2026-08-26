@@ -67,7 +67,7 @@ EXPECTED_TABLE_COLUMNS = {
     "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
     "today_priority_board": ["item_type", "item_type_label", "entity_type", "entity_id", "entity_name", "roster_id", "team_name", "priority_score", "why", "evidence", "risk", "confidence", "source_trace"],
     "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "opportunity_score", "xfp_regression_score", "role_trend_score", "fragility_score", "signal_label", "projection_percentile", "market_percentile", "market_gap_status", "evidence", "risk", "confidence", "source_trace"],
-    "player_opportunity_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "games_sample", "opportunity_score", "production_score", "xfp_regression_score", "role_trend_score", "fragility_score", "opportunity_evidence", "source_trace"],
+    "player_opportunity_scores": ["player_id", "player_name", "position", "league_id", "roster_id", "team_name", "games_sample", "opportunity_score", "production_score", "xfp_regression_score", "role_trend_score", "fragility_score", "opportunity_evidence", "source_trace"],
     "breakout_candidates": ["player_id", "player_name", "position", "current_availability_status", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "sell_candidates": ["player_id", "player_name", "position", "current_availability_status", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
     "projection_market_gaps": ["player_id", "player_name", "position", "current_availability_status", "projected_fantasy_points", "projected_ppg", "market_value", "projection_percentile", "market_percentile", "market_gap_status", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
@@ -2428,6 +2428,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn("currentRosterPlayerIds().has(String(row.player_id))", html)
         self.assertNotIn("currentRosterPlayerNames().has(String(row.player_name))", html)
         self.assertNotIn("String(row.current_team_name) === activeTeamName()", html)
+        self.assertIn("scopedCurrentRows(tables.player_opportunity_scores || [])", html)
+        self.assertIn("title: 'Which signals disagree for my team?'", html)
         self.assertIn("const horizonRows = scopedCurrentRows(tables.player_horizon_market_scores || [])", html)
         self.assertIn("sameIdentifier(row.league_id, leagueId)", html)
         self.assertIn("scopedCurrentLeagueNews().filter(row => String(row.player_id", html)
@@ -4252,6 +4254,69 @@ class VModelTests(unittest.TestCase):
         for _, row in scores.iterrows():
             self.assertGreaterEqual(row["opportunity_score"], 0.0)
             self.assertLessEqual(row["opportunity_score"], 100.0)
+
+    def test_opportunity_scores_scope_current_league_before_name_join(self) -> None:
+        """Design source: AGENTS.md; league identity precedes mutable team presentation."""
+        weekly = pd.DataFrame([
+            {
+                "player_id": "nfl-shared",
+                "player_display_name": "Shared Receiver",
+                "player_name": "Shared Receiver",
+                "position": "WR",
+                "season": 2026,
+                "week": 1,
+                "season_type": "REG",
+                "attempts": 0,
+                "carries": 0,
+                "targets": 8,
+                "receptions": 6,
+                "target_share": 0.25,
+                "air_yards_share": 0.30,
+                "wopr": 0.50,
+                "fantasy_points": 12,
+                "fantasy_points_ppr": 18,
+            }
+        ])
+        roster = pd.DataFrame([
+            {
+                "season": 2025,
+                "league_id": "league-1",
+                "roster_id": 2,
+                "player_id": "shared-sleeper-id",
+                "player_name": "Shared Receiver",
+                "position": "WR",
+                "team_name": "Historical Team",
+            },
+            {
+                "season": 2026,
+                "league_id": "league-2",
+                "roster_id": 4,
+                "player_id": "shared-sleeper-id",
+                "player_name": "Shared Receiver",
+                "position": "WR",
+                "team_name": "Moose Caboose",
+            },
+            {
+                "season": 2026,
+                "league_id": "league-1",
+                "roster_id": 7,
+                "player_id": "shared-sleeper-id",
+                "player_name": "Shared Receiver",
+                "position": "WR",
+                "team_name": "Lulu's Potatoe's",
+            },
+        ])
+
+        scores = build_opportunity_scores(
+            weekly,
+            roster,
+            {"current_season": 2026, "league_id": "league-1"},
+        )
+
+        self.assertEqual(len(scores), 1)
+        self.assertEqual(scores.iloc[0]["league_id"], "league-1")
+        self.assertEqual(int(scores.iloc[0]["roster_id"]), 7)
+        self.assertEqual(scores.iloc[0]["team_name"], "Lulu's Potatoe's")
 
     def test_breakout_score_lifts_with_opportunity(self) -> None:
         # The Sprint 18 blend: identical player, higher opportunity must not lower the breakout score.

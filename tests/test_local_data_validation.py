@@ -20,6 +20,7 @@ REQUIRED_TABLES = {
     "player_dossiers": ["source_trace"],
     "league_news_impact": ["source_trace"],
     "player_signal_scores": ["source_trace"],
+    "player_opportunity_scores": ["league_id", "player_id", "roster_id", "source_trace"],
     "player_projection_season": ["season", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
     "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "projected_fantasy_points", "projection_method", "projection_confidence", "source_trace"],
     "projection_source_components": ["season", "player_id", "player_name", "position", "team", "availability_scope", "current_availability_status", "availability_note", "source", "projected_fantasy_points", "projected_ppg", "source_confidence", "source_trace", "checked_at"],
@@ -83,6 +84,9 @@ class LocalDataValidationTests(unittest.TestCase):
                         "value_lane": "balanced_window",
                     }
                 )
+            elif table == "player_opportunity_scores":
+                rows[0] = {column: "value" for column in columns}
+                rows[0].update({"league_id": "league-1", "player_id": "player-1", "roster_id": "2", "source_trace": "usage"})
             elif table in {"player_projection_season", "player_projection_weekly", "projection_source_components"}:
                 rows[0] = {column: "value" for column in columns}
                 rows[0].update(
@@ -241,6 +245,30 @@ class LocalDataValidationTests(unittest.TestCase):
         self.assertTrue(audit["ok"])
         self.assertEqual(audit["freshness_margin_hours"], 2.0)
         self.assertTrue(any("freshness margin" in warning for warning in audit["warnings"]))
+
+    def test_opportunity_scope_cannot_mix_leagues_or_duplicate_players(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            processed, analysis = self._fixture(Path(temporary))
+            path = processed / "player_opportunity_scores.csv"
+            columns = REQUIRED_TABLES["player_opportunity_scores"]
+            rows = [{column: "value" for column in columns} for _ in range(3)]
+            for row in rows:
+                row.update({"league_id": "league-1", "player_id": "player-1", "roster_id": "2", "source_trace": "usage"})
+            rows[-1]["league_id"] = "league-2"
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=columns)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            audit = audit_local_data(
+                processed,
+                analysis,
+                now=datetime(2026, 8, 22, 13, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertFalse(audit["ok"])
+        self.assertTrue(any("mixes league scopes" in error for error in audit["errors"]))
+        self.assertTrue(any("duplicate league/player joins" in error for error in audit["errors"]))
 
     def test_player_history_identity_receipt_reports_resolution_and_trade_balance(self) -> None:
         """Encodes docs/data_contract.md's player identity and acquired/sold contract."""

@@ -32,7 +32,11 @@ def build_opportunity_scores(
     # the roster's id, not nflverse's.
     scored = scored.sort_values("games_sample", ascending=False).drop_duplicates("normalized_name")
 
-    roster = _prepare_roster(roster_players_df)
+    # Usage is a global NFL fact, but the published opportunity row is a
+    # league-scoped join. Restrict the roster side before joining so a player
+    # who appears in several historical leagues cannot inherit the first
+    # roster ID or team label encountered in the archive.
+    roster = _prepare_roster(roster_players_df, config)
     if roster.empty:
         return _empty_output()
 
@@ -302,18 +306,37 @@ def _opportunity_evidence(row: pd.Series) -> str:
     return "; ".join(parts)
 
 
-def _prepare_roster(frame: pd.DataFrame) -> pd.DataFrame:
+def _prepare_roster(frame: pd.DataFrame, config: dict[str, Any] | None = None) -> pd.DataFrame:
     roster = frame.copy()
     if "player_id" not in roster:
         return pd.DataFrame()
+    config = config if isinstance(config, dict) else {}
+    requested_season = _first_non_empty(config.get("current_season"))
+    if requested_season and "season" in roster.columns:
+        identified_seasons = roster["season"].fillna("").astype(str).str.strip()
+        if identified_seasons.ne("").any():
+            roster = roster[identified_seasons == requested_season].copy()
+            if roster.empty:
+                return pd.DataFrame()
+    requested_league_id = _first_non_empty(config.get("league_id"))
+    if requested_league_id and "league_id" in roster.columns:
+        identified_leagues = roster["league_id"].fillna("").astype(str).str.strip()
+        if identified_leagues.ne("").any():
+            roster = roster[identified_leagues == requested_league_id].copy()
+            if roster.empty:
+                return pd.DataFrame()
     roster["player_id"] = roster["player_id"].fillna("").astype(str)
     roster["player_name"] = roster.get("player_name", "").fillna("").astype(str)
     roster["position"] = roster.get("position", "").fillna("").astype(str)
     roster["roster_id"] = pd.to_numeric(roster.get("roster_id"), errors="coerce").fillna(0).astype(int)
     roster["team_name"] = roster.get("team_name", "").fillna("").astype(str)
+    if "league_id" not in roster.columns:
+        roster["league_id"] = ""
     roster["normalized_name"] = roster["player_name"].map(_normalize_name)
-    roster = roster[roster["normalized_name"] != ""].drop_duplicates("normalized_name")
-    return roster[["player_id", "player_name", "position", "roster_id", "team_name", "normalized_name"]]
+    roster = roster[roster["normalized_name"] != ""].drop_duplicates(
+        ["league_id", "roster_id", "player_id", "normalized_name"]
+    )
+    return roster[["league_id", "player_id", "player_name", "position", "roster_id", "team_name", "normalized_name"]]
 
 
 def _normalize_name(value: Any) -> str:
@@ -386,6 +409,7 @@ def _output_columns() -> list[str]:
         "player_id",
         "player_name",
         "position",
+        "league_id",
         "roster_id",
         "team_name",
         "games_sample",

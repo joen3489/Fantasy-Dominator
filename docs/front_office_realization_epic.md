@@ -1826,3 +1826,16 @@ selected league and roster identity were correct underneath. The browser now
 derives the active roster's exact `player_id` set from the scoped roster table
 and uses it for breakout, sell, and projection-gap views. The entry-path test
 also asserts that those team filters do not fall back to display names.
+
+## 2026-08-26 opportunity-scope depth checkpoint
+
+The opportunity layer was using global nflverse usage correctly but joining it
+to the entire historical roster archive by normalized name. In a multi-league
+workspace, that could make a player inherit the first historical roster ID or
+team label encountered, and the Data Room's signal-disagreement question could
+read the unscopeable table directly. The join now selects the current season
+and selected league before attaching Sleeper identity, carries `league_id`
+through the published table, and fails closed when the requested scope is not
+present. The Data Room filters the disagreement view to the selected roster's
+player IDs through the same current-league helper. This is a scope repair over
+existing usage scores, not a new ranking formula.

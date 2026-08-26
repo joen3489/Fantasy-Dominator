@@ -1875,3 +1875,14 @@ team, and it violated the identity boundary even when the underlying tables
 carried stable `player_id` values. Team-scoped breakout, sell, and projection-
 gap views now derive exact player membership from the selected `roster_id` and
 filter every row by `player_id`. A display name remains presentation only.
+
+## 2026-08-26 - Scope opportunity joins before scoring is presented
+
+The usage model is a global NFL evidence source, but its Sleeper join is
+league-local. `player_opportunity_scores` now filters the roster side to the
+requested current season and `config.league_id` before the normalized-name
+join, preserves `league_id`, and rejects mixed or duplicate league/player
+rows in the local trust gate. The Data Room also scopes its usage/output
+disagreement view to the selected roster's exact player IDs. This prevents a
+historical or neighboring league from changing a current manager's signal
+read.

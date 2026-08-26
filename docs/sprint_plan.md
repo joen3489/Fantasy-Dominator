@@ -1437,3 +1437,11 @@ unavailable. Their historical baseline remains visible as conditional research
 context, while active players are ranked against current-role peers. This
 closes a subtle path where a free-agent veteran could distort an otherwise
 current projection-versus-market read.
+
+2026-08-26 opportunity-scope amendment: nflverse usage remains a global fact,
+but `player_opportunity_scores` now scopes the Sleeper join to the selected
+current season and league before attaching roster identity. The output carries
+`league_id`, the local validator rejects mixed or duplicate league/player
+joins, and the Data Room's usage/output disagreement question uses the exact
+selected-roster player set. This keeps a deep historical archive from leaking
+an arbitrary team label into a current signal.

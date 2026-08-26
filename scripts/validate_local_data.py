@@ -25,6 +25,7 @@ REQUIRED_TABLES = {
     "player_dossiers": ("source_trace",),
     "league_news_impact": ("source_trace",),
     "player_signal_scores": ("source_trace",),
+    "player_opportunity_scores": ("league_id", "player_id", "roster_id", "source_trace"),
     "player_projection_season": (
         "season", "player_id", "player_name", "position", "team",
         "availability_scope", "current_availability_status", "availability_note",
@@ -290,6 +291,7 @@ def audit_local_data(
             errors.append(f"{table}.csv has no rows")
 
     _audit_projection_availability(tables, errors)
+    _audit_opportunity_scope(tables.get("player_opportunity_scores", []), tables.get("refresh_metadata", []), errors)
 
     player_history_identity = _audit_player_history(processed_dir / "player_transaction_history.csv", errors, warnings)
     if player_history_identity is not None:
@@ -426,7 +428,7 @@ def audit_local_data(
             errors.append(f"{table} has no current or cached source")
         source_summary.append({"table": table, "current": current, "total": len(rows), "limited": limited})
 
-    for table in ("today_priority_board", "player_dossiers", "league_news_impact", "player_signal_scores", "player_horizon_market_scores", "available_player_horizon_scores", "nfl_schedule", "nfl_team_defense_factors"):
+    for table in ("today_priority_board", "player_dossiers", "league_news_impact", "player_signal_scores", "player_opportunity_scores", "player_horizon_market_scores", "available_player_horizon_scores", "nfl_schedule", "nfl_team_defense_factors"):
         rows = tables.get(table, [])
         if rows and not all(str(row.get("source_trace") or "").strip() for row in rows):
             errors.append(f"{table}.csv contains rows without source_trace")
@@ -1087,6 +1089,64 @@ def _csv_header(path: Path) -> list[str]:
             return next(csv.reader(handle), [])
     except (OSError, csv.Error):
         return []
+
+
+def _audit_opportunity_scope(
+    rows: list[dict[str, str]],
+    refresh_metadata: list[dict[str, str]],
+    errors: list[str],
+) -> None:
+    """Keep the global usage join inside one current league publication scope."""
+
+    if not rows:
+        return
+    missing_identity = [
+        row.get("player_name") or row.get("player_id") or "unnamed player"
+        for row in rows
+        if not str(row.get("league_id") or "").strip()
+        or not str(row.get("player_id") or "").strip()
+        or not str(row.get("roster_id") or "").strip()
+    ]
+    if missing_identity:
+        errors.append(
+            "player_opportunity_scores.csv contains rows without league_id, player_id, or roster_id: "
+            + ", ".join(str(value) for value in missing_identity[:5])
+        )
+
+    scoped_leagues = {
+        str(row.get("league_id") or "").strip()
+        for row in rows
+        if str(row.get("league_id") or "").strip()
+    }
+    if len(scoped_leagues) > 1:
+        errors.append(
+            "player_opportunity_scores.csv mixes league scopes: "
+            + ", ".join(sorted(scoped_leagues)[:5])
+        )
+    metadata_scope = ""
+    for row in refresh_metadata:
+        metadata_scope = str(row.get("league_id") or "").strip()
+        if metadata_scope:
+            break
+    if metadata_scope and scoped_leagues and metadata_scope not in scoped_leagues:
+        errors.append(
+            "player_opportunity_scores.csv does not match refresh_metadata.league_id: "
+            f"{metadata_scope}"
+        )
+
+    keys = [
+        (
+            str(row.get("league_id") or "").strip(),
+            str(row.get("player_id") or "").strip(),
+        )
+        for row in rows
+    ]
+    duplicate_keys = sorted({key for key in keys if key[0] and key[1] and keys.count(key) > 1})
+    if duplicate_keys:
+        errors.append(
+            "player_opportunity_scores.csv contains duplicate league/player joins: "
+            + ", ".join(f"{league}/{player}" for league, player in duplicate_keys[:5])
+        )
 
 
 def _audit_player_history(path: Path, errors: list[str], warnings: list[str]) -> dict[str, Any] | None:
