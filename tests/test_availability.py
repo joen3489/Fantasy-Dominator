@@ -72,6 +72,7 @@ class AvailabilityContractTests(unittest.TestCase):
         self.assertIn("No current NFL team", availability_note(free_agent))
         self.assertEqual(current_availability_status(active), "available")
         self.assertIn("No current Sleeper injury flag", availability_note(active))
+        self.assertEqual(baseline_ppg_text(active, "15"), "season baseline 15 PPG")
 
     def test_rating_layer_withholds_actionable_scores_for_free_agent(self) -> None:
         """Design source: docs/data_contract.md; history may remain context but cannot become a current-role signal."""

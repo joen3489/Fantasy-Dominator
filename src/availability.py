@@ -140,10 +140,10 @@ def has_current_availability_flag(row: Mapping[str, Any]) -> bool:
         "injury_flagged",
     }:
         return True
-    status = str(row.get("injury_status") or "").strip().lower()
+    status = _clean_text(row.get("injury_status")).lower()
     if status:
         return status not in _NEUTRAL_STATUSES
-    note = str(row.get("availability_note") or "").strip().lower()
+    note = _clean_text(row.get("availability_note")).lower()
     if not note or note in _NEUTRAL_STATUSES or note.startswith("no current"):
         return False
     return _NO_TEAM_NOTE_MARKER in note or any(
@@ -154,9 +154,8 @@ def has_current_availability_flag(row: Mapping[str, Any]) -> bool:
 def baseline_ppg_label(row: Mapping[str, Any]) -> str:
     """Return the reader-facing label for a deterministic PPG baseline."""
 
-    if current_availability_status(row) == "no_current_nfl_team" or _NO_TEAM_NOTE_MARKER in str(
-        row.get("availability_note") or ""
-    ).lower():
+    note = _clean_text(row.get("availability_note")).lower()
+    if current_availability_status(row) == "no_current_nfl_team" or _NO_TEAM_NOTE_MARKER in note:
         return "conditional baseline PPG if signed"
     if has_current_availability_flag(row):
         return "conditional baseline PPG if active"
