@@ -143,8 +143,10 @@ class ContextIsolationTests(unittest.TestCase):
                 )
 
                 stored = db.list_user_leagues(int(user["id"]))
+                fetched = db.get_user_league(int(user["id"]), "league-a")
 
         self.assertEqual(stored[0]["sleeper_user_id"], "sleeper-17")
+        self.assertEqual(fetched["sleeper_user_id"], "sleeper-17")
 
     def test_user_league_paths_are_private_and_reject_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

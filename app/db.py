@@ -249,10 +249,12 @@ def upsert_user_league(user_id: int, entry: dict[str, Any]) -> dict[str, Any]:
         conn.commit()
         row = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id,
+            SELECT leagues.user_id, league_id, season, league_type, name, roster_id,
+                   users.sleeper_user_id AS sleeper_user_id,
                    identity_status, identity_checked_at, enabled
-            FROM user_leagues
-            WHERE user_id = ? AND league_id = ?
+            FROM user_leagues AS leagues
+            JOIN users ON users.id = leagues.user_id
+            WHERE leagues.user_id = ? AND leagues.league_id = ?
             """,
             (user_id, str(entry.get("league_id") or "")),
         ).fetchone()
@@ -458,10 +460,12 @@ def get_user_league(user_id: int, league_id: str) -> dict[str, Any] | None:
     try:
         row = conn.execute(
             """
-            SELECT user_id, league_id, season, league_type, name, roster_id,
+            SELECT leagues.user_id, league_id, season, league_type, name, roster_id,
+                   users.sleeper_user_id AS sleeper_user_id,
                    identity_status, identity_checked_at, enabled
-            FROM user_leagues
-            WHERE user_id = ? AND league_id = ?
+            FROM user_leagues AS leagues
+            JOIN users ON users.id = leagues.user_id
+            WHERE leagues.user_id = ? AND leagues.league_id = ?
             """,
             (user_id, str(league_id)),
         ).fetchone()
