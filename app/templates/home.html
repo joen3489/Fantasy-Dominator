@@ -1610,13 +1610,22 @@
                 if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
                 return;
               }
+              const acceptedRunId = String(payload.run_id || '');
+              if (!acceptedRunId) {
+                writerStatus.className = 'writer-status error';
+                writerStatus.textContent = 'The writer request returned without a durable run receipt. No new run was started from this page.';
+                resetWriterButton(button, allEditions, retryKeys);
+                if (writerButton && writerButton !== button) resetWriterButton(writerButton);
+                if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
+                return;
+              }
               writerStatus.textContent = retryKeys.length
                 ? 'Selected desk retry started. Watching for completion.'
                 : allEditions ? 'All-edition writer run started. Watching every league for completion.' : 'Writer run started. Watching the selected league for completion.';
               button.textContent = retryKeys.length
                 ? 'Selected desks running'
                 : allEditions ? 'All writers running' : 'Writer running';
-              void watchWriter(leagueId, button, allEditions, String(payload.run_id || ''), retryKeys);
+              void watchWriter(leagueId, button, allEditions, acceptedRunId, retryKeys);
             } catch (error) {
               resetWriterButton(button, allEditions, retryKeys);
               if (writerButton && writerButton !== button) resetWriterButton(writerButton);

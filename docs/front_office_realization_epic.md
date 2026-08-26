@@ -1942,3 +1942,11 @@ edition. The current identity was `Lulu’s Potatoe’s`; the direct bundle
 contained the run-ID binding and mismatch guard. The issue remains `0/6`
 fallback until a protected operator run is accepted, so no paid publication
 claim is made.
+
+### 2026-08-26 writer launch receipt parity
+
+The authenticated headquarters writer control now has the same fail-closed
+receipt contract as the generated league reader. An accepted response without
+`run_id` resets the control and reports that no durable run was established;
+it cannot begin polling an older status receipt. This closes the remaining
+duplicate launch seam before the next protected Luna run.

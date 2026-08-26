@@ -1147,6 +1147,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertNotIn("league_id", continuity["identity_message"])
 
     def test_home_renders_phone_first_attention_feed_and_league_pills(self) -> None:
+        """Design source: AGENTS.md; the homepage must bind writer UX to a durable run receipt."""
+
         token = self._token("user_home_feed")
         self.client.get("/", cookies={"__session": token})
         user_id = self._user_id("user_home_feed")
@@ -1239,6 +1241,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("expectedRunId", html)
         self.assertIn("durable receipt did not appear", html)
         self.assertIn("payload.run_id", html)
+        self.assertIn("The writer request returned without a durable run receipt", html)
+        self.assertIn("const acceptedRunId = String(payload.run_id || '')", html)
+        self.assertIn("watchWriter(leagueId, button, allEditions, acceptedRunId, retryKeys)", html)
         self.assertIn("/api/operator/generation-plan?league_id=", html)
         self.assertIn("no provider request will be made", html)
         self.assertIn('data-testid="writer-fallback-note"', html)

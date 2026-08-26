@@ -2015,3 +2015,11 @@ was `Lulu’s Potatoe’s`, and the league bundle contained the run-ID binding a
 mismatch guard. The writer remains `0/6` deterministic fallback because no
 paid operator run has been accepted; this verifies the handoff seam, not Luna
 publication.
+
+## 2026-08-26 - Require a durable run receipt in every writer entry path
+
+The authenticated headquarters launch path now rejects an accepted writer
+response that does not contain a durable `run_id`, just as the generated
+league bundle does. It will not enter a status-polling loop or claim that a
+paid run is active without that receipt. The homepage contract test names
+`AGENTS.md` as its design source and checks the real rendered writer wiring.
