@@ -191,22 +191,25 @@ Before adding a feature or “cleaning up” an old artifact:
 
 ## Current open boundary
 
-The durable-bundle migration and semantic-reader gates are closed for the
-current deployment `b0142965abe1ba10986b40ed289eea21fa3b37e9`. A fresh,
-authenticated direct entry served the current private bundle for exact
-`roster_id=2` / Lulu’s Potatoe’s, rendered the Data Room's “Historical
-identity receipt,” and reported 3,101 history rows, 3,101 resolved joins, zero
-unresolved rows, and balanced acquired/sold trade direction. The reader receipt
-reported `current · private`; public smoke independently verified the expected
-deployment revision. The Moose Caboose entity route also reconciles its
-835.54 market total to `team_asset_inventory` and labels four internal proxy
-rows. Browser freshness remains an explicit verification precondition because
-an already-open tab can retain an older shell until it is reloaded.
+As of 2026-08-26, `9feb8483966398e01ac40011c94b54616fc5e849` is the live
+`main` revision. Railway health reports the production configuration as
+deployment-ready, with durable storage/database continuity, protected operator
+writes, and OpenAI `gpt-5.6-luna`; public revision-aware smoke passes. The
+authenticated reader and writer receipt are still an open verification
+boundary in this work session because no current Fantasy Dominator Clerk
+session is available in the connected browser. Do not turn the public health
+result into a claim that the user's private league identity, exact roster, or
+latest article publication was verified.
 
 The protected Luna publication is a separate open boundary: deterministic
 fallback remains the honest reader state until the operator-authorized run
 produces current per-article writer receipts. This is an explicit cost and
-authority boundary, not a reason to weaken the receipt contract.
+authority boundary, not a reason to weaken the receipt contract. When a run is
+available to inspect, verify refresh completion, exact `roster_id` continuity,
+model/reasoning receipt, each desk state, editor decision, bundle revision, and
+the rendered article before closing this boundary. Browser freshness remains
+an explicit precondition because an already-open tab can retain an older shell
+until it is reloaded.
 
 The article-specific media slice was previously verified on `e830e05`: the
 signed-in edition loaded four 1536px desk illustrations, kept the exact

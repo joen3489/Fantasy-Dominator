@@ -1742,3 +1742,13 @@ override exists. The setting remains independently configurable and is
 recorded in the writer preflight and article receipts, so a lower-cost run is
 visible as a deliberate operating choice rather than an accidental model
 downgrade.
+
+## 2026-08-26 newsroom progress receipt amendment
+
+The asynchronous newsroom now persists compact progress after each desk,
+including the active reporter, completed/total desk count, configured model and
+reasoning effort, and each completed desk state. The reader polls long enough
+for a multi-call Luna run plus optional editor pass to finish. This improves
+operational truthfulness without changing evidence, scores, article reuse, or
+publication authority; the durable final article/editor receipts remain the
+only proof that copy was printed.

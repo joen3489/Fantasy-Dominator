@@ -1423,3 +1423,9 @@ player with no current NFL team and `if active` for injury-sensitive rows.
 The local validator requires this context on every projection contract, so a
 stale artifact cannot silently turn historical production into a current
 forecast.
+
+2026-08-26 newsroom progress amendment: asynchronous six-desk runs now write
+compact per-desk progress receipts and expose the configured model/reasoning
+configuration while work is in flight. Browser polling covers the expected
+multi-call duration, but completion still requires the durable per-article
+writer/editor receipts and revision-aware authenticated production check.
