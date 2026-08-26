@@ -238,6 +238,7 @@ def validate_paid_publication(payload: dict) -> list[str]:
     errors = _validate_publication_receipts(payload)
     analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
     receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), dict) else {}
+    expected_model = os.environ.get("FRONT_OFFICE_EXPECTED_WRITER_MODEL", "").strip().lower()
     for article_key in EXPECTED_ARTICLE_KEYS:
         receipt = receipts.get(article_key)
         if not isinstance(receipt, dict):
@@ -248,6 +249,10 @@ def validate_paid_publication(payload: dict) -> list[str]:
             continue
         if str(receipt.get("publication_status") or "").strip().lower() != "approved":
             errors.append(f"paid publication receipt {article_key} is not approved")
+        if expected_model and str(receipt.get("model") or "").strip().lower() != expected_model:
+            errors.append(
+                f"paid publication receipt {article_key} model does not match {expected_model!r}"
+            )
         reporter_id = str(receipt.get("reporter_id") or "").strip().lower()
         assigned_reporter_id = str(receipt.get("assigned_reporter_id") or "").strip().lower()
         if not reporter_id or reporter_id == "front_office":

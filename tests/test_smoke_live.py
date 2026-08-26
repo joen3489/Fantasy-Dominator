@@ -371,7 +371,16 @@ class LiveSmokeContractTests(unittest.TestCase):
             }
             for key in fallback_receipts
         }
-        self.assertEqual(validate_paid_publication({"analysis": {"articleReceipts": paid_receipts}}), [])
+        with patch.dict(os.environ, {"FRONT_OFFICE_EXPECTED_WRITER_MODEL": "gpt-5.6-luna"}, clear=False):
+            self.assertTrue(
+                any(
+                    "model does not match" in error
+                    for error in validate_paid_publication({"analysis": {"articleReceipts": paid_receipts}})
+                )
+            )
+            for receipt in paid_receipts.values():
+                receipt["model"] = "gpt-5.6-luna"
+            self.assertEqual(validate_paid_publication({"analysis": {"articleReceipts": paid_receipts}}), [])
 
         held = {"analysis": {"articleReceipts": {**paid_receipts, "daily_brief": {**paid_receipts["daily_brief"], "publication_status": "held"}}}}
         self.assertTrue(any("is not approved" in error for error in validate_paid_publication(held)))

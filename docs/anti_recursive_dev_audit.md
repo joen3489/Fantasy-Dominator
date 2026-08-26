@@ -588,6 +588,8 @@ that is too weak to prove that an operator-triggered writer run actually
 printed paid editorial. `validate_paid_publication()` is now an explicit,
 opt-in smoke contract requiring all six desks to be automatic LLM output,
 approved, and attributed to named reporter lenses. The guard is activated with
-`FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1`; it does not change the degraded reader
-contract or make a provider call. This closes the verification gap between a
-terminal job receipt and a genuinely published newsroom edition.
+`FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1`; setting
+`FRONT_OFFICE_EXPECTED_WRITER_MODEL` also binds the receipts to the intended
+model. It does not change the degraded reader contract or make a provider
+call. This closes the verification gap between a terminal job receipt and a
+genuinely published newsroom edition.

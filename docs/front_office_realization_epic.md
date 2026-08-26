@@ -1973,7 +1973,9 @@ status and source trace.
 The live verifier now has an explicit post-run mode for the protected Luna
 boundary. With `FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1`, the authenticated smoke
 requires every registered desk to be automatic LLM output, publication-approved,
-and attributed to a named assigned reporter lens. The ordinary smoke remains
-fallback-tolerant so a degraded provider does not erase the evidence-backed
-reader. This distinguishes a terminal writer process from proof that paid copy
-was actually printed.
+and attributed to a named assigned reporter lens. Setting
+`FRONT_OFFICE_EXPECTED_WRITER_MODEL=gpt-5.6-luna` also proves that each receipt
+used the intended writer model. The ordinary smoke remains fallback-tolerant so
+a degraded provider does not erase the evidence-backed reader. This
+distinguishes a terminal writer process from proof that paid copy was actually
+printed.

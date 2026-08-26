@@ -83,8 +83,10 @@ migration when explicitly configured.
 
    A terminal writer receipt is still not proof that paid copy was printed.
    For the post-run acceptance check, set
-   `FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1` alongside the expected revision and
-   authenticated session token before running `scripts\smoke_live.py`. That
+   `FRONT_OFFICE_REQUIRE_LLM_PUBLICATION=1` and
+   `FRONT_OFFICE_EXPECTED_WRITER_MODEL=gpt-5.6-luna` alongside the expected
+   revision and authenticated session token before running
+   `scripts\smoke_live.py`. That
    stricter mode requires all six registered desks to be automatic LLM output,
    approved for publication, and attributed to a named assigned reporter. The
    ordinary smoke remains fallback-tolerant so provider degradation is visible
