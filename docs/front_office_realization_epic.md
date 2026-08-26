@@ -1884,3 +1884,14 @@ self-heal older durable artifacts before they reach the reader.
 The Data Room diagnostics exposes those receipt fields to the signed-in
 manager, turning identity continuity into a reader-visible check rather than
 an internal-only contract.
+
+## 2026-08-26 targeted writer retry entry path
+
+The paid workflow had already accepted a set of article keys internally, but
+the browser could only launch an entire selected-league or all-league run. The
+protected operator seam now validates those keys, requires an owned league,
+and forwards them to the evidence-backed workflow without changing the normal
+full-edition behavior. When a terminal receipt names failed or held desks, the
+Writer Desk renders `Retry failed desks`; when the worker stopped during a
+known provider call, it can retry that current desk. Refresh-stage failures
+remain full-retry only because there is no safe desk target to invent.

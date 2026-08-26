@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from src import operator as front_operator
+from src import articles, operator as front_operator
 from src.analysis import FALLBACK_ARTICLE_SCHEMA_VERSION
 from src.attention import load_attention
 from src.browser_site import (
@@ -51,6 +51,7 @@ class ToggleLeagueBody(BaseModel):
 
 class OperatorBody(BaseModel):
     league_id: str | None = None
+    article_keys: list[str] = Field(default_factory=list)
 
 
 class TeamProfileBody(BaseModel):
@@ -76,6 +77,10 @@ class ContentInteractionBody(BaseModel):
     artifact_key: str
     interaction_type: str
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+_WRITER_ARTICLE_ORDER = tuple(article.key for article in articles.ARTICLES)
+_WRITER_ARTICLE_KEYS = frozenset(_WRITER_ARTICLE_ORDER)
 
 
 def create_app() -> FastAPI:
@@ -228,6 +233,7 @@ def create_app() -> FastAPI:
             # reliable per-league receipt to select while the aggregate job
             # is active or has no newer per-league writer receipt.
             selected_operator_status = aggregate_writer_status
+        writer_retry_keys = _writer_retry_keys(selected_operator_status)
         return templates.TemplateResponse(
             request,
             "home.html",
@@ -249,6 +255,7 @@ def create_app() -> FastAPI:
                 "writer_reasoning_effort": writer_config["reasoning_effort"],
                 "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
                 "writer_api_key_env": writer_config["api_key_env"],
+                "writer_retry_keys": writer_retry_keys,
                 "continuity": _continuity_view(user_id),
                 "deployment_gate": _production_gate(),
             },
@@ -618,6 +625,11 @@ def create_app() -> FastAPI:
         if action not in {"refresh", "generate-insights", "rebuild-browser"}:
             raise HTTPException(status_code=404, detail="operator action not found")
         _require_operator_access(request)
+        article_keys = _validated_writer_article_keys(body.article_keys if body else None)
+        if article_keys and action != "generate-insights":
+            raise HTTPException(status_code=400, detail="article_keys are supported only for writer runs")
+        if article_keys and (not body or not body.league_id):
+            raise HTTPException(status_code=400, detail="targeted writer retry requires league_id")
         league = _owned_enabled_league(user, body.league_id if body else None) if body and body.league_id else None
         user_id = int(user["id"])
         paths = _private_paths(user_id, str(league["league_id"])) if league else _operator_paths_for_user(user_id)
@@ -628,9 +640,13 @@ def create_app() -> FastAPI:
                 paths=paths,
             )
         if action == "generate-insights":
+            if article_keys:
+                writer_job = lambda: _generate_insights_job(league, user_id, article_keys=article_keys)
+            else:
+                writer_job = lambda: _generate_insights_job(league, user_id)
             return front_operator.start_job(
                 "generate-insights",
-                lambda: _generate_insights_job(league, user_id),
+                writer_job,
                 paths=paths,
             )
         return front_operator.start_job(
@@ -1385,7 +1401,13 @@ def _refresh_and_rebuild_league(league: dict[str, Any], user_id: int) -> dict[st
     return result | {"bundle": rebuilt}
 
 
-def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
+def _generate_insights_job(
+    league: dict[str, Any] | None,
+    user_id: int,
+    article_keys: set[str] | None = None,
+) -> dict[str, Any]:
+    if article_keys and league is None:
+        raise ValueError("Targeted writer retry requires a selected league.")
     if league is None:
         front_operator.write_job_progress(
             stage="refreshing",
@@ -1438,13 +1460,18 @@ def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[
     _refresh_job(league, user_id)
     paths = _private_paths(user_id, str(league["league_id"]))
     context = _context_for_league(user_id, league)
+    writer_scope = (
+        f"Writing {len(article_keys)} selected reporter desks"
+        if article_keys
+        else "Writing the six reporter desks"
+    )
     front_operator.write_job_progress(
         stage="writing",
-        message=f"Writing the six reporter desks for {league.get('name') or league.get('league_id') or 'the selected league'}.",
+        message=f"{writer_scope} for {league.get('name') or league.get('league_id') or 'the selected league'}.",
         league_id=str(league.get("league_id") or ""),
         league_name=str(league.get("name") or ""),
     )
-    result = front_operator.generate_articles_workflow(paths, context)
+    result = front_operator.generate_articles_workflow(paths, context, article_keys=article_keys)
     front_operator.write_job_progress(
         stage="publishing",
         message=f"Publishing the reader bundle for {league.get('name') or league.get('league_id') or 'the selected league'}.",
@@ -2079,6 +2106,47 @@ def _safe_operator_status(payload: dict[str, Any]) -> dict[str, Any]:
 
     private_fields = {"packet_path", "output_path", "validated_path", "site_path", "traceback", "owner_pid"}
     return {key: value for key, value in payload.items() if key not in private_fields}
+
+
+def _validated_writer_article_keys(raw_keys: list[str] | None) -> set[str]:
+    """Validate a targeted writer retry at the API seam before any job starts."""
+
+    values = [str(value).strip() for value in (raw_keys or [])]
+    if any(not value for value in values):
+        raise HTTPException(status_code=400, detail="article_keys must contain non-empty article keys")
+    requested = set(values)
+    unknown = sorted(requested - _WRITER_ARTICLE_KEYS)
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown writer article key(s): {', '.join(unknown)}",
+        )
+    return requested
+
+
+def _writer_retry_keys(status_payload: dict[str, Any]) -> list[str]:
+    """Return only desks with a concrete retry receipt; fail closed otherwise."""
+
+    if not isinstance(status_payload, dict):
+        return []
+    if status_payload.get("job") != "generate-insights":
+        return []
+    if status_payload.get("state") not in {"failed", "partial"}:
+        return []
+    raw_articles = status_payload.get("articles")
+    articles_by_key = raw_articles if isinstance(raw_articles, dict) else {}
+    retryable = {
+        str(key)
+        for key, receipt in articles_by_key.items()
+        if isinstance(receipt, dict) and receipt.get("state") in {"failed", "held"}
+    }
+    # If the worker stopped during a provider call, the current desk is absent
+    # from the completed map. It is still a concrete retry target, unlike a
+    # refresh-stage failure where no desk was selected yet.
+    current_article = str(status_payload.get("current_article") or "").strip()
+    if current_article and current_article in _WRITER_ARTICLE_KEYS and current_article not in articles_by_key:
+        retryable.add(current_article)
+    return [key for key in _WRITER_ARTICLE_ORDER if key in retryable]
 
 
 def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None) -> dict[str, Any]:

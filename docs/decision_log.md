@@ -1949,3 +1949,14 @@ still alive, and only converts it to an interrupted failure when the owner is
 missing, malformed, or dead. A real process restart still fails closed, while
 multi-worker status reads no longer manufacture a false interruption during a
 valid paid run.
+
+## 2026-08-26 - Make targeted writer retries reachable
+
+The article workflow already supported an `article_keys` set, but the protected
+browser action could only start a full selected-league or all-league run. That
+left the tested retry behavior unreachable and encouraged unnecessary paid
+regeneration. The operator API now validates article keys, requires an owned
+league for a targeted run, and forwards the exact set to the real workflow.
+The homepage exposes `Retry failed desks` only when a terminal receipt identifies
+failed or held desks (or the desk interrupted during its provider call). A
+refresh-stage failure remains full-retry only because no desk target is known.

@@ -601,7 +601,7 @@
       }
       .writer-panel h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
       .writer-panel p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
-      .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 9px; align-items: center; }
+      .writer-actions { display: grid; grid-template-columns: minmax(0, 1fr) repeat(4, auto); gap: 9px; align-items: center; }
       .writer-actions input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; background: #fbfcf8; }
       .writer-status { min-height: 18px; color: var(--muted); font-size: 12px; }
       .writer-note { margin: 0; color: #70551b; font-size: 12px; line-height: 1.4; }
@@ -1015,6 +1015,9 @@
             <button class="refresh-button" type="button" data-writer-plan-button>Review run plan</button>
             <button class="primary-button" type="button" data-writer-button>Generate this edition</button>
             <button class="refresh-button" type="button" data-writer-all-button>Generate all editions</button>
+            {% if writer_retry_keys %}
+              <button class="refresh-button" type="button" data-writer-retry-button data-writer-retry-keys='{{ writer_retry_keys|tojson }}'>Retry failed desks</button>
+            {% endif %}
           </div>
           <pre class="writer-plan-output" data-writer-plan-output hidden role="status"></pre>
           <span class="writer-status{% if selected_writer_state == "failed" %} error{% endif %}" data-writer-status data-testid="writer-run-status" role="status">
@@ -1422,9 +1425,10 @@
 
         const writerButton = document.querySelector('[data-writer-button]');
         const writerAllButton = document.querySelector('[data-writer-all-button]');
+        const writerRetryButton = document.querySelector('[data-writer-retry-button]');
         const writerPlanButton = document.querySelector('[data-writer-plan-button]');
         const writerPlanOutput = document.querySelector('[data-writer-plan-output]');
-        if (writerButton || writerAllButton || writerPlanButton) {
+        if (writerButton || writerAllButton || writerRetryButton || writerPlanButton) {
           const writerStatus = document.querySelector('[data-writer-status]');
           const writerToken = document.querySelector('[data-writer-token]');
           const writerSleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -1475,20 +1479,22 @@
               writerPlanButton.textContent = 'Review run plan';
             }
           };
-          const markWriterSessionExpired = (button, allEditions = false) => {
+          const markWriterSessionExpired = (button, allEditions = false, retryKeys = []) => {
             writerStatus.className = 'writer-status error';
             writerStatus.textContent = 'Your Clerk session expired. Sign in again before running the writer.';
-            resetWriterButton(button, allEditions);
+            resetWriterButton(button, allEditions, retryKeys);
             button.dataset.reload = 'true';
             button.textContent = 'Sign in again';
           };
-          const resetWriterButton = (button, allEditions = false) => {
+          const resetWriterButton = (button, allEditions = false, retryKeys = []) => {
             if (!button) return;
             button.disabled = false;
             button.dataset.reload = '';
-            button.textContent = allEditions ? 'Generate all editions' : 'Generate this edition';
+            button.textContent = retryKeys.length
+              ? 'Retry failed desks'
+              : allEditions ? 'Generate all editions' : 'Generate this edition';
           };
-          const watchWriter = async (leagueId, button, allEditions = false, expectedRunId = '') => {
+          const watchWriter = async (leagueId, button, allEditions = false, expectedRunId = '', retryKeys = []) => {
             // Luna/max plus the refresh and bundle rebuild can legitimately
             // exceed the old two-minute watch window. Keep the browser watch
             // bounded but long enough to observe a complete newsroom run.
@@ -1501,7 +1507,7 @@
                 const response = await fetch(statusUrl, {cache: 'no-store'});
                 const status = await response.json().catch(() => ({}));
                 if (response.status === 401) {
-                  markWriterSessionExpired(button, allEditions);
+                  markWriterSessionExpired(button, allEditions, retryKeys);
                   return;
                 }
                 if (!response.ok) throw new Error(status.detail || 'writer status failed (' + response.status + ')');
@@ -1515,7 +1521,7 @@
                   writerStatus.textContent = observedRunId
                     ? 'The writer request was accepted, but production returned a different run receipt. No new run was started from this page.'
                     : 'The writer request was accepted, but its durable receipt did not appear. No new run was started from this page.';
-                  resetWriterButton(button, allEditions);
+                  resetWriterButton(button, allEditions, retryKeys);
                   return;
                 }
                 if (status.state === 'running') {
@@ -1529,51 +1535,66 @@
                   writerStatus.textContent = (status.message || (allEditions ? 'All editions ready.' : 'Edition ready.')) + ' Reload to read the new issue.';
                   button.disabled = false;
                   button.dataset.reload = 'true';
-                  button.textContent = allEditions ? 'Read all new editions' : 'Read the new edition';
+                  button.textContent = retryKeys.length
+                    ? 'Read repaired desks'
+                    : allEditions ? 'Read all new editions' : 'Read the new edition';
                   if (writerButton && writerButton !== button) resetWriterButton(writerButton);
                   if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
+                  if (writerRetryButton && writerRetryButton !== button) resetWriterButton(writerRetryButton, false, JSON.parse(writerRetryButton.dataset.writerRetryKeys || '[]'));
                   return;
                 }
                 if (status.state === 'failed') {
                   writerStatus.className = 'writer-status error';
                   writerStatus.textContent = status.message || 'Writer run failed; the evidence-led edition remains available.';
-                  resetWriterButton(button, allEditions);
+                  resetWriterButton(button, allEditions, retryKeys);
                   return;
                 }
               } catch (error) {
                 writerStatus.className = 'writer-status error';
                 writerStatus.textContent = error.message;
-                resetWriterButton(button, allEditions);
+                resetWriterButton(button, allEditions, retryKeys);
                 return;
               }
             }
             writerStatus.textContent = 'The writer is still running. Check the edition again in a moment.';
-            resetWriterButton(button, allEditions);
+            resetWriterButton(button, allEditions, retryKeys);
           };
-          const startWriter = async (button, allEditions = false) => {
+          const startWriter = async (button, allEditions = false, retryKeys = []) => {
             if (button.dataset.reload === 'true') {
               window.location.reload();
               return;
             }
             const leagueId = selectedWriterLeagueId();
+            if (retryKeys.length && !leagueId) {
+              writerStatus.className = 'writer-status error';
+              writerStatus.textContent = 'Choose a league before retrying selected desks.';
+              resetWriterButton(button, allEditions, retryKeys);
+              return;
+            }
             button.disabled = true;
             if (writerButton) writerButton.disabled = true;
             if (writerAllButton) writerAllButton.disabled = true;
-            button.textContent = allEditions ? 'Starting all writers' : 'Starting writer';
+            button.textContent = retryKeys.length
+              ? 'Starting selected desks'
+              : allEditions ? 'Starting all writers' : 'Starting writer';
             writerStatus.className = 'writer-status';
-            writerStatus.textContent = allEditions ? 'Refreshing facts and queueing every reporter desk' : 'Refreshing facts and queueing the reporters';
+            writerStatus.textContent = retryKeys.length
+              ? 'Retrying the selected desks against the current evidence'
+              : allEditions ? 'Refreshing facts and queueing every reporter desk' : 'Refreshing facts and queueing the reporters';
             const headers = {'content-type': 'application/json'};
             if (writerToken?.value) headers['x-front-office-token'] = writerToken.value;
             try {
+              const requestBody = allEditions ? {} : {league_id: leagueId};
+              if (retryKeys.length) requestBody.article_keys = retryKeys;
               const response = await fetch('/api/operator/generate-insights', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify(allEditions ? {} : {league_id: leagueId}),
+                body: JSON.stringify(requestBody),
               });
               const payload = await response.json().catch(() => ({}));
               if (!response.ok) {
                 if (response.status === 401) {
-                  markWriterSessionExpired(button, allEditions);
+                  markWriterSessionExpired(button, allEditions, retryKeys);
                   return;
                 }
                 if (response.status === 403) throw new Error('This production writer control requires FRONT_OFFICE_OPERATOR_TOKEN. Enter the operator key above; your Clerk login remains read-only.');
@@ -1581,16 +1602,20 @@
               }
               if (!payload.accepted) {
                 writerStatus.textContent = payload.message || 'Writer is already running.';
-                resetWriterButton(button, allEditions);
+                resetWriterButton(button, allEditions, retryKeys);
                 if (writerButton && writerButton !== button) resetWriterButton(writerButton);
                 if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
                 return;
               }
-              writerStatus.textContent = allEditions ? 'All-edition writer run started. Watching every league for completion.' : 'Writer run started. Watching the selected league for completion.';
-              button.textContent = allEditions ? 'All writers running' : 'Writer running';
-              void watchWriter(leagueId, button, allEditions, String(payload.run_id || ''));
+              writerStatus.textContent = retryKeys.length
+                ? 'Selected desk retry started. Watching for completion.'
+                : allEditions ? 'All-edition writer run started. Watching every league for completion.' : 'Writer run started. Watching the selected league for completion.';
+              button.textContent = retryKeys.length
+                ? 'Selected desks running'
+                : allEditions ? 'All writers running' : 'Writer running';
+              void watchWriter(leagueId, button, allEditions, String(payload.run_id || ''), retryKeys);
             } catch (error) {
-              resetWriterButton(button, allEditions);
+              resetWriterButton(button, allEditions, retryKeys);
               if (writerButton && writerButton !== button) resetWriterButton(writerButton);
               if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
               writerStatus.className = 'writer-status error';
@@ -1599,6 +1624,17 @@
           };
           if (writerButton) writerButton.addEventListener('click', () => startWriter(writerButton));
           if (writerAllButton) writerAllButton.addEventListener('click', () => startWriter(writerAllButton, true));
+          if (writerRetryButton) writerRetryButton.addEventListener('click', () => {
+            let retryKeys = [];
+            try {
+              retryKeys = JSON.parse(writerRetryButton.dataset.writerRetryKeys || '[]');
+            } catch (error) {
+              writerStatus.className = 'writer-status error';
+              writerStatus.textContent = 'The retry receipt is invalid; reload the edition before trying again.';
+              return;
+            }
+            startWriter(writerRetryButton, false, Array.isArray(retryKeys) ? retryKeys : []);
+          });
           if (writerPlanButton) writerPlanButton.addEventListener('click', reviewWriterPlan);
         }
 

@@ -873,6 +873,97 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertTrue(queued.json()["accepted"])
         generate.assert_called_once_with(None, user_id)
 
+    def test_targeted_writer_retry_is_league_scoped_and_fail_closed(self) -> None:
+        """Design source: AGENTS.md; targeted retries must preserve evidence and identity scope."""
+
+        clerk_token = self._token("user_targeted_writer_retry")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_targeted_writer_retry")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "alpha", "season": "2026", "league_type": "dynasty", "name": "Alpha", "roster_id": 1},
+        )
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            with patch("app.main.front_operator.start_job") as start_job:
+                unknown = self.client.post(
+                    "/api/operator/generate-insights",
+                    cookies={"__session": clerk_token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"league_id": "alpha", "article_keys": ["not-a-desk"]},
+                )
+                self.assertEqual(unknown.status_code, 400)
+                self.assertIn("unknown writer article key", unknown.json()["detail"])
+                start_job.assert_not_called()
+
+                missing_league = self.client.post(
+                    "/api/operator/generate-insights",
+                    cookies={"__session": clerk_token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"article_keys": ["trade_desk"]},
+                )
+                self.assertEqual(missing_league.status_code, 400)
+                self.assertIn("requires league_id", missing_league.json()["detail"])
+                start_job.assert_not_called()
+
+            def run_job(action: str, callback: object, **kwargs: object) -> dict[str, object]:
+                del action, kwargs
+                return {"accepted": True, "result": callback()}
+
+            with patch("app.main._generate_insights_job", return_value={"state": "complete"}) as generate, \
+                patch("app.main.front_operator.start_job", side_effect=run_job):
+                queued = self.client.post(
+                    "/api/operator/generate-insights",
+                    cookies={"__session": clerk_token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"league_id": "alpha", "article_keys": ["trade_desk", "manager_intel"]},
+                )
+
+        self.assertEqual(queued.status_code, 200)
+        self.assertTrue(queued.json()["accepted"])
+        generate.assert_called_once()
+        self.assertEqual(generate.call_args.args[0]["league_id"], "alpha")
+        self.assertEqual(generate.call_args.args[1], user_id)
+        self.assertEqual(generate.call_args.kwargs["article_keys"], {"trade_desk", "manager_intel"})
+
+    def test_home_surfaces_retry_button_only_for_known_failed_desks(self) -> None:
+        """Design source: AGENTS.md; a retry entry path must be backed by a concrete desk receipt."""
+
+        token = self._token("user_writer_retry_home")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_retry_home")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "retry-home", "season": "2026", "league_type": "dynasty", "name": "Retry Home", "roster_id": 1},
+        )
+        failed_status = {
+            "state": "partial",
+            "job": "generate-insights",
+            "message": "Articles published: 4 current, 0 held by the desk editor, 1 failed, 1 skipped.",
+            "updated_at": "2026-08-26T18:00:00+00:00",
+            "articles": {
+                "team_report": {"state": "complete"},
+                "market_watch": {"state": "failed"},
+                "trade_desk": {"state": "held"},
+                "manager_intel": {"state": "skipped"},
+            },
+        }
+        with patch("app.main.front_operator.status", return_value=failed_status):
+            response = self.client.get("/?league_id=retry-home", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Retry failed desks", response.text)
+        self.assertIn('data-writer-retry-keys=\'["market_watch", "trade_desk"]\'', response.text)
+        self.assertIn("requestBody.article_keys = retryKeys;", response.text)
+        self.assertIn("Selected desk retry started. Watching for completion.", response.text)
+
+        no_receipt = failed_status | {"articles": {}, "current_article": ""}
+        with patch("app.main.front_operator.status", return_value=no_receipt):
+            response = self.client.get("/?league_id=retry-home", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("data-writer-retry-keys=", response.text)
+
     def test_generate_insights_preserves_failed_workflow_diagnostics(self) -> None:
         league = {
             "league_id": "diagnostic-league",
@@ -898,6 +989,33 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(result["state"], "failed")
         self.assertEqual(result["message"], workflow["message"])
         self.assertEqual(result["model"], "gpt-5.6-luna")
+
+    def test_generate_insights_forwards_targeted_article_keys_to_workflow(self) -> None:
+        """Design source: AGENTS.md; the API retry selection must reach the real writer workflow."""
+
+        league = {
+            "league_id": "targeted-job",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Targeted Job",
+            "roster_id": 2,
+        }
+        workflow = {
+            "state": "partial",
+            "message": "Articles published: 1 current, 0 held by the desk editor, 0 failed, 0 skipped.",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "articles": {"trade_desk": {"state": "complete"}},
+        }
+        with patch("app.main._refresh_job"), \
+             patch("app.main._context_for_league", return_value=object()), \
+             patch("app.main._private_paths", return_value=MagicMock()), \
+             patch("app.main.front_operator.generate_articles_workflow", return_value=workflow) as generate_workflow, \
+             patch("app.main._rebuild_browser_job", return_value={"state": "complete"}):
+            result = app_main._generate_insights_job(league, 42, article_keys={"trade_desk"})
+
+        self.assertEqual(result["state"], "partial")
+        self.assertEqual(generate_workflow.call_args.kwargs["article_keys"], {"trade_desk"})
 
     def test_generate_insights_records_refresh_write_and_publish_stages(self) -> None:
         """Design source: AGENTS.md; the real writer entry path must expose durable stage truth."""

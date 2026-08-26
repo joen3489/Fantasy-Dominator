@@ -1474,3 +1474,10 @@ inspectable at the reader boundary.
 
 The durable-bundle migration check also invalidates a current-SHA bundle when
 that linked Sleeper lineage is missing from the manifest or app payload.
+
+2026-08-26 targeted-retry amendment: the protected Writer Desk now exposes a
+real entry path for retrying only failed or held reporter desks. The API
+validates the selected `article_keys`, requires an owned league, and forwards
+them into the evidence-backed workflow. The homepage does not invent targets
+when a refresh-stage failure has no per-desk receipt; it falls back to the
+normal full-edition action.
