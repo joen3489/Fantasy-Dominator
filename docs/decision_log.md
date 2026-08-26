@@ -1767,3 +1767,8 @@ database rows are reported as unverified rather than current. A generated
 article is only counted as current when its content hash and bundle revision
 match the authenticated reader's manifest. This prevents a missing or
 rebuilding bundle from presenting private historical artifacts as live content.
+
+Current reporter status also requires the manifest receipt to match the
+configured writer model and, when an editor receipt exists, to be approved.
+Held drafts and pre-Luna articles therefore remain visible as history or
+fallback, never as current publication.

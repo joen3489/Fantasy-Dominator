@@ -1078,6 +1078,14 @@ def content_artifact_status(
         if current_receipts is None:
             return False
         receipt = current_receipts.get(str(row[0])) or {}
+        if not isinstance(receipt, dict):
+            return False
+        if expected_model and str(receipt.get("model") or "") != str(expected_model):
+            return False
+        editorial_review = receipt.get("editorial_review")
+        if isinstance(editorial_review, dict) and editorial_review:
+            if str(editorial_review.get("status") or "").lower() != "approved":
+                return False
         return (
             str(receipt.get("mode") or "").lower() == "automatic_llm"
             and str(row[4] or "")

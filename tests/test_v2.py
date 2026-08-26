@@ -2055,7 +2055,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             user_id,
             "content-league",
             "2026",
-            current_receipts={"team_report": {"mode": "automatic_llm", "content_hash": "content-1"}},
+            current_receipts={"team_report": {"mode": "automatic_llm", "model": "gpt-5.6-luna", "content_hash": "content-1"}},
             current_bundle_revision="bundle-current",
             expected_model="gpt-5.6-luna",
         )
@@ -2094,10 +2094,38 @@ class FastAPIClerkAppTests(unittest.TestCase):
             user_id,
             "content-league",
             "2026",
-            current_receipts={"team_report": {"mode": "automatic_llm", "content_hash": "content-1"}},
+            current_receipts={"team_report": {"mode": "automatic_llm", "model": "gpt-5.6-luna", "content_hash": "content-1"}},
             current_bundle_revision="bundle-current",
+            expected_model="gpt-5.6-luna",
         )
         self.assertEqual(current_bundle["generated_keys"], ["team_report"])
+
+        held_bundle = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            current_receipts={
+                "team_report": {
+                    "mode": "automatic_llm",
+                    "model": "gpt-5.6-luna",
+                    "content_hash": "content-1",
+                    "editorial_review": {"mode": "llm", "status": "held"},
+                }
+            },
+            current_bundle_revision="bundle-current",
+            expected_model="gpt-5.6-luna",
+        )
+        self.assertEqual(held_bundle["state"], "fallback")
+
+        old_model_bundle = db.content_artifact_status(
+            user_id,
+            "content-league",
+            "2026",
+            current_receipts={"team_report": {"mode": "automatic_llm", "model": "legacy-model", "content_hash": "content-1"}},
+            current_bundle_revision="bundle-current",
+            expected_model="gpt-5.6-luna",
+        )
+        self.assertEqual(old_model_bundle["state"], "fallback")
 
         db.record_content_artifact(
             user_id,
