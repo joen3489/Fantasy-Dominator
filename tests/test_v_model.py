@@ -2498,6 +2498,14 @@ class VModelTests(unittest.TestCase):
         self.assertIn("api/operator/status?league_id=", html)
         self.assertIn("function overlayOperatorStatus", html)
         self.assertIn("Keep the live writer/readiness receipt visible", html)
+        # Design source: AGENTS.md and docs/production_runbook.md; the generated
+        # league shell must bind its writer poll to the accepted durable run so
+        # a stale tab cannot present an older receipt as the current job.
+        self.assertIn("operatorRunId: ''", html)
+        self.assertIn("async function pollOperatorStatus(expectedRunId = '')", html)
+        self.assertIn("if (payload.accepted === false)", html)
+        self.assertIn("The accepted writer request returned a different run receipt", html)
+        self.assertIn("The accepted writer request has no durable run receipt", html)
         self.assertNotIn("Packet path", html)
         self.assertNotIn("Validated path", html)
         self.assertIn("Writer receipt detail", html)

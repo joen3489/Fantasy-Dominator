@@ -1920,3 +1920,13 @@ navigation rendered that same source revision, the selected-edition fail-closed
 writer guard, and the verified current team label `Lulu’s Potatoe’s`. The
 edition is still `0/6` deterministic fallback, so the paid Luna publication
 boundary remains open rather than being implied by a successful deployment.
+
+## 2026-08-26 generated-bundle writer receipt binding
+
+The static league edition's legacy Operator Mode now binds its status polling
+to the `run_id` returned by the accepted writer request, matching the
+authenticated headquarters. A missing or different durable receipt is shown as
+a failed handoff instead of an apparently active writer. This closes the
+duplicate-entry-path seam that could make a stale browser tab look like a
+current paid run. Local browser-bundle contract tests cover the new guard; no
+provider call or production deployment is claimed by this code checkpoint.

@@ -1500,3 +1500,10 @@ fresh authenticated headquarters navigation matched commit
 writer guard and current `Lulu’s Potatoe’s` identity. The protected Luna run
 has not yet produced article receipts; Release 1 remains open on that paid
 publication proof.
+
+2026-08-26 generated-bundle writer receipt amendment: the static league
+edition's legacy operator surface now binds polling to the accepted durable
+`run_id` and fails closed on a missing or different receipt. This keeps the
+league route aligned with the authenticated headquarters and prevents stale
+writer status from masquerading as a current run. Local bundle contract tests
+pass; production paid-publication verification remains outstanding.

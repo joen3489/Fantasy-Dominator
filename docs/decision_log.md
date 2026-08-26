@@ -1990,3 +1990,14 @@ authenticated headquarters navigation rendered the same full source revision,
 the selected-edition writer guard, and the verified current team label
 `Lulu’s Potatoe’s`. The writer receipt remains `0/6` deterministic fallback;
 this confirms deployment and entry-path integrity, not paid publication.
+
+## 2026-08-26 - Bind the generated league writer to its accepted run
+
+The generated league bundle still had a legacy operator poller that accepted
+whatever status receipt it read after a writer click. A stale tab could
+therefore keep showing an older running or terminal receipt, even when the
+new request had no durable run ID. The static bundle now requires the accepted
+run ID, waits briefly for that exact receipt, and fails closed when production
+returns a different or missing run. The authenticated headquarters already
+used this contract; both writer entry paths must share it because the league
+bundle is a real production entry point.

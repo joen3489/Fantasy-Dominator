@@ -2013,6 +2013,7 @@ def _page(
       lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }},
       operatorToken: '',
       operatorStatus: null,
+      operatorRunId: '',
       writerPlan: null
     }};
 
@@ -2131,12 +2132,38 @@ def _page(
           }},
           body: JSON.stringify({{ league_id: manifest.leagueId || '' }})
         }});
-        state.operatorStatus = await response.json();
+        const payload = await response.json().catch(() => ({{}}));
+        if (!response.ok) {{
+          state.operatorRunId = '';
+          state.operatorStatus = payload;
+          render();
+          return;
+        }}
+        state.operatorStatus = payload;
+        if (payload.accepted === false) {{
+          state.operatorRunId = '';
+          render();
+          return;
+        }}
+        const acceptedRunId = String(payload.run_id || '');
+        state.operatorRunId = acceptedRunId;
+        if (path.includes('/generate-insights') && payload.accepted && !acceptedRunId) {{
+          overlayOperatorStatus({{
+            state: 'failed',
+            message: 'The writer request returned without a durable run receipt. No new run was started from this page.'
+          }});
+          state.operatorRunId = '';
+          render();
+          return;
+        }}
       }} catch (error) {{
+        state.operatorRunId = '';
         overlayOperatorStatus({{ state: 'failed', message: `Operator action failed: ${{error.message}}` }});
+        render();
+        return;
       }}
       render();
-      pollOperatorStatus();
+      if (state.operatorRunId) pollOperatorStatus(state.operatorRunId);
     }}
 
     async function previewWriterPlan() {{
@@ -2219,7 +2246,7 @@ def _page(
       pollOperatorStatus();
     }}
 
-    async function pollOperatorStatus() {{
+    async function pollOperatorStatus(expectedRunId = '') {{
       // Luna plus an explicit editor pass can legitimately take several
       // minutes. Keep the receipt visible long enough to observe completion;
       // the durable status endpoint remains the authority if this tab sleeps.
@@ -2229,9 +2256,27 @@ def _page(
       for (let index = 0; index < 900; index += 1) {{
         await sleep(2000);
         await refreshOperatorStatus();
+        const observedRunId = String(state.operatorStatus?.run_id || '');
+        if (expectedRunId && observedRunId !== expectedRunId) {{
+          if (index < 4) continue;
+          overlayOperatorStatus({{
+            state: 'failed',
+            message: observedRunId
+              ? 'The accepted writer request returned a different run receipt. No new run was started from this page.'
+              : 'The accepted writer request has no durable run receipt. No new run was started from this page.'
+          }});
+          state.operatorRunId = '';
+          render();
+          return;
+        }}
         render();
-        if (!state.operatorStatus || state.operatorStatus.state !== 'running') return;
+        if (!state.operatorStatus || state.operatorStatus.state !== 'running') {{
+          state.operatorRunId = '';
+          return;
+        }}
       }}
+      state.operatorRunId = '';
+      render();
     }}
 
     function sleep(ms) {{
