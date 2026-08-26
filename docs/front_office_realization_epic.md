@@ -1766,3 +1766,17 @@ browser writer controls watch long enough for the complete six-desk workflow.
 This is an operational prerequisite for the protected Luna publication, not
 proof that a paid run has completed; publication still requires the matching
 reader manifest and article receipts.
+
+## 2026-08-26 availability-null boundary repair
+
+The local refresh exposed a second route to the old Hill/Mixon regression:
+blank Sleeper team and injury cells were loaded by pandas as `NaN`, then the
+shared availability helper read those sentinels as literal text. The result
+was an invented injury flag instead of `no_current_nfl_team`, plus noisy
+availability notes on healthy players. The boundary now normalizes CSV nulls
+before classifying status. The economics ledger carries that status into its
+asset-gap rows and excludes conditional no-team rows from the action preview.
+The regenerated local evidence now shows Tyreek Hill and Joe Mixon as
+conditional historical baselines, while Jayden Daniels remains available and
+Jalen Nailor remains a low-production, market-rich watch rather than a top
+asset.

@@ -1820,3 +1820,16 @@ useful to an editor. The checker now recognizes clear statuses such as Active,
 Available, Healthy, and No current Sleeper injury flag, while preserving a
 warning for Questionable, Out, IR, PUP, and similar limited statuses. Display
 names are still excluded from caveat matching.
+
+## 2026-08-26 - The economics ledger must share the current-role boundary
+
+The signal and projection surfaces already treated a rostered player with no
+current NFL team as conditional historical context, but `asset_market_gaps`
+still labeled a low-value player on the selected roster as a `buy_low_target`
+and could pass an opponent's no-team player into the opportunity preview. The
+economics ledger now carries the canonical availability status and note. It
+labels no-team rows as `conditional_watch` or `conditional_target`, labels
+low-value assets on the selected roster as owner-only watch rows, and excludes
+those non-current-role rows from the action-preview board. The gap ledger still
+keeps them inspectable for dynasty research; it no longer turns a historical
+baseline into a current trade conversation.

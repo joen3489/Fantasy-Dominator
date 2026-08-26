@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from .availability import availability_note, current_availability_status
 from .manager_profiles import build_manager_season_history
 
 
@@ -282,6 +283,8 @@ def build_team_asset_inventory(
                 "asset_name": player.get("player_name", ""),
                 "position": position,
                 "age": age,
+                "current_availability_status": current_availability_status(player),
+                "availability_note": availability_note(player),
                 "market_value": round(market_value, 2),
                 "liquidity_tier": _liquidity_tier(position, age, market_value, "player"),
                 "timeline_fit": _timeline_fit(position, age, config),
@@ -304,6 +307,8 @@ def build_team_asset_inventory(
                 "asset_name": label,
                 "position": "PICK",
                 "age": "",
+                "current_availability_status": "not_applicable",
+                "availability_note": "Draft-pick availability is governed by the ownership ledger.",
                 "market_value": round(_num(market_value), 2),
                 "liquidity_tier": _liquidity_tier("PICK", 0, _num(market_value), "pick"),
                 "timeline_fit": "strong_rebuild_fit",
@@ -510,12 +515,24 @@ def build_asset_market_gaps(
         value = _num(asset.get("market_value"))
         model_value = _model_value(value)
         position = str(asset.get("position", ""))
+        availability_status = str(asset.get("current_availability_status") or "").strip()
+        is_current_team = current_team == roster_id
         scarcity = _scarcity_bonus(position, needs)
         behavior_gap = (_num(behavior.get("pick_seller_score")) if asset.get("asset_type") == "pick" else _num(behavior.get("trade_activity_score"))) / 10
         gap_score = round(model_value * 0.45 + scarcity + behavior_gap, 2)
-        opportunity_type = "sell_candidate" if current_team == roster_id and model_value >= 35 else "buy_low_target"
-        if asset.get("asset_type") == "pick" and current_team != roster_id:
+        if asset.get("asset_type") == "pick" and not is_current_team:
             opportunity_type = "pick_reacquisition_target"
+        elif availability_status == "no_current_nfl_team":
+            # Historical production and market value remain useful context,
+            # but a free agent cannot be a current buy/sell prompt until a
+            # team and role are confirmed.
+            opportunity_type = "conditional_watch" if is_current_team else "conditional_target"
+        elif is_current_team and model_value >= 35:
+            opportunity_type = "sell_candidate"
+        elif is_current_team:
+            opportunity_type = "owner_asset_watch"
+        else:
+            opportunity_type = "buy_low_target"
         rows.append(
             {
                 "target_roster_id": roster_id,
@@ -523,6 +540,8 @@ def build_asset_market_gaps(
                 "asset_type": asset.get("asset_type", ""),
                 "asset_name": asset.get("asset_name", ""),
                 "position": position,
+                "current_availability_status": availability_status,
+                "availability_note": asset.get("availability_note", ""),
                 "market_value": value,
                 "market_gap_score": gap_score,
                 "opportunity_type": opportunity_type,
@@ -540,6 +559,11 @@ def build_opportunity_board(asset_market_gaps_df: pd.DataFrame, behavior_df: pd.
     current_team = _int((config.get("current_team") or {}).get("roster_id"))
     rows: list[dict[str, Any]] = []
     gaps = asset_market_gaps_df[asset_market_gaps_df.get("target_roster_id") != current_team] if current_team else asset_market_gaps_df
+    # The board is an action-preview surface. Keep conditional/no-team rows in
+    # the inspectable gap ledger, but do not present them as current trade
+    # conversations before the player has a confirmed team and role.
+    if "opportunity_type" in gaps.columns:
+        gaps = gaps[~gaps["opportunity_type"].isin({"conditional_watch", "conditional_target", "owner_asset_watch"})]
     for _, gap in gaps.head(40).iterrows():
         behavior = _row_for(behavior_df, "roster_id", _int(gap.get("target_roster_id")))
         rows.append(
@@ -581,7 +605,21 @@ def _pick_value_map(frame: pd.DataFrame) -> dict[tuple[str, str], float]:
 
 
 def _inventory_columns() -> list[str]:
-    return ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"]
+    return [
+        "roster_id",
+        "team_name",
+        "asset_type",
+        "asset_id",
+        "asset_name",
+        "position",
+        "age",
+        "current_availability_status",
+        "availability_note",
+        "market_value",
+        "liquidity_tier",
+        "timeline_fit",
+        "source_trace",
+    ]
 
 
 def _manager_event_columns() -> list[str]:

@@ -48,6 +48,31 @@ class AvailabilityContractTests(unittest.TestCase):
         self.assertEqual(current_availability_status({"injury_status": "Active"}), "unknown")
         self.assertEqual(baseline_ppg_text({"injury_status": "Active"}, "15"), "season baseline 15 PPG")
 
+    def test_pandas_nan_is_missing_not_a_team_or_injury(self) -> None:
+        """Design source: AGENTS.md; CSV nulls must preserve the identity boundary."""
+
+        free_agent = pd.Series(
+            {
+                "availability_scope": "current_season_snapshot",
+                "nfl_team": float("nan"),
+                "injury_status": float("nan"),
+                "injury_body_part": float("nan"),
+            }
+        )
+        active = pd.Series(
+            {
+                "availability_scope": "current_season_snapshot",
+                "nfl_team": "WAS",
+                "injury_status": float("nan"),
+                "injury_body_part": float("nan"),
+            }
+        )
+
+        self.assertEqual(current_availability_status(free_agent), "no_current_nfl_team")
+        self.assertIn("No current NFL team", availability_note(free_agent))
+        self.assertEqual(current_availability_status(active), "available")
+        self.assertIn("No current Sleeper injury flag", availability_note(active))
+
     def test_rating_layer_withholds_actionable_scores_for_free_agent(self) -> None:
         """Design source: docs/data_contract.md; history may remain context but cannot become a current-role signal."""
 

@@ -699,3 +699,13 @@ checker now treats `Active`, `Available`, `Healthy`, and
 warnings for real limited statuses such as `Questionable`, `Out`, `IR`, and
 `PUP`. This keeps healthy articles quiet without relaxing the requirement that
 injury-sensitive rest-of-season claims acknowledge the missing recovery model.
+
+## 2026-08-26 - Normalize tabular nulls at the availability seam
+
+Sleeper blanks become pandas `NaN` during CSV-backed analysis. If the shared
+availability helper stringifies those values, a missing team becomes the
+literal team `NAN` and a missing injury becomes an invented injury flag. Clean
+scalar nulls before applying identity or availability rules, then carry the
+canonical status into economics and action surfaces. A local green test with
+hand-written empty strings is not enough; the adversarial fixture must pass a
+DataFrame-shaped null value through the real helper.

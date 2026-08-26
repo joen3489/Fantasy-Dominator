@@ -34,6 +34,20 @@ _LIMITING_NOTE_MARKERS = (
 _NO_TEAM_NOTE_MARKER = "no current nfl team"
 
 
+def _clean_text(value: Any) -> str:
+    """Normalize scalar values read from CSV/DataFrame rows.
+
+    Pandas represents blank CSV cells as ``NaN``. Treating that sentinel as
+    text would turn a missing NFL team into the literal team ``NAN`` and a
+    missing injury field into an invented injury flag.
+    """
+
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "nat", "none", "<na>"} else text
+
+
 def _has_current_team_field(row: Mapping[str, Any]) -> bool:
     """Return whether the row carries a current NFL-team field.
 
@@ -48,7 +62,7 @@ def current_nfl_team(row: Mapping[str, Any]) -> str:
     """Read the canonical current NFL team without falling back to a fantasy name."""
 
     value = row.get("nfl_team") if "nfl_team" in row else row.get("team", "")
-    return str(value or "").strip().upper()
+    return _clean_text(value).upper()
 
 
 def current_availability_status(row: Mapping[str, Any]) -> str:
@@ -59,8 +73,8 @@ def current_availability_status(row: Mapping[str, Any]) -> str:
     receive an ordinary next-game projection.
     """
 
-    scope = str(row.get("availability_scope") or "").strip().lower()
-    note = str(row.get("availability_note") or "").strip().lower()
+    scope = _clean_text(row.get("availability_scope")).lower()
+    note = _clean_text(row.get("availability_note")).lower()
     if scope and scope != "current_season_snapshot":
         return "historical_unavailable"
     if _NO_TEAM_NOTE_MARKER in note or (
@@ -69,7 +83,7 @@ def current_availability_status(row: Mapping[str, Any]) -> str:
         and not current_nfl_team(row)
     ):
         return "no_current_nfl_team"
-    injury_status = str(row.get("injury_status") or "").strip().lower()
+    injury_status = _clean_text(row.get("injury_status")).lower()
     if not injury_status or injury_status in _NEUTRAL_STATUSES:
         return "available" if _has_current_team_field(row) else "unknown"
     if injury_status in {"out", "ir", "injured reserve", "pup", "suspended"} or any(
@@ -106,8 +120,8 @@ def availability_note(row: Mapping[str, Any]) -> str:
     status = current_availability_status(row)
     if status == "no_current_nfl_team":
         return "No current NFL team in Sleeper; historical baseline is conditional on signing"
-    injury_status = str(row.get("injury_status") or "").strip()
-    body = str(row.get("injury_body_part") or "").strip()
+    injury_status = _clean_text(row.get("injury_status"))
+    body = _clean_text(row.get("injury_body_part"))
     if injury_status:
         return f"{injury_status}{f' ({body})' if body else ''}; baseline projection does not adjust for availability"
     if status == "historical_unavailable":

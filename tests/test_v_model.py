@@ -15,7 +15,7 @@ from src import operator
 from src.analysis import build_analysis_artifacts
 from src.browser_site import _data_room_delta, build_browser_site
 from src.draft_room import build_draft_room
-from src.economics import build_economic_tables, build_league_standings, build_manager_behavior_signals, build_manager_event_log
+from src.economics import build_asset_market_gaps, build_economic_tables, build_league_standings, build_manager_behavior_signals, build_manager_event_log, build_opportunity_board
 from src.external_sources import _normalize_dynastyprocess_market_sources, _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_matchups, normalize_traded_picks, normalize_trades, normalize_waivers, to_dataframes
@@ -76,7 +76,7 @@ EXPECTED_TABLE_COLUMNS = {
     "action_recommendations": ["roster_id", "team_name", "player_id", "player_name", "position", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"],
     "manager_profiles": ["owner_id", "roster_id", "display_name", "team_name", "seasons_covered", "roster_ids_by_season", "team_names_by_season", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
-    "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
+    "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "current_availability_status", "availability_note", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
     "manager_event_log": ["season", "league_id", "owner_id", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
     "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "first_transaction_week", "last_transaction_week", "peak_transaction_week", "active_weeks", "trade_weeks", "waiver_weeks", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "matchup_weeks", "played_weeks", "wins", "losses", "ties", "points_for", "points_against", "point_diff", "win_rate", "outcome_status", "source_trace", "evidence"],
     "league_standings": ["season", "league_id", "roster_id", "team_name", "matchup_rows", "played", "wins", "losses", "ties", "points_for", "points_against", "point_diff", "win_rate", "record", "outcome_status", "source_trace", "evidence"],
@@ -84,7 +84,7 @@ EXPECTED_TABLE_COLUMNS = {
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
     "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
     "liquidity_scores": ["roster_id", "team_name", "asset_type", "asset_name", "position", "market_value", "liquidity_score", "liquidity_tier", "demand_signal", "source_trace"],
-    "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
+    "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "current_availability_status", "availability_note", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
     "opportunity_board": ["action_type", "target_team", "asset_in", "asset_out", "manager_signal", "evidence", "risk", "confidence", "source_trace"],
     "counterparty_trade_edges": ["target_roster_id", "target_team", "player_id", "player_name", "position", "target_team_lens", "target_horizon_fit_score", "active_horizon_fit_score", "horizon_fit_edge", "horizon_fit_read", "horizon_fit_basis", "horizon_model_version", "horizon_market_percentile", "next_game_market_score", "rest_of_season_market_score", "dynasty_market_score", "career_projection_score", "next_game_minus_market_delta", "rest_of_season_minus_market_delta", "dynasty_minus_market_delta", "career_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_minus_rest_of_season_delta", "career_minus_dynasty_delta", "horizon_market_disagreement_window", "horizon_market_disagreement_delta", "horizon_market_disagreement_magnitude", "horizon_market_disagreement_read", "our_value_score", "market_consensus_value", "estimated_owner_value_score", "trade_edge_score", "edge_type", "evidence", "risk", "confidence", "source_trace"],
     "counterparty_asset_interest": ["active_roster_id", "active_team", "asset_id", "asset_name", "asset_type", "position", "market_value", "target_roster_id", "target_team", "target_team_lens", "transaction_lane_read", "transaction_acquired_count", "transaction_sold_count", "transaction_net_acquired_count", "transaction_current_roster_overlap", "transaction_history_status", "transaction_lane_confidence", "target_need", "target_need_fit_score", "target_horizon_fit_score", "active_horizon_fit_score", "horizon_fit_edge", "horizon_fit_read", "horizon_model_version", "horizon_market_percentile", "next_game_market_score", "rest_of_season_market_score", "dynasty_market_score", "career_projection_score", "next_game_minus_market_delta", "rest_of_season_minus_market_delta", "dynasty_minus_market_delta", "career_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_minus_rest_of_season_delta", "career_minus_dynasty_delta", "horizon_market_disagreement_window", "horizon_market_disagreement_delta", "horizon_market_disagreement_magnitude", "horizon_market_disagreement_read", "observed_acquisition_signal", "conversation_fit_score", "conversation_fit_label", "evidence", "risk", "confidence", "source_trace"],
@@ -3675,6 +3675,80 @@ class VModelTests(unittest.TestCase):
         melkor_history = manager_history[manager_history["roster_id"] == 2].iloc[0]
         self.assertEqual(melkor_history["outcome_status"], "recorded")
         self.assertEqual(melkor_history["wins"], 1)
+
+    def test_market_gap_ledger_keeps_no_team_rows_conditional_and_out_of_action_board(self) -> None:
+        inventory = pd.DataFrame(
+            [
+                {
+                    "roster_id": 2,
+                    "team_name": "My Team",
+                    "asset_type": "player",
+                    "asset_id": "free-agent-own",
+                    "asset_name": "Free Agent Own",
+                    "position": "RB",
+                    "age": 29,
+                    "current_availability_status": "no_current_nfl_team",
+                    "availability_note": "No current NFL team in Sleeper; historical baseline is conditional on signing",
+                    "market_value": 2,
+                    "liquidity_tier": "thin",
+                    "timeline_fit": "neutral_fit",
+                    "source_trace": "market",
+                },
+                {
+                    "roster_id": 8,
+                    "team_name": "Rival",
+                    "asset_type": "player",
+                    "asset_id": "free-agent-rival",
+                    "asset_name": "Free Agent Rival",
+                    "position": "WR",
+                    "age": 28,
+                    "current_availability_status": "no_current_nfl_team",
+                    "availability_note": "No current NFL team in Sleeper; historical baseline is conditional on signing",
+                    "market_value": 3,
+                    "liquidity_tier": "thin",
+                    "timeline_fit": "neutral_fit",
+                    "source_trace": "market",
+                },
+                {
+                    "roster_id": 8,
+                    "team_name": "Rival",
+                    "asset_type": "player",
+                    "asset_id": "active-rival",
+                    "asset_name": "Active Rival",
+                    "position": "WR",
+                    "age": 24,
+                    "current_availability_status": "available",
+                    "availability_note": "No current Sleeper injury flag; baseline projection",
+                    "market_value": 12,
+                    "liquidity_tier": "medium",
+                    "timeline_fit": "strong_rebuild_fit",
+                    "source_trace": "market",
+                },
+            ]
+        )
+        needs = pd.DataFrame(
+            [
+                {"roster_id": 2, "team_shape": "rebuild_asset_bank", "need_rb": "high"},
+                {"roster_id": 8, "team_shape": "contender_shape", "need_wr": "high"},
+            ]
+        )
+        behavior = pd.DataFrame(
+            [
+                {"roster_id": 2, "trade_activity_score": 20, "plain_language_label": "patient builder"},
+                {"roster_id": 8, "trade_activity_score": 40, "plain_language_label": "active trader"},
+            ]
+        )
+
+        gaps = build_asset_market_gaps(inventory, needs, behavior, {"current_team": {"roster_id": 2}})
+        by_name = {row["asset_name"]: row for _, row in gaps.iterrows()}
+        self.assertEqual(by_name["Free Agent Own"]["opportunity_type"], "conditional_watch")
+        self.assertEqual(by_name["Free Agent Rival"]["opportunity_type"], "conditional_target")
+        self.assertEqual(by_name["Active Rival"]["opportunity_type"], "buy_low_target")
+        self.assertEqual(by_name["Free Agent Rival"]["current_availability_status"], "no_current_nfl_team")
+
+        board = build_opportunity_board(gaps, behavior, {"current_team": {"roster_id": 2}})
+        self.assertNotIn("Free Agent Rival", set(board["asset_in"]))
+        self.assertIn("Active Rival", set(board["asset_in"]))
 
     def _write_minimal_processed_tables(self, processed: Path) -> None:
         pd.DataFrame(
