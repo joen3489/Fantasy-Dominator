@@ -5,7 +5,7 @@ import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import pandas as pd
 
@@ -399,6 +399,68 @@ def upgrade_deterministic_article_receipts(
         previous_receipt = receipts.get(article_key) if isinstance(receipts.get(article_key), Mapping) else {}
         receipts[article_key] = _article_receipt_from_text(filename, upgraded, previous_receipt)
     if receipts:
+        analysis["articleReceipts"] = receipts
+    return analysis
+
+
+def rewrite_source_team_labels_in_articles(
+    analysis_dir: Path | None,
+    analysis: dict[str, Any],
+    stale_labels: Iterable[str],
+    current_label: str,
+) -> dict[str, Any]:
+    """Repair mutable source labels in preserved article presentation.
+
+    This is a migration of wording, not a new analysis or provider call. It is
+    limited to the six publication bodies and refreshes their content hashes so
+    the receipt remains truthful after the source-label correction.
+    """
+
+    current_label = _clean(current_label)
+    labels = sorted(
+        {
+            _clean(label)
+            for label in stale_labels
+            if _clean(label) and _clean(label).casefold() != current_label.casefold()
+        },
+        key=len,
+        reverse=True,
+    )
+    if not current_label or not labels:
+        return analysis
+    article_fields = {
+        "dailyGmBrief": ("daily_brief", "daily_gm_brief.md"),
+        "teamReport": ("team_report", "team_report.md"),
+        "marketWatch": ("market_watch", "market_watch.md"),
+        "horizonWatch": ("horizon_watch", "horizon_watch.md"),
+        "tradeDeskRead": ("trade_desk", "trade_desk.md"),
+        "managerIntel": ("manager_intel", "manager_intel.md"),
+    }
+    receipts = dict(analysis.get("articleReceipts") or {}) if isinstance(analysis.get("articleReceipts"), Mapping) else {}
+    changed = False
+    for field, (article_key, filename) in article_fields.items():
+        body = str(analysis.get(field) or "")
+        path = analysis_dir / filename if analysis_dir is not None else None
+        if path is not None and path.is_file():
+            try:
+                body = path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        updated = body
+        for label in labels:
+            updated = updated.replace(label, current_label)
+        if updated == body:
+            continue
+        changed = True
+        analysis[field] = updated
+        if path is not None:
+            try:
+                path.write_text(updated, encoding="utf-8")
+            except OSError:
+                pass
+        previous = receipts.get(article_key) if isinstance(receipts.get(article_key), Mapping) else {}
+        receipts[article_key] = _article_receipt_from_text(filename, updated, previous)
+    if changed:
         analysis["articleReceipts"] = receipts
     return analysis
 

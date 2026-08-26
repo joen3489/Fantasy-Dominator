@@ -96,6 +96,45 @@ def sleeper_team_name_aliases(
     return aliases
 
 
+def historical_sleeper_team_names(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    league_id: str = "",
+    season: str = "",
+    roster_id: int | str | None = None,
+) -> set[str]:
+    """Return historical team-name labels for this same-owner roster lineage.
+
+    This is intentionally narrower than ``sleeper_team_name_aliases``: article
+    presentation may repair an old team name, but it must not rewrite a
+    manager's Sleeper display name into the team's current label.
+    """
+
+    rows = list(rows)
+    current_name = current_sleeper_team_name(
+        rows,
+        league_id=league_id,
+        season=season,
+        roster_id=roster_id,
+    )
+    current_rows = _matching_rows(rows, league_id=league_id, season=season, roster_id=roster_id)
+    if not current_rows or not current_name:
+        return set()
+    owner_ids = {_clean(row.get("owner_id")) for row in current_rows if _clean(row.get("owner_id"))}
+    expected_roster_id = _int_or_none(roster_id)
+    names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, Mapping) or _int_or_none(row.get("roster_id")) != expected_roster_id:
+            continue
+        owner_id = _clean(row.get("owner_id"))
+        if owner_ids and owner_id and owner_id not in owner_ids:
+            continue
+        name = _clean(row.get("team_name"))
+        if name and name.casefold() != current_name.casefold():
+            names.add(name)
+    return names
+
+
 def resolve_team_name(
     profile_name: Any,
     rows: Iterable[Mapping[str, Any]],

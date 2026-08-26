@@ -1655,3 +1655,14 @@ dek, the read boundary recompiles the deterministic facade in memory so the
 home page does not print old source presentation while waiting for a paid
 writer run. Roster IDs remain the identity boundary; this change does not infer
 ownership from a name.
+
+## 2026-08-26 - Static edition entry must migrate preserved article wording
+
+The home route could repair its deterministic issue in memory, but a direct
+league entry still served a preserved static shell whose six article bodies
+contained the former team label. The browser bundle now carries an explicit
+`source_label_v1` contract. A bundle missing that marker is rebuilt at the
+entry path, and the rebuild replaces only known historical `team_name` labels
+in the six preserved publication bodies, refreshing their content hashes while
+leaving evidence fingerprints and paid writer decisions intact. This is a
+presentation migration, not an LLM regeneration.

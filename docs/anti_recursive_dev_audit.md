@@ -536,3 +536,11 @@ historical alias repair, custom-label preservation, and the authenticated
 stale-issue entry path. Production verification remains required after the new
 revision, and the prior invalid-session observation remains historical evidence
 rather than a successful identity recheck.
+
+The direct league entry also required a separate seam check: a dynamic home
+read could be current while the preserved static shell still printed the old
+label in article bodies. The `source_label_v1` bundle marker now forces a
+deterministic shell migration, and the migration updates only known historical
+team-name presentation plus receipt hashes. The direct route must be tested in
+addition to the home route; a current header alone is not evidence that the
+publication body is current.

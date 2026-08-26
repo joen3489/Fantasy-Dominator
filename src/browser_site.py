@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
-from .analysis import build_manager_dossier_items, upgrade_deterministic_article_receipts
+from .analysis import (
+    build_manager_dossier_items,
+    rewrite_source_team_labels_in_articles,
+    upgrade_deterministic_article_receipts,
+)
 from .editorial import build_editorial_issue
 from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
@@ -17,6 +21,7 @@ from .manager_profiles import build_manager_season_history
 from .economics import build_league_standings
 from .personas import reporter_lineup
 from .team_identity import resolve_team_name
+from .team_identity import historical_sleeper_team_names
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
 
@@ -117,6 +122,17 @@ def build_browser_site(
     if resolved_name:
         my_team_name = resolved_name
     analysis = _analysis_artifacts(analysis_dir)
+    analysis = rewrite_source_team_labels_in_articles(
+        analysis_dir,
+        analysis,
+        historical_sleeper_team_names(
+            tables["teams"],
+            league_id=str(league_id or ""),
+            season=str(config.get("current_season") or ""),
+            roster_id=my_roster_id,
+        ),
+        my_team_name,
+    )
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
@@ -183,6 +199,17 @@ def rebuild_browser_shell(
     tables["manager_season_history"] = _manager_season_history_records(output_dir / "processed", tables)
     tables["league_standings"] = _league_standings_records(output_dir / "processed", tables)
     analysis = dict(app_payload.get("analysis") or {}) if isinstance(app_payload.get("analysis"), dict) else {}
+    analysis = rewrite_source_team_labels_in_articles(
+        analysis_dir,
+        analysis,
+        historical_sleeper_team_names(
+            tables.get("teams", []),
+            league_id=current_league_id,
+            season=current_season,
+            roster_id=my_roster_id,
+        ),
+        my_team_name,
+    )
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
         analysis,
@@ -193,6 +220,7 @@ def rebuild_browser_shell(
     )
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     app_payload["analysis"] = analysis
+    app_payload["teamLabelContract"] = "source_label_v1"
     app_payload["tables"] = tables
     app_payload["dataQuality"] = _data_quality_receipt(tables)
     shell_config = dict(config or {})
@@ -240,6 +268,7 @@ def rebuild_browser_shell(
     manifest["dataRoomDelta"] = app_payload.get("dataRoomDelta") or manifest.get("dataRoomDelta") or {}
     manifest["articleReceipts"] = analysis.get("articleReceipts") or {}
     manifest["mediaManifest"] = app_payload.get("mediaManifest") or manifest.get("mediaManifest") or {}
+    manifest["teamLabelContract"] = "source_label_v1"
     (data_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2).replace("</", "<\\/"),
         encoding="utf-8",
@@ -907,6 +936,7 @@ def _write_data_chunks(
         "dataRoomDelta": data_room_delta,
         "tableCounts": table_counts,
         "mediaManifest": media_manifest,
+        "teamLabelContract": "source_label_v1",
     }
     bundle_revision = _bundle_revision(app_payload)
     editorial["bundle_revision"] = bundle_revision
@@ -962,6 +992,7 @@ def _write_data_chunks(
         "dataRoomDelta": data_room_delta,
         "bundleRevision": bundle_revision,
         "sourceRevision": source_revision,
+        "teamLabelContract": "source_label_v1",
         "articleReceipts": analysis.get("articleReceipts") or {},
         "mediaManifest": app_payload["mediaManifest"],
     }

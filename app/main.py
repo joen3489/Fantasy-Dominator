@@ -957,9 +957,19 @@ def _bundle_needs_source_rebuild(site_dir: Path) -> bool:
         app_bundle = load_json(app_bundle_path)
     except (OSError, ValueError):
         return True
+    if not isinstance(app_bundle, dict):
+        return True
+    # Empty/minimal migration fixtures intentionally model a generic reader and
+    # do not carry a canonical data room. Only genuine generated bundles need
+    # the source-label migration marker.
+    has_data_room = isinstance(app_bundle.get("tables"), dict) and bool(app_bundle.get("tables"))
+    if has_data_room and (
+        str(manifest.get("teamLabelContract") or "") != "source_label_v1"
+        or str(app_bundle.get("teamLabelContract") or "") != "source_label_v1"
+    ):
+        return True
     if (
-        not isinstance(app_bundle, dict)
-        or _payload_has_stale_fallback_receipts(app_bundle)
+        _payload_has_stale_fallback_receipts(app_bundle)
         or _payload_has_stale_manager_dossier_fields(app_bundle)
         or _payload_has_stale_data_quality(app_bundle)
     ):
