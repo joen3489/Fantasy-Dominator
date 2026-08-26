@@ -26,7 +26,7 @@ from src.context import context_from_league_row, scoped_config
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
 from src.llm import writer_api_configuration
-from src.personas import persona_metadata, public_reporter_personas
+from src.personas import persona_metadata, public_reporter_personas, reporter_lineup
 from src.sleeper_api import SleeperAPI
 from src.utils import DATA_DIR, load_config, load_json
 
@@ -1452,10 +1452,11 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["identity_verified"] = identity_status in {"verified", "verified_roster_match"} and row.get("roster_id") not in (None, "")
     view["identity_label"] = "Roster verified" if view["identity_verified"] else "Roster needs verification"
     view["managed_team_name"] = ""
+    profile: dict[str, Any] | None = None
+    profile_matches_identity = False
     if user_id is not None:
         profile = db.get_team_profile(int(user_id), str(row.get("league_id") or ""))
         profile_roster_id = (profile or {}).get("roster_id")
-        profile_matches_identity = False
         if view["identity_verified"]:
             try:
                 profile_matches_identity = int(profile_roster_id) == int(row.get("roster_id"))
@@ -1481,6 +1482,21 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["edition_readiness"] = readiness
     view["refresh_freshness"] = readiness["dot_class"] if readiness else _refresh_freshness(view["refresh_status"])
     view["editorial"] = _load_editorial_issue(user_id, view) if user_id is not None else {}
+    if isinstance(view["editorial"], dict) and view["editorial"]:
+        # Persisted issues can predate a newly registered desk. Re-resolve the
+        # lineup at the authenticated league boundary so the facade cannot say
+        # "six reporters" while hiding one of the six article assignments.
+        # Profile preferences are used only after their roster ID matches the
+        # verified Sleeper identity; names and stale bundles never select a
+        # private newsroom configuration.
+        writer_preferences = (
+            profile.get("writer_preferences")
+            if profile_matches_identity and isinstance(profile, dict)
+            else {}
+        )
+        editorial = dict(view["editorial"])
+        editorial["reporter_lineup"] = reporter_lineup(writer_preferences)
+        view["editorial"] = editorial
     view["source_receipt"] = _source_receipt_view(view["editorial"])
     publication_receipt = _load_publication_receipt(user_id, view) if user_id is not None else {}
     view["publication_receipt"] = publication_receipt

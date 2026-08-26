@@ -493,3 +493,17 @@ Public smoke is healthy, which is not proof of propagation. The deployment gate
 remains open until this work is committed, deployed, and rechecked against the
 same authenticated league route; the identity recheck control also needs the
 new bounded browser timeout in that deployed revision.
+
+## 2026-08-26 live boundary correction after newsroom schema repair
+
+The production verification also found a persisted-bundle schema drift: the
+current shell exposed six article cards and six writer selectors, but an older
+`editorial_issue.json` still contained only five visible lineup chips. The
+authenticated `_league_view` path now derives the visible lineup from the
+current six-key registry and an identity-matched profile, so a durable old
+issue cannot silently omit a desk. An adversarial test proves a five-desk
+persisted payload is repaired to six, including a scoped custom horizon lens.
+
+The source fix still requires a new Railway revision and the same authenticated
+recheck. Production writer output remains an explicit operation: `0/6`
+fallback is expected until the operator runs a paid generation request.

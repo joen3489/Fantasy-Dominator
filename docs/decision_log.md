@@ -1616,3 +1616,14 @@ Sleeper league discovery can take longer than a normal browser interaction
 when several leagues are linked. The identity button now stops waiting after
 20 seconds and reports that the saved verified identity is unchanged, rather
 than leaving the page permanently stuck on “Checking.”
+
+## 2026-08-26 - A persisted issue cannot define the current newsroom schema
+
+The first authenticated production check after the six-desk release exposed a
+presentation drift: the durable issue had been written before Market Clock
+Morgan joined the lineup, so the page claimed six reporters while its visible
+newsroom roster listed five. The authenticated league view now re-resolves the
+lineup from the current article registry on every read, using writer
+preferences only when their profile roster ID matches the verified Sleeper
+roster. This repairs old bundles without inventing content, leaking another
+league's preferences, or requiring a paid writer run.

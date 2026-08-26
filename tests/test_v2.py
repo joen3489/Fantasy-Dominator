@@ -1631,6 +1631,58 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Roster needs verification", home.text)
         self.assertEqual(profile.json()["team_name"], "")
 
+    def test_league_view_repairs_stale_newsroom_lineup_from_identity_scoped_profile(self) -> None:
+        """Design source: AGENTS.md; a new desk must reach the authenticated facade even in an old bundle."""
+
+        stale_editorial = {
+            "reporter_lineup": [
+                {"article_key": "team_report", "name": "Topline Tony"},
+                {"article_key": "market_watch", "name": "Waiver Wire Waverly"},
+                {"article_key": "trade_desk", "name": "Trade Desk Talia"},
+                {"article_key": "manager_intel", "name": "Dossier Dana"},
+                {"article_key": "daily_brief", "name": "Look-Ahead Lonnie"},
+            ]
+        }
+        row = {
+            "league_id": "stale-newsroom",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Stale Newsroom",
+            "roster_id": 7,
+            "identity_status": "verified_roster_match",
+            "enabled": 1,
+        }
+        profile = {
+            "roster_id": 7,
+            "team_name": "Lulu’s Potatoe’s",
+            "writer_preferences": {
+                "article_reporters": {"horizon_watch": "scout"},
+            },
+        }
+        with patch.object(db, "get_team_profile", return_value=profile), \
+            patch.object(app_main, "_refresh_status", return_value={}), \
+            patch.object(app_main, "_edition_readiness", return_value={"dot_class": "fresh"}), \
+            patch.object(app_main, "_load_editorial_issue", return_value=stale_editorial), \
+            patch.object(app_main, "_load_publication_receipt", return_value={}), \
+            patch.object(app_main, "_load_writer_preview", return_value={"available": False}), \
+            patch.object(db, "content_artifact_status", return_value={}):
+            view = app_main._league_view(row, user_id=23)
+
+        lineup = view["editorial"]["reporter_lineup"]
+        self.assertEqual(len(lineup), 6)
+        self.assertEqual(
+            [item["name"] for item in lineup],
+            [
+                "Topline Tony",
+                "Waiver Wire Waverly",
+                "The Scout",
+                "Trade Desk Talia",
+                "Dossier Dana",
+                "Look-Ahead Lonnie",
+            ],
+        )
+        self.assertEqual(view["managed_team_name"], "Lulu’s Potatoe’s")
+
     def test_unready_railway_blocks_linking_into_ephemeral_store(self) -> None:
         token = self._token("user_unready_link")
         with patch.dict(
