@@ -1805,3 +1805,13 @@ started” message on screen. This keeps a paid action from being retried blindl
 and makes a process restart, wrong scope, or storage failure visible at the
 entry path. The server response and durable receipt are covered by an
 adversarial contract test; this does not claim that a provider call completed.
+
+## 2026-08-26 publication receipt honesty checkpoint
+
+The issue masthead previously summarized every indexed article artifact as an
+“article receipt,” which could make six deterministic fallbacks look like six
+LLM reports. The reader now separates current LLM articles, evidence-led
+fallbacks, and held editor drafts in that summary while keeping the full
+receipt drawer available. The change is presentation-only, but it preserves
+the product rule that the media facade must never overstate the paid editorial
+layer.

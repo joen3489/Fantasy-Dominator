@@ -416,8 +416,21 @@ EDITORIAL_JS = r"""
       setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
       setText('issue-latest-news', issue.latest_news_label ? `Latest news ${issue.latest_news_label}` : 'Latest news not recorded');
       const manifestReceipts = manifest.articleReceipts || {};
-      const receiptCount = Object.keys(manifestReceipts).length;
-      setText('issue-publication-receipt', `${receiptCount} article receipts · bundle ${String(manifest.bundleRevision || 'unbound').slice(0, 12)}`);
+      const receiptEntries = Object.values(manifestReceipts);
+      const receiptCount = receiptEntries.length;
+      const currentLlmCount = receiptEntries.filter(receipt => {
+        const mode = String(receipt.mode || '').toLowerCase();
+        const reviewStatus = String((receipt.editorial_review || {}).status || '').toLowerCase();
+        return mode !== 'deterministic_template' && reviewStatus !== 'held';
+      }).length;
+      const fallbackCount = receiptEntries.filter(receipt => String(receipt.mode || '').toLowerCase() === 'deterministic_template').length;
+      const heldCount = receiptEntries.filter(receipt => String((receipt.editorial_review || {}).status || '').toLowerCase() === 'held').length;
+      const receiptParts = [];
+      if (currentLlmCount) receiptParts.push(`${currentLlmCount} current LLM`);
+      if (fallbackCount) receiptParts.push(`${fallbackCount} evidence-led fallback`);
+      if (heldCount) receiptParts.push(`${heldCount} held for review`);
+      if (!receiptParts.length && receiptCount) receiptParts.push(`${receiptCount} article receipts`);
+      setText('issue-publication-receipt', `${receiptParts.join(' · ') || 'No current article receipts'} · bundle ${String(manifest.bundleRevision || 'unbound').slice(0, 12)}`);
       const freshness = issue.source_health_summary || {};
       const freshnessNode = document.getElementById('issue-freshness');
       if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';

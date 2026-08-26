@@ -1856,3 +1856,12 @@ seconds rather than a stale “writer started” state or an invitation to click
 second paid run. This is an observability and duplicate-spend guard, not a
 publication receipt: the per-article evidence, editor, and bundle receipts
 remain authoritative.
+
+## 2026-08-26 - Do not count fallback artifacts as current LLM copy
+
+The publication header now distinguishes current LLM receipts from
+evidence-led fallback artifacts and held editor drafts. An indexed markdown
+file proves that a reader artifact exists; it does not prove that a provider
+call produced it or that the editor approved it. This keeps the newspaper
+facade aligned with the actual writer state while retaining every receipt for
+inspection.
