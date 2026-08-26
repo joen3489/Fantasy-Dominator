@@ -2520,6 +2520,10 @@ class VModelTests(unittest.TestCase):
         self.assertIn('data-testid="manager-dossier-card"', html)
         self.assertIn("document.getElementById('manager-dossiers').innerHTML = managerDossierCards();", html)
         self.assertNotIn("innerHTML = markdownBrief(analysis.managerDossiers)", html)
+        self.assertIn("function managerIntelArticle", html)
+        self.assertIn("analysis.managerIntelMode === 'automatic_llm'", html)
+        self.assertIn('data-testid="manager-intel-preview"', html)
+        self.assertIn("document.getElementById('manager-intel').innerHTML = managerIntelArticle();", html)
         # Sprint 15 visual system: color-by-category, rank/headshot media, and
         # delta/score table cells all route through these shared helpers -- guard
         # against an accidental deletion the way the other function-name checks do.

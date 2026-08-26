@@ -1459,3 +1459,9 @@ Markdown artifact to an 18-line preview. Each roster receives an evidence
 summary and an exact team-page link; the full structured dossier remains the
 depth surface. The Markdown artifact is a complete fallback only when the
 structured payload is unavailable.
+
+2026-08-26 manager-intel navigation amendment: the deterministic Manager
+Intel fallback now previews five evidence-ranked dossiers as a compact
+homepage entry point and links to the complete structured index. This keeps
+the media facade readable without discarding the validated manager depth;
+current LLM copy remains authoritative when its receipt is current.

@@ -2692,7 +2692,7 @@ def _page(
       document.getElementById('market-watch-mode').textContent = articleModeLabel(analysis.marketWatchMode);
       document.getElementById('trade-desk-read').innerHTML = articleBody(analysis.tradeDeskRead);
       document.getElementById('trade-desk-read-mode').textContent = articleModeLabel(analysis.tradeDeskReadMode);
-      document.getElementById('manager-intel').innerHTML = articleBody(analysis.managerIntel);
+      document.getElementById('manager-intel').innerHTML = managerIntelArticle();
       document.getElementById('manager-intel-mode').textContent = articleModeLabel(analysis.managerIntelMode);
       document.getElementById('league-standings').innerHTML = leagueStandingsMarkup();
       document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
@@ -4167,6 +4167,46 @@ def _page(
         </details>`;
       }}).join('');
       return `<div class="brief-list manager-dossier-index-list" data-testid="manager-dossier-index">${{cards}}</div>`;
+    }}
+
+    function managerIntelArticle() {{
+      if (analysis.managerIntelMode === 'automatic_llm') return articleBody(analysis.managerIntel);
+      const items = (analysis.managerDossierItems || [])
+        .filter(row => row && row.roster_id !== undefined && row.roster_id !== null)
+        .slice()
+        .sort((a, b) => {{
+          const fit = row => Number(row.trade_fit_evaluation?.aligned_fit_count || 0);
+          const trades = row => Number(row.sample_size?.trades || 0);
+          return fit(b) - fit(a) || trades(b) - trades(a) || String(a.team_name || '').localeCompare(String(b.team_name || ''));
+        }});
+      if (!items.length) return articleBody(analysis.managerIntel);
+      const preview = items.slice(0, 5).map(dossier => {{
+        const sample = dossier.sample_size || {{}};
+        const outcome = dossier.outcome_summary || {{}};
+        const fit = dossier.trade_fit_evaluation?.aligned_fit_count;
+        const focus = (dossier.questions_to_ask || [])[0]
+          || dossier.trade_fit_summary
+          || 'Open the dossier to compare observed roster construction and valuation lanes.';
+        return briefCard({{
+          title: dossier.team_name || `Roster ${{dossier.roster_id}}`,
+          category: categoryFor('dynasty_cycle', dossier.dynasty_cycle),
+          entityHash: `team-${{Number(dossier.roster_id)}}`,
+          chips: [
+            label(dossier.dynasty_cycle || 'unclassified'),
+            sample.seasons ? `${{sample.seasons}} seasons` : '',
+            sample.trades ? `${{sample.trades}} trades` : '',
+            fit ? `${{fit}} aligned fits` : ''
+          ],
+          summary: focus,
+          evidence: [
+            dossier.analysis_text || '',
+            outcome.record && outcome.record !== 'not_recorded' ? `record ${{outcome.record}}` : '',
+            dossier.evidence || '',
+            dossier.source_trace || ''
+          ].filter(Boolean).join(' · ')
+        }});
+      }}).join('');
+      return `<div class="article-body manager-intel-preview" data-testid="manager-intel-preview"><p class="article-p">The deterministic fallback selects five managers worth opening first. It is a navigation aid over the validated dossiers, not a replacement for the full league history.</p><div class="brief-list">${{preview}}</div><a class="button-link" href="#manager-dossiers">Open all ${{items.length}} manager dossiers ↓</a></div>`;
     }}
 
     function articleBody(text) {{

@@ -1906,3 +1906,13 @@ rows in the local trust gate. The Data Room also scopes its usage/output
 disagreement view to the selected roster's exact player IDs. This prevents a
 historical or neighboring league from changing a current manager's signal
 read.
+
+## 2026-08-26 - Keep deterministic Manager Intel navigable
+
+The structured dossier index is the depth surface, but the deterministic
+Manager Intel article is a homepage/newsroom surface. Rendering all manager
+rows there made the article read like a raw export and buried the decision
+path. The fallback now previews five evidence-ranked manager dossiers, gives
+each an exact roster route, and links to the complete index. A successful LLM
+article remains untouched, so editorial copy can still own the feature surface
+when its receipt is current.

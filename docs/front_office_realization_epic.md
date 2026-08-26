@@ -1861,3 +1861,11 @@ roster, and links each summary to the exact `#team-{roster_id}` dossier route.
 The fallback path shows the complete Markdown artifact only when the
 structured payload is unavailable. This keeps the durable manager intelligence
 reachable without spending another writer call.
+
+## 2026-08-26 Manager Intel compact navigator
+
+The deterministic Manager Intel fallback now acts as a newsroom entry point:
+it previews five evidence-ranked dossiers with exact roster links and points
+to the full manager index. This preserves the newspaper reading flow while
+keeping the deep manager history reachable. Current LLM Manager Intel remains
+the editorial surface when its article receipt is current.
