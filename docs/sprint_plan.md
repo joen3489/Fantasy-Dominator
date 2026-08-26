@@ -1511,3 +1511,8 @@ pass; production paid-publication verification remains outstanding.
 The authenticated smoke gate now requires the direct league shell's run-ID
 binding markers, making the duplicate writer entry path part of deployment
 verification rather than a manual-only check.
+
+Production acceptance for `ed440bed4dbcb126a2f1adb3f8411b9359fb65aa`: public
+smoke and fresh authenticated checks matched the revision on both the
+headquarters and direct Dynasty route, including `Lulu’s Potatoe’s` and the
+static writer run-ID guard. The paid Luna publication boundary remains open.

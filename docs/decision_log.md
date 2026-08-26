@@ -2005,3 +2005,13 @@ bundle is a real production entry point.
 The authenticated smoke verifier now requires the same static-shell markers,
 so a future deploy cannot pass on generic health and data tables while
 silently reintroducing the stale writer poller.
+
+## 2026-08-26 - Production acceptance for the static writer handoff
+
+Revision `ed440bed4dbcb126a2f1adb3f8411b9359fb65aa` passed the revision-aware
+public smoke. Fresh authenticated Chrome verification matched that revision
+on the headquarters and the direct Dynasty edition; the exact current team
+was `Lulu’s Potatoe’s`, and the league bundle contained the run-ID binding and
+mismatch guard. The writer remains `0/6` deterministic fallback because no
+paid operator run has been accepted; this verifies the handoff seam, not Luna
+publication.

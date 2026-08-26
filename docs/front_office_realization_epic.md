@@ -1933,3 +1933,12 @@ provider call or production deployment is claimed by this code checkpoint.
 
 The authenticated smoke gate now checks the direct league HTML for this
 receipt-binding contract as well as the headquarters and bundle revisions.
+
+### Production acceptance amendment — `ed440be`
+
+Revision `ed440bed4dbcb126a2f1adb3f8411b9359fb65aa` passed public smoke and
+fresh authenticated verification on both the headquarters and direct Dynasty
+edition. The current identity was `Lulu’s Potatoe’s`; the direct bundle
+contained the run-ID binding and mismatch guard. The issue remains `0/6`
+fallback until a protected operator run is accepted, so no paid publication
+claim is made.
