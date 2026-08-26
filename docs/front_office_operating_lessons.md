@@ -197,8 +197,9 @@ configuration as deployment-ready, with durable storage/database continuity,
 protected operator writes, and OpenAI `gpt-5.6-luna`; the authenticated reader
 and writer receipt are still an open verification boundary in this work session
 because no current Fantasy Dominator Clerk session is available in the
-connected browser. The local follow-up trust fix is committed as `f675f10` but
-is intentionally not deployed while the current writer run is in flight. Do
+connected browser. The local follow-up trust fixes are committed as `f675f10`
+and `1fd71d9`, with `1fd71d9` the latest local revision; they are intentionally
+not deployed while the current writer run is in flight. Do
 not turn public health or smoke into a claim that the user's private league
 identity, exact roster, or latest article publication was verified.
 
