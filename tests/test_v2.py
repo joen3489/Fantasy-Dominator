@@ -612,6 +612,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "writer_api_configured": False,
                 "writer_provider": "openai",
                 "writer_model": "gpt-5.6-luna",
+                "writer_reasoning_effort": "max",
                 "writer_timeout_seconds": 120,
                 "writer_api_key_env": "OPENAI_API_KEY",
                 "operator_token_configured": False,

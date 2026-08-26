@@ -143,6 +143,7 @@ def create_app() -> FastAPI:
             "writer_api_configured": writer_config["configured"],
             "writer_provider": writer_config["provider"],
             "writer_model": writer_config["model"],
+            "writer_reasoning_effort": writer_config["reasoning_effort"],
             "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
             "writer_api_key_env": writer_config["api_key_env"],
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
