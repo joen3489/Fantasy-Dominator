@@ -49,7 +49,16 @@ def build_draft_room(
         "PICK": str(needs_row.get("need_picks", "unknown")),
     }
 
-    draft_board = _build_draft_board(tables, roster, needs)
+    draft_board = _build_draft_board(
+        tables,
+        # Availability is a league fact, not an active-team fact. Pass every
+        # current-league roster to the market board so another manager's
+        # player cannot be mislabeled as a waiver/free-agent candidate.
+        roster,
+        needs,
+        available_horizon_rows=tables.get("available_player_horizon_scores", []),
+        league_id=str(league_id or ""),
+    )
     trade_targets = _build_trade_targets(tables.get("action_recommendations", []), my_roster_id, my_team_name)
     fades = _build_fades(tables.get("action_recommendations", []), my_roster_id, my_team_name)
     pick_leverage = _build_pick_leverage(
@@ -80,6 +89,9 @@ def build_draft_room(
         },
         "summary": {
             "available_player_count": len(draft_board),
+            "available_horizon_count": sum(
+                1 for row in draft_board if row.get("horizon_status") in {"scored", "partial"}
+            ),
             "unconfirmed_player_count": sum(
                 row.get("identity_status") == "unconfirmed_name_match" for row in draft_board
             ),
@@ -121,9 +133,17 @@ def _build_draft_board(
     tables: dict[str, list[dict[str, Any]]],
     roster: list[dict[str, Any]],
     needs: dict[str, str],
+    available_horizon_rows: list[dict[str, Any]] | None = None,
+    league_id: str = "",
 ) -> list[dict[str, Any]]:
     roster_ids = {str(row.get("player_id", "")) for row in roster if str(row.get("player_id", ""))}
     roster_names = {_name_key(row.get("player_name")) for row in roster if _name_key(row.get("player_name"))}
+    horizon_rows = [row for row in (available_horizon_rows or []) if _same_scope(row, league_id)]
+    horizon_by_player = {
+        str(row.get("player_id")): row
+        for row in horizon_rows
+        if str(row.get("player_id") or "").strip()
+    }
     unique: dict[str, dict[str, Any]] = {}
     for row in tables.get("player_market_values", []):
         value = _number(row.get("market_value"))
@@ -132,7 +152,7 @@ def _build_draft_board(
             continue
         player_id = str(row.get("player_id", "")).strip()
         name_key = _name_key(name)
-        if player_id and player_id in roster_ids or name_key in roster_names:
+        if (player_id and player_id in roster_ids) or name_key in roster_names:
             continue
         identity_status = "sleeper_id" if player_id else "unconfirmed_name_match"
         if not player_id:
@@ -144,6 +164,12 @@ def _build_draft_board(
             if len(matches) == 1:
                 player_id = str(matches[0].get("player_id", "")).strip()
                 identity_status = "sleeper_unique_name_match" if player_id else "unconfirmed_name_match"
+        # The external market often carries a generational suffix while the
+        # Sleeper roster label does not. Re-check the resolved canonical ID
+        # after name matching so another manager's player is not presented as
+        # available merely because the display strings differ.
+        if player_id and player_id in roster_ids:
+            continue
         identity = player_id or name_key
         existing = unique.get(identity)
         if existing and _number(existing.get("market_value")) >= value:
@@ -162,6 +188,14 @@ def _build_draft_board(
             "Market name could not be uniquely matched to a Sleeper player; confirm identity and draft eligibility before acting."
             if identity_status == "unconfirmed_name_match"
             else "Market board only; confirm draft eligibility and current news before acting."
+        )
+        horizon = horizon_by_player.get(player_id, {})
+        horizon_status = (
+            "scored"
+            if horizon and str(horizon.get("fit_coverage") or "") == "4/4"
+            else "partial"
+            if horizon
+            else "unavailable"
         )
         unique[identity] = {
             "player_id": player_id,
@@ -184,12 +218,29 @@ def _build_draft_board(
             "identity_status": identity_status,
             "risk": identity_risk,
             "confidence": "low" if identity_status == "unconfirmed_name_match" else "medium",
-            "source_trace": source_trace or "DynastyProcess values.csv",
+            "source_trace": "; ".join(
+                value for value in (source_trace or "DynastyProcess values.csv", horizon.get("source_trace", "")) if value
+            ),
+            "horizon_status": horizon_status,
+            "next_game_market_score": horizon.get("next_game_market_score", "") if horizon else "",
+            "rest_of_season_market_score": horizon.get("rest_of_season_market_score", "") if horizon else "",
+            "dynasty_market_score": horizon.get("dynasty_market_score", "") if horizon else "",
+            "career_projection_score": horizon.get("career_projection_score", "") if horizon else "",
+            "rebuilder_fit_score": horizon.get("rebuilder_fit_score", "") if horizon else "",
+            "contender_fit_score": horizon.get("contender_fit_score", "") if horizon else "",
+            "value_lane": horizon.get("value_lane", "") if horizon else "",
+            "horizon_fit_coverage": horizon.get("fit_coverage", "") if horizon else "",
+            "horizon_risk": horizon.get("risk", "") if horizon else "",
         }
     return sorted(
         unique.values(),
         key=lambda row: (-NEED_PRIORITY.get(str(row.get("need", "")).lower(), 0), -_number(row.get("market_value")), _int(row.get("market_rank")) or 9999),
     )[:24]
+
+
+def _same_scope(row: dict[str, Any], league_id: str) -> bool:
+    row_league_id = str(row.get("league_id") or "").strip()
+    return not row_league_id or not league_id or row_league_id == league_id
 
 
 def _build_trade_targets(

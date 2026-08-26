@@ -10,6 +10,26 @@ from .manager_profiles import build_manager_season_history
 
 PASS_CATCHERS = {"WR", "TE"}
 
+LEAGUE_STANDINGS_COLUMNS = [
+    "season",
+    "league_id",
+    "roster_id",
+    "team_name",
+    "matchup_rows",
+    "played",
+    "wins",
+    "losses",
+    "ties",
+    "points_for",
+    "points_against",
+    "point_diff",
+    "win_rate",
+    "record",
+    "outcome_status",
+    "source_trace",
+    "evidence",
+]
+
 
 def build_economic_tables(
     teams_df: pd.DataFrame,
@@ -26,6 +46,7 @@ def build_economic_tables(
     inventory = build_team_asset_inventory(roster_players_df, pick_ownership_df, player_market_values_df, pick_market_values_df, config)
     event_log = build_manager_event_log(teams_df, trades_df, waivers_df)
     season_history = build_manager_season_history(teams_df, trades_df, waivers_df, roster_players_df, matchups_df)
+    standings = build_league_standings(matchups_df, teams_df)
     needs = build_team_needs_matrix(teams_df, roster_players_df, pick_ownership_df)
     behavior = build_manager_behavior_signals(teams_df, trades_df, waivers_df, manager_profiles_df, roster_players_df)
     valuation_profiles = build_manager_valuation_profiles(teams_df, manager_profiles_df, roster_players_df)
@@ -36,6 +57,7 @@ def build_economic_tables(
         "team_asset_inventory": inventory,
         "manager_event_log": event_log,
         "manager_season_history": season_history,
+        "league_standings": standings,
         "team_needs_matrix": needs,
         "manager_behavior_signals": behavior,
         "manager_valuation_profiles": valuation_profiles,
@@ -45,23 +67,154 @@ def build_economic_tables(
     }
 
 
+def build_league_standings(
+    matchups_df: pd.DataFrame | None,
+    teams_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Build one exact-ID outcome row per team/league/season.
+
+    Matchup rows are the only source of wins, losses, ties, and points. Team
+    rows are used only to keep a quiet or offseason team visible as
+    ``not_recorded``; they never create a fabricated 0-0 result.
+    """
+
+    matchups = matchups_df.copy() if isinstance(matchups_df, pd.DataFrame) else pd.DataFrame()
+    teams = teams_df.copy() if isinstance(teams_df, pd.DataFrame) else pd.DataFrame()
+    rows: dict[tuple[str, str, int], dict[str, Any]] = {}
+
+    def key(row: Any) -> tuple[str, str, int] | None:
+        try:
+            roster_id = int(row.get("roster_id"))
+        except (TypeError, ValueError):
+            return None
+        return (str(row.get("season") or ""), str(row.get("league_id") or ""), roster_id)
+
+    def ensure_team(row: Any, identity: tuple[str, str, int]) -> dict[str, Any]:
+        if identity not in rows:
+            rows[identity] = {
+                "season": identity[0],
+                "league_id": identity[1],
+                "roster_id": identity[2],
+                "team_name": str(row.get("team_name") or row.get("display_name") or ""),
+                "matchup_rows": 0,
+                "played": 0,
+                "wins": 0,
+                "losses": 0,
+                "ties": 0,
+                "points_for": None,
+                "points_against": None,
+                "point_diff": None,
+                "win_rate": None,
+                "record": "not recorded",
+                "outcome_status": "not_recorded",
+                "source_trace": "teams",
+                "evidence": "No matchup outcomes are recorded in this source snapshot.",
+            }
+        elif not rows[identity]["team_name"]:
+            rows[identity]["team_name"] = str(row.get("team_name") or row.get("display_name") or "")
+        return rows[identity]
+
+    if not teams.empty:
+        for _, team in teams.iterrows():
+            identity = key(team)
+            if identity is not None:
+                ensure_team(team, identity)
+
+    if not matchups.empty:
+        required = {"season", "league_id", "week", "roster_id"}
+        if required.issubset(matchups.columns):
+            matchups = matchups.drop_duplicates(subset=["season", "league_id", "week", "roster_id"], keep="last")
+        for _, matchup in matchups.iterrows():
+            identity = key(matchup)
+            if identity is None:
+                continue
+            item = ensure_team(matchup, identity)
+            item["matchup_rows"] += 1
+            result = str(matchup.get("result") or "").strip().lower()
+            points_for = _numeric_or_none(matchup.get("points_for"))
+            points_against = _numeric_or_none(matchup.get("points_against"))
+            zero_placeholder = points_for == 0 and points_against == 0
+            played = not zero_placeholder and (
+                result in {"win", "loss", "tie"}
+                or (points_for is not None and points_against is not None)
+            )
+            if not played:
+                continue
+            item["played"] += 1
+            if result == "win":
+                item["wins"] += 1
+            elif result == "loss":
+                item["losses"] += 1
+            elif result == "tie":
+                item["ties"] += 1
+            if points_for is not None:
+                item["points_for"] = (item["points_for"] or 0) + points_for
+            if points_against is not None:
+                item["points_against"] = (item["points_against"] or 0) + points_against
+
+    output: list[dict[str, Any]] = []
+    for item in rows.values():
+        played = int(item["played"])
+        total = int(item["matchup_rows"])
+        if played:
+            item["outcome_status"] = "partial" if played < total else "recorded"
+            item["record"] = f"{item['wins']}-{item['losses']}-{item['ties']}"
+            item["win_rate"] = round((item["wins"] + 0.5 * item["ties"]) / played, 4)
+            if item["points_for"] is not None and item["points_against"] is not None:
+                item["point_diff"] = round(item["points_for"] - item["points_against"], 3)
+            item["source_trace"] = "league_standings;matchups"
+            item["evidence"] = (
+                f"{played} scored matchup week(s); {total - played} unplayed row(s); "
+                f"record={item['record']}"
+            )
+        else:
+            item["record"] = "not recorded"
+        output.append(item)
+
+    # Keep absent scores as real None values rather than letting pandas turn a
+    # quiet team's missing evidence into a numeric NaN in downstream JSON.
+    frame = pd.DataFrame(output, columns=LEAGUE_STANDINGS_COLUMNS).astype(object)
+    frame = frame.where(pd.notna(frame), None)
+    if frame.empty:
+        return pd.DataFrame(columns=LEAGUE_STANDINGS_COLUMNS)
+    return frame.sort_values(["season", "wins", "point_diff", "points_for", "team_name"], ascending=[False, False, False, False, True], na_position="last").reset_index(drop=True)
+
+
 def build_manager_event_log(teams_df: pd.DataFrame, trades_df: pd.DataFrame, waivers_df: pd.DataFrame) -> pd.DataFrame:
-    team_names = {int(row["roster_id"]): row.get("team_name", "") for _, row in teams_df.iterrows() if not pd.isna(row.get("roster_id"))}
+    team_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+    legacy_team_lookup: dict[str, dict[str, Any]] = {}
+    for _, team in teams_df.iterrows():
+        if pd.isna(team.get("roster_id")):
+            continue
+        roster_key = str(team.get("roster_id"))
+        context = team.to_dict()
+        key = (str(team.get("season", "")), str(team.get("league_id", "")), roster_key)
+        team_lookup[key] = context
+        legacy_team_lookup.setdefault(roster_key, context)
+
+    def team_context(row: pd.Series, roster_id: int | None) -> dict[str, Any]:
+        roster_key = str(roster_id) if roster_id is not None else ""
+        exact = team_lookup.get((str(row.get("season", "")), str(row.get("league_id", "")), roster_key))
+        return exact or legacy_team_lookup.get(roster_key, {})
+
     rows: list[dict[str, Any]] = []
 
     for _, trade in trades_df.iterrows():
         for side in ("a", "b"):
             roster_id = _int(trade.get(f"team_{side}_roster_id"))
             other_side = "b" if side == "a" else "a"
+            team = team_context(trade, roster_id)
             rows.append(
                 {
                     "season": trade.get("season", ""),
+                    "league_id": trade.get("league_id", ""),
+                    "owner_id": team.get("owner_id", ""),
                     "event_type": "trade",
                     "week": trade.get("week", ""),
                     "created_datetime": trade.get("created_datetime", ""),
                     "transaction_id": trade.get("transaction_id", ""),
                     "roster_id": roster_id,
-                    "team_name": trade.get(f"team_{side}_name", "") or team_names.get(roster_id, ""),
+                    "team_name": trade.get(f"team_{side}_name", "") or team.get("team_name", ""),
                     "counterparty": trade.get(f"team_{other_side}_name", ""),
                     "players_in": trade.get(f"team_{side}_players_received", ""),
                     "picks_in": trade.get(f"team_{side}_picks_received", ""),
@@ -75,15 +228,18 @@ def build_manager_event_log(teams_df: pd.DataFrame, trades_df: pd.DataFrame, wai
 
     for _, waiver in waivers_df.iterrows():
         roster_id = _int(waiver.get("roster_id"))
+        team = team_context(waiver, roster_id)
         rows.append(
             {
                 "season": waiver.get("season", ""),
+                "league_id": waiver.get("league_id", ""),
+                "owner_id": team.get("owner_id", ""),
                 "event_type": "waiver",
                 "week": waiver.get("week", ""),
                 "created_datetime": "",
                 "transaction_id": waiver.get("transaction_id", ""),
                 "roster_id": roster_id,
-                "team_name": waiver.get("team_name", "") or team_names.get(roster_id, ""),
+                "team_name": waiver.get("team_name", "") or team.get("team_name", ""),
                 "counterparty": "league waiver market",
                 "players_in": waiver.get("player_added", ""),
                 "picks_in": "",
@@ -431,6 +587,8 @@ def _inventory_columns() -> list[str]:
 def _manager_event_columns() -> list[str]:
     return [
         "season",
+        "league_id",
+        "owner_id",
         "event_type",
         "week",
         "created_datetime",
@@ -678,6 +836,15 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    try:
+        if value in ("", None) or pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _model_value(value: float) -> float:

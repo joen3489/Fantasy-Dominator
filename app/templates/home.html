@@ -617,7 +617,7 @@
       .article-shelf-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
       .article-shelf-heading h2 { margin: 0; font-size: 16px; text-transform: uppercase; letter-spacing: .08em; }
       .article-shelf-heading p { margin: 0; color: var(--muted); font-size: 12px; }
-      .article-shelf-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+      .article-shelf-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
       .article-card { display: flex; min-height: 118px; flex-direction: column; justify-content: space-between; gap: 10px; padding: 12px; color: var(--ink); text-decoration: none; background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 2px 8px rgba(35, 45, 39, .04); }
       .article-card:hover, .article-card:focus-visible { border-color: var(--accent); box-shadow: 0 4px 14px rgba(35, 45, 39, .10); }
       .article-card-kicker { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -820,7 +820,7 @@
           <section class="article-shelf" aria-labelledby="article-shelf-title" data-testid="article-shelf">
             <div class="article-shelf-heading">
               <h2 id="article-shelf-title">The desk</h2>
-              <p>Five reporters, five lenses on the same evidence-backed edition.</p>
+              <p>Six reporters, six lenses on the same evidence-backed edition.</p>
             </div>
             {% if edition.reporter_lineup %}
               <div class="reporter-lineup" data-testid="reporter-lineup" aria-label="Edition newsroom">
@@ -854,6 +854,11 @@
                 <span class="article-card-kicker">Trade Desk Read</span>
                 <span class="article-card-title">Who fits your plan</span>
                 <span class="article-card-status">{% if "trade_desk" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+              </a>
+              <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
+                <span class="article-card-kicker">Market Clock Read</span>
+                <span class="article-card-title">How value changes with time</span>
+                <span class="article-card-status">{% if "horizon_watch" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
               </a>
             </div>
           </section>
@@ -906,6 +911,11 @@
               <label>Contention window
                 <input data-profile-field="contention_window" placeholder="2026-2028">
               </label>
+              <details class="profile-advanced">
+                <summary>Personal horizon weights (optional)</summary>
+                <p class="persona-help">Tune contender and rebuilder fit without changing the four canonical scores. Use the four keys for each lane; values may be proportions or percentages.</p>
+                <textarea data-profile-field="horizon_fit_weights" spellcheck="false" placeholder='{"contender":{"next_game":52,"rest_of_season":34,"dynasty":9,"career_window":5},"rebuilder":{"next_game":8,"rest_of_season":22,"dynasty":40,"career_window":30}}'>{}</textarea>
+              </details>
               <label>Reporter persona
                 <select data-profile-field="persona_id">
                   {% for persona in writer_personas %}
@@ -1134,11 +1144,14 @@
             identityRefresh.disabled = true;
             identityRefresh.textContent = 'Checking Sleeper';
             if (identityRefreshStatus) identityRefreshStatus.textContent = '';
+            const identityController = new AbortController();
+            const identityTimeout = window.setTimeout(() => identityController.abort(), 20000);
             try {
               const response = await fetch('/api/leagues/identity/refresh', {
                 method: 'POST',
                 headers: {'content-type': 'application/json'},
                 body: JSON.stringify({}),
+                signal: identityController.signal,
               });
               const payload = await response.json().catch(() => ({}));
               if (!response.ok) throw new Error(payload.detail || `identity refresh failed (${response.status})`);
@@ -1153,7 +1166,11 @@
             } catch (error) {
               identityRefresh.disabled = false;
               identityRefresh.textContent = 'Try identity check again';
-              if (identityRefreshStatus) identityRefreshStatus.textContent = error.message;
+              if (identityRefreshStatus) identityRefreshStatus.textContent = error.name === 'AbortError'
+                ? 'Sleeper is taking longer than expected. Try again shortly; your saved identity is unchanged.'
+                : error.message;
+            } finally {
+              window.clearTimeout(identityTimeout);
             }
           });
         }
@@ -1219,6 +1236,7 @@
               profileField('strategy_name').value = profile.strategy_name || strategy.name || '';
               profileField('team_direction').value = profile.team_direction || strategy.team_direction || '';
               profileField('contention_window').value = profile.contention_window || strategy.contention_window || '';
+              profileField('horizon_fit_weights').value = JSON.stringify(strategy.horizon_fit_weights || {}, null, 2);
               profileField('persona_id').value = writerPreferences.persona_id || 'front_office';
               profileField('custom_instructions').value = writerPreferences.custom_instructions || '';
               profileField('writer_preferences').value = JSON.stringify(writerPreferences, null, 2);
@@ -1241,10 +1259,22 @@
               profileStatus.textContent = 'Writer preferences must be valid JSON';
               return;
             }
+            let horizonFitWeights = {};
+            try {
+              horizonFitWeights = JSON.parse(profileField('horizon_fit_weights').value || '{}');
+              if (!horizonFitWeights || Array.isArray(horizonFitWeights) || typeof horizonFitWeights !== 'object') {
+                throw new Error('not an object');
+              }
+            } catch (error) {
+              profileStatus.className = 'profile-status error';
+              profileStatus.textContent = 'Horizon weights must be a JSON object';
+              return;
+            }
             const strategyProfile = {
               name: profileField('strategy_name').value.trim(),
               team_direction: profileField('team_direction').value.trim(),
               contention_window: profileField('contention_window').value.trim(),
+              horizon_fit_weights: horizonFitWeights,
             };
             writerPreferences.persona_id = profileField('persona_id').value;
             writerPreferences.custom_instructions = profileField('custom_instructions').value.trim();
@@ -1265,7 +1295,21 @@
                 }),
               });
               if (!response.ok) throw new Error('profile save failed (' + response.status + ')');
-              profileStatus.textContent = 'Saved for this league';
+              profileStatus.textContent = 'Saved; rebuilding this edition';
+              const refreshResponse = await fetch('/api/leagues/' + encodeURIComponent(profileLeague.value) + '/refresh', {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({}),
+              });
+              const refreshPayload = await refreshResponse.json().catch(() => ({}));
+              if (!refreshResponse.ok) {
+                profileStatus.className = 'profile-status error';
+                profileStatus.textContent = 'Saved, but edition refresh failed: ' + (refreshPayload.detail || refreshResponse.status);
+              } else if (refreshPayload.accepted === false) {
+                profileStatus.textContent = 'Saved; edition refresh is already running';
+              } else {
+                profileStatus.textContent = 'Saved; edition refresh queued';
+              }
             } catch (error) {
               profileStatus.className = 'profile-status error';
               profileStatus.textContent = error.message;

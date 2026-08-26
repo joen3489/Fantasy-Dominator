@@ -15,19 +15,19 @@ from src import operator
 from src.analysis import build_analysis_artifacts
 from src.browser_site import _data_room_delta, build_browser_site
 from src.draft_room import build_draft_room
-from src.economics import build_economic_tables, build_manager_behavior_signals
-from src.external_sources import _normalize_pick_values, build_market_consensus_values, refresh_external_sources
+from src.economics import build_economic_tables, build_league_standings, build_manager_behavior_signals, build_manager_event_log
+from src.external_sources import _normalize_dynastyprocess_market_sources, _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
 from src.normalize import build_roster_maps, normalize_matchups, normalize_traded_picks, normalize_trades, normalize_waivers, to_dataframes
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.priority_board import build_today_priority_board
-from src.profile_intelligence import _player_confidence, build_player_dossiers, build_player_transaction_history, build_profile_intelligence_tables
+from src.profile_intelligence import _availability_note, _player_confidence, build_player_dossiers, build_player_transaction_history, build_profile_intelligence_tables
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.projections import _blend_projection_components, _build_projection_consensus, build_projection_tables, calculate_fantasy_points
 from src.opportunity import build_opportunity_scores, score_players_from_weekly
-from src.signals import _breakout_score, _classify_action, build_signal_tables
-from scripts.refresh_all import _discover_league_history
+from src.signals import _breakout_score, _classify_action, _normalize_market, build_news_market_edges, build_signal_tables
+from scripts.refresh_all import _discover_league_history, _merge_maintenance_canonical_tables, normalize_refresh_mode
 from scripts.serve import RailwayHTTPRequestHandler
 from scripts.start import write_boot_page
 
@@ -35,8 +35,8 @@ from scripts.start import write_boot_page
 EXPECTED_TABLE_COLUMNS = {
     "leagues": ["season", "league_id", "name", "status", "scoring_settings", "roster_positions", "playoff_week_start", "settings"],
     "teams": ["season", "league_id", "roster_id", "owner_id", "display_name", "team_name", "waiver_position", "waiver_budget_used", "total_moves"],
-    "players": ["player_id", "full_name", "position", "team", "age", "years_exp", "fantasy_positions", "status"],
-    "roster_players": ["season", "league_id", "roster_id", "owner_id", "player_id", "player_name", "position", "nfl_team", "age", "years_exp", "roster_status", "is_my_team", "team_name"],
+    "players": ["player_id", "full_name", "position", "team", "age", "years_exp", "fantasy_positions", "status", "injury_status", "injury_body_part"],
+    "roster_players": ["season", "league_id", "roster_id", "owner_id", "player_id", "player_name", "position", "nfl_team", "age", "years_exp", "availability_scope", "injury_status", "injury_body_part", "roster_status", "is_my_team", "team_name"],
     "drafts": ["season", "league_id", "draft_id", "status", "type", "settings"],
     "draft_picks": ["season", "league_id", "draft_id", "pick_no", "round", "roster_id", "picked_by", "player_id", "player_name", "position", "nfl_team"],
     "traded_picks": ["season", "league_id", "original_roster_id", "original_team_name", "round", "pick_season", "current_owner_roster_id", "current_owner_team_name", "previous_owner_roster_id", "previous_owner_team_name", "is_my_original_pick", "is_currently_owned_by_me"],
@@ -45,7 +45,9 @@ EXPECTED_TABLE_COLUMNS = {
     "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_player_ids_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_player_ids_received", "team_b_picks_received", "team_b_faab_received", "raw"],
     "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_added_ids", "player_dropped", "player_dropped_ids", "waiver_bid", "status", "failure_reason"],
     "matchups": ["season", "league_id", "week", "matchup_id", "roster_id", "team_name", "opponent_roster_id", "opponent_team_name", "points_for", "points_against", "margin", "result", "source_trace", "evidence"],
-    "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
+    "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "opponent_team", "game_id", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
+    "nfl_schedule": ["season", "week", "game_id", "game_type", "gameday", "away_team", "home_team", "schedule_status", "source_trace"],
+    "nfl_team_defense_factors": ["team", "position", "games_sample", "fantasy_points_allowed_per_game", "league_position_average", "matchup_factor", "confidence", "validation_seasons", "validation_games", "validation_mae", "validation_baseline_mae", "validation_mae_delta", "validation_direction_accuracy", "validation_status", "source_trace"],
     "market_value_sources": ["source", "source_access_type", "source_player_id", "player_id", "player_name", "position", "raw_value", "normalized_value", "market_rank", "value_format", "source_confidence", "source_trace", "checked_at"],
     "market_consensus_values": ["player_id", "player_name", "position", "consensus_value", "source_count", "disagreement_score", "best_source", "confidence", "source_trace"],
     "player_market_values": ["source", "source_player_id", "player_id", "player_name", "position", "market_value", "market_rank", "value_format", "source_trace"],
@@ -53,41 +55,52 @@ EXPECTED_TABLE_COLUMNS = {
     "source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "news_events": ["source", "event_id", "event_type", "published_at", "title", "summary", "url", "player_id", "player_name", "team", "position", "source_trace"],
     "player_news_matches": ["event_id", "source", "input_player_name", "player_id", "matched_player_name", "match_method", "match_confidence", "is_ambiguous", "source_trace"],
-    "league_news_impact": ["event_id", "source", "published_at", "player_id", "player_name", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"],
+    "league_news_impact": ["event_id", "source", "published_at", "player_id", "player_name", "league_id", "season", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"],
     "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "player_projection_season": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_games", "projected_passing_yards", "projected_passing_tds", "projected_interceptions", "projected_rushing_yards", "projected_rushing_tds", "projected_receptions", "projected_receiving_yards", "projected_receiving_tds", "projected_fantasy_points", "projected_ppg", "projection_method", "projection_confidence", "source_trace", "projection_note"],
     "player_projection_weekly": ["season", "week", "player_id", "player_name", "position", "team", "roster_id", "team_name", "projected_fantasy_points", "projected_snap_or_usage_note", "projection_method", "projection_confidence", "source_trace"],
+    "player_horizon_market_scores": ["season", "league_id", "as_of_week", "horizon_model_version", "horizon_score_basis", "next_game_week", "player_id", "availability_scope", "current_availability_status", "market_value", "market_percentile", "next_game_market_score", "next_game_minus_market_delta", "next_game_opponent", "next_game_home_away", "next_game_schedule_status", "next_game_matchup_factor", "next_game_matchup_validation_status", "next_game_matchup_validation_games", "next_game_matchup_validation_mae_delta", "next_game_matchup_adjustment_status", "rest_of_season_market_score", "rest_of_season_minus_market_delta", "rest_of_season_minus_next_game_delta", "rest_of_season_games", "rest_of_season_bye_weeks", "dynasty_market_score", "dynasty_minus_market_delta", "dynasty_minus_rest_of_season_delta", "career_projection_years", "career_projection_points", "career_projection_ppg", "career_projection_score", "career_minus_market_delta", "career_minus_dynasty_delta", "career_projection_status", "career_projection_basis", "career_history_join_method", "career_history_source_player_id", "career_history_status", "career_history_seasons", "career_history_games", "career_history_ppg", "career_history_latest_season", "contender_fit_score", "rebuilder_fit_score", "fit_coverage", "fit_basis", "rebuilder_contender_spread", "value_lane", "evidence", "risk", "confidence", "source_trace"],
+    "available_player_horizon_scores": ["league_id", "availability_status", "identity_status", "market_rank", "market_source_count", "market_source_confidence", "market_disagreement_score", "player_id", "market_value", "market_percentile", "fit_coverage", "evidence", "risk", "confidence", "source_trace"],
     "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path", "checked_at", "row_count"],
     "fantasy_nerds_projection_source": ["source", "fn_player_id", "player_name", "normalized_name", "position", "team", "projected_fantasy_points", "source_confidence", "source_trace", "checked_at"],
     "projection_source_components": ["season", "player_id", "player_name", "position", "team", "roster_id", "team_name", "source", "projected_fantasy_points", "projected_ppg", "projected_games", "source_confidence", "source_trace", "projection_method", "detail_stats_json", "checked_at"],
     "source_accuracy_scores": ["source", "position", "season", "mean_absolute_error", "sample_size", "accuracy_confidence", "source_trace", "checked_at"],
     "today_priority_board": ["item_type", "item_type_label", "entity_type", "entity_id", "entity_name", "roster_id", "team_name", "priority_score", "why", "evidence", "risk", "confidence", "source_trace"],
-    "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "opportunity_score", "xfp_regression_score", "role_trend_score", "fragility_score", "signal_label", "evidence", "risk", "confidence", "source_trace"],
+    "player_signal_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "projection_edge_score", "market_gap_score", "timeline_fit_score", "breakout_score", "sell_score", "opportunity_score", "xfp_regression_score", "role_trend_score", "fragility_score", "signal_label", "projection_percentile", "market_percentile", "market_gap_status", "evidence", "risk", "confidence", "source_trace"],
     "player_opportunity_scores": ["player_id", "player_name", "position", "roster_id", "team_name", "games_sample", "opportunity_score", "production_score", "xfp_regression_score", "role_trend_score", "fragility_score", "opportunity_evidence", "source_trace"],
-    "breakout_candidates": ["player_id", "player_name", "position", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
-    "sell_candidates": ["player_id", "player_name", "position", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
-    "projection_market_gaps": ["player_id", "player_name", "position", "projected_fantasy_points", "projected_ppg", "market_value", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
+    "breakout_candidates": ["player_id", "player_name", "position", "current_availability_status", "current_team_name", "breakout_score", "projection_edge", "market_value", "evidence", "risk", "confidence", "source_trace"],
+    "sell_candidates": ["player_id", "player_name", "position", "current_availability_status", "current_team_name", "sell_score", "projection_risk", "market_value", "evidence", "risk", "confidence", "source_trace"],
+    "projection_market_gaps": ["player_id", "player_name", "position", "current_availability_status", "projected_fantasy_points", "projected_ppg", "market_value", "projection_percentile", "market_percentile", "market_gap_status", "gap_score", "gap_label", "evidence", "risk", "confidence", "source_trace"],
+    "news_market_edges": ["player_id", "player_name", "position", "roster_id", "league_id", "season", "team_name", "news_direction", "edge_type", "news_impact", "news_event_count", "market_value", "projected_ppg", "market_gap_score", "sell_score", "news_market_edge_score", "evidence", "risk", "confidence", "source_trace"],
     "team_fit_scores": ["roster_id", "team_name", "player_id", "player_name", "position", "timeline_fit_score", "need_fit_score", "liquidity_fit_score", "fit_label", "evidence", "risk", "confidence", "source_trace"],
     "action_recommendations": ["roster_id", "team_name", "player_id", "player_name", "position", "action_label", "consumer_label", "action_rank", "action_score", "projected_ppg", "market_value", "why", "evidence", "risk", "confidence", "source_trace"],
     "manager_profiles": ["owner_id", "roster_id", "display_name", "team_name", "seasons_covered", "roster_ids_by_season", "team_names_by_season", "total_trades", "trades_by_season", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "future_1sts_acquired", "future_1sts_sold", "future_2nds_acquired", "future_2nds_sold", "faab_spent_on_waivers", "number_of_waiver_claims", "average_waiver_bid", "max_waiver_bid", "most_common_transaction_partners", "qb_count", "rb_count", "pass_catcher_count", "contender_rebuilder_indicator", "notes"],
     "pick_ownership": ["original_roster_id", "original_team", "pick_season", "round", "current_owner_roster_id", "current_owner", "previous_owner_roster_id", "previous_owner", "is_my_original_pick", "is_currently_owned_by_me", "i_currently_own_it"],
     "team_asset_inventory": ["roster_id", "team_name", "asset_type", "asset_id", "asset_name", "position", "age", "market_value", "liquidity_tier", "timeline_fit", "source_trace"],
-    "manager_event_log": ["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
+    "manager_event_log": ["season", "league_id", "owner_id", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"],
     "manager_season_history": ["owner_id", "season", "roster_id", "team_name", "trades", "waiver_claims", "faab_spent", "transaction_count", "first_transaction_week", "last_transaction_week", "peak_transaction_week", "active_weeks", "trade_weeks", "waiver_weeks", "players_acquired", "players_sold", "picks_acquired", "picks_sold", "trade_partners", "roster_player_count", "qb_count", "rb_count", "pass_catcher_count", "matchup_weeks", "played_weeks", "wins", "losses", "ties", "points_for", "points_against", "point_diff", "win_rate", "outcome_status", "source_trace", "evidence"],
+    "league_standings": ["season", "league_id", "roster_id", "team_name", "matchup_rows", "played", "wins", "losses", "ties", "points_for", "points_against", "point_diff", "win_rate", "record", "outcome_status", "source_trace", "evidence"],
     "team_needs_matrix": ["roster_id", "team_name", "qb_count", "rb_count", "wr_count", "te_count", "pass_catcher_count", "future_firsts_owned", "need_qb", "need_rb", "need_pass_catcher", "need_picks", "team_shape"],
     "manager_behavior_signals": ["roster_id", "team_name", "trade_activity_score", "pick_buyer_score", "pick_seller_score", "faab_aggression_score", "waiver_activity_score", "rb_appetite_score", "pass_catcher_appetite_score", "plain_language_label", "evidence"],
     "manager_valuation_profiles": ["owner_id", "roster_id", "team_name", "asset_type", "position_group", "preference_score", "evidence_count", "recency_weighted_score", "confidence", "label", "evidence"],
     "liquidity_scores": ["roster_id", "team_name", "asset_type", "asset_name", "position", "market_value", "liquidity_score", "liquidity_tier", "demand_signal", "source_trace"],
     "asset_market_gaps": ["target_roster_id", "target_team", "asset_type", "asset_name", "position", "market_value", "market_gap_score", "opportunity_type", "timeline_fit", "evidence", "risk", "confidence", "source_trace"],
     "opportunity_board": ["action_type", "target_team", "asset_in", "asset_out", "manager_signal", "evidence", "risk", "confidence", "source_trace"],
-    "counterparty_trade_edges": ["target_roster_id", "target_team", "player_id", "player_name", "position", "our_value_score", "market_consensus_value", "estimated_owner_value_score", "trade_edge_score", "edge_type", "evidence", "risk", "confidence", "source_trace"],
+    "counterparty_trade_edges": ["target_roster_id", "target_team", "player_id", "player_name", "position", "target_team_lens", "target_horizon_fit_score", "active_horizon_fit_score", "horizon_fit_edge", "horizon_fit_read", "horizon_fit_basis", "horizon_model_version", "horizon_market_percentile", "next_game_market_score", "rest_of_season_market_score", "dynasty_market_score", "career_projection_score", "next_game_minus_market_delta", "rest_of_season_minus_market_delta", "dynasty_minus_market_delta", "career_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_minus_rest_of_season_delta", "career_minus_dynasty_delta", "horizon_market_disagreement_window", "horizon_market_disagreement_delta", "horizon_market_disagreement_magnitude", "horizon_market_disagreement_read", "our_value_score", "market_consensus_value", "estimated_owner_value_score", "trade_edge_score", "edge_type", "evidence", "risk", "confidence", "source_trace"],
+    "counterparty_asset_interest": ["active_roster_id", "active_team", "asset_id", "asset_name", "asset_type", "position", "market_value", "target_roster_id", "target_team", "target_team_lens", "transaction_lane_read", "transaction_acquired_count", "transaction_sold_count", "transaction_net_acquired_count", "transaction_current_roster_overlap", "transaction_history_status", "transaction_lane_confidence", "target_need", "target_need_fit_score", "target_horizon_fit_score", "active_horizon_fit_score", "horizon_fit_edge", "horizon_fit_read", "horizon_model_version", "horizon_market_percentile", "next_game_market_score", "rest_of_season_market_score", "dynasty_market_score", "career_projection_score", "next_game_minus_market_delta", "rest_of_season_minus_market_delta", "dynasty_minus_market_delta", "career_minus_market_delta", "rest_of_season_minus_next_game_delta", "dynasty_minus_rest_of_season_delta", "career_minus_dynasty_delta", "horizon_market_disagreement_window", "horizon_market_disagreement_delta", "horizon_market_disagreement_magnitude", "horizon_market_disagreement_read", "observed_acquisition_signal", "conversation_fit_score", "conversation_fit_label", "evidence", "risk", "confidence", "source_trace"],
     "manager_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
     "manager_cycle_profiles": ["owner_id", "roster_id", "team_name", "dynasty_cycle", "trade_temperature", "pick_posture", "waiver_posture", "likely_needs", "likely_sells", "confidence", "evidence"],
-    "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
+    "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "availability_scope", "current_availability_status", "injury_status", "injury_body_part", "availability_note", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
     "player_transaction_history": ["player_id", "identity_method", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
     "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
-    "refresh_metadata": ["generated_at", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "matchups_status", "matchup_rows", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "counterparty_edge_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows"],
+    "refresh_metadata": ["generated_at", "refresh_mode", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "requested_week_end", "current_week", "historical_refresh_scope", "matchups_status", "matchup_rows", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "manager_transaction_preference_rows", "counterparty_edge_rows", "counterparty_asset_interest_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows", "player_horizon_market_rows", "available_player_horizon_rows", "horizon_snapshot_rows", "horizon_accuracy_rows", "horizon_movement_rows", "nfl_schedule_rows", "nfl_team_defense_factor_rows"],
 }
+
+EXPECTED_TABLE_COLUMNS["player_horizon_market_scores"][9:9] = [
+    "market_source_count",
+    "market_disagreement_score",
+    "market_source_confidence",
+]
 
 
 class VModelTests(unittest.TestCase):
@@ -178,7 +191,79 @@ class VModelTests(unittest.TestCase):
         self.assertIn("/matchups/1", alpha["source_trace"])
         self.assertEqual(unplayed["result"], "unplayed")
         self.assertEqual(unplayed["opponent_roster_id"], "")
+        zero_placeholder = normalize_matchups(
+            "2026",
+            "league",
+            {1: [{"roster_id": 1, "matchup_id": 1, "points": 0}, {"roster_id": 2, "matchup_id": 1, "points": 0}]},
+            roster_map,
+        )
+        self.assertTrue(all(row["result"] == "unplayed" for row in zero_placeholder))
         self.assertEqual(list(to_dataframes({"matchups": []})["matchups"].columns), EXPECTED_TABLE_COLUMNS["matchups"])
+
+    def test_league_standings_preserve_outcome_coverage_and_quiet_teams(self) -> None:
+        """Encodes docs/data_contract.md: standings are derived from exact matchup evidence."""
+        teams = pd.DataFrame(
+            [
+                {"season": "2026", "league_id": "league", "roster_id": 1, "team_name": "Alpha"},
+                {"season": "2026", "league_id": "league", "roster_id": 2, "team_name": "Beta"},
+                {"season": "2026", "league_id": "league", "roster_id": 3, "team_name": "Quiet"},
+            ]
+        )
+        matchups = pd.DataFrame(
+            [
+                {"season": "2026", "league_id": "league", "week": 1, "roster_id": 1, "team_name": "Alpha", "points_for": 120, "points_against": 100, "result": "win"},
+                {"season": "2026", "league_id": "league", "week": 2, "roster_id": 1, "team_name": "Alpha", "points_for": "", "points_against": "", "result": "unplayed"},
+                {"season": "2026", "league_id": "league", "week": 1, "roster_id": 2, "team_name": "Beta", "points_for": 100, "points_against": 120, "result": "loss"},
+            ]
+        )
+
+        standings = build_league_standings(matchups, teams)
+        alpha = standings[standings["roster_id"] == 1].iloc[0]
+        quiet = standings[standings["roster_id"] == 3].iloc[0]
+        self.assertEqual(alpha["record"], "1-0-0")
+        self.assertEqual(alpha["outcome_status"], "partial")
+        self.assertEqual(alpha["points_for"], 120)
+        self.assertEqual(quiet["outcome_status"], "not_recorded")
+        self.assertEqual(quiet["record"], "not recorded")
+        self.assertIsNone(quiet["points_for"])
+
+        future = build_league_standings(
+            pd.DataFrame([{
+                "season": "2026",
+                "league_id": "league",
+                "week": 1,
+                "roster_id": 1,
+                "team_name": "Alpha",
+                "points_for": 0,
+                "points_against": 0,
+                "result": "unplayed",
+            }]),
+            teams.iloc[[0]],
+        ).iloc[0]
+        self.assertEqual(future["outcome_status"], "not_recorded")
+        self.assertEqual(future["record"], "not recorded")
+
+    def test_maintenance_merge_preserves_history_and_replaces_current_source_rows(self) -> None:
+        """Encodes AGENTS.md's additive, idempotent maintenance rule."""
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            processed.mkdir()
+            pd.DataFrame(
+                [
+                    {"season": "2025", "league_id": "league", "roster_id": 1, "team_name": "Alpha 2025"},
+                    {"season": "2026", "league_id": "league", "roster_id": 1, "team_name": "Old Alpha"},
+                ]
+            ).to_csv(processed / "teams.csv", index=False)
+            merged = _merge_maintenance_canonical_tables(
+                {"teams": [{"season": "2026", "league_id": "league", "roster_id": 1, "team_name": "New Alpha"}, {"season": "2026", "league_id": "league", "roster_id": 2, "team_name": "Beta"}]},
+                processed,
+            )
+            rows = pd.DataFrame(merged["teams"])
+        self.assertEqual(set(rows["season"]), {"2025", "2026"})
+        self.assertEqual(rows.loc[rows["season"] == "2026", "team_name"].iloc[0], "New Alpha")
+        self.assertEqual(normalize_refresh_mode("maintenance"), "maintenance")
+        with self.assertRaises(ValueError):
+            normalize_refresh_mode("unknown")
 
     def test_operator_packet_loop_validates_insight_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -404,7 +489,8 @@ class VModelTests(unittest.TestCase):
         with patch("src.operator.requests.post", return_value=mock_response) as mock_post:
             result = operator.generate_insight_output_via_llm(packet, "test-key", "claude-haiku-4-5-20251001")
 
-        self.assertEqual(result, {"items": [{"card_id": "player-1"}]})
+        self.assertEqual(result["items"], [{"card_id": "player-1"}])
+        self.assertEqual(result["_provider_receipt"]["provider"], "anthropic")
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs["json"]["tool_choice"], {"type": "tool", "name": "emit_insight_cards"})
         self.assertEqual(kwargs["json"]["tools"][0]["name"], "emit_insight_cards")
@@ -628,12 +714,13 @@ class VModelTests(unittest.TestCase):
 
     # --- Sprint 17: per-section article workflow ---------------------------------------
 
-    def test_article_registry_has_one_summary_and_loadable_prompts(self) -> None:
+    def test_article_registry_has_synthesis_desks_and_loadable_prompts(self) -> None:
         from src import articles
 
         summaries = [article for article in articles.ARTICLES if article.is_summary]
-        self.assertEqual(len(summaries), 1)
+        self.assertEqual(len(summaries), 2)
         self.assertEqual(summaries[0].key, "daily_brief")
+        self.assertEqual(summaries[1].key, "horizon_watch")
         # daily_brief keeps its long-standing filename so the existing bundle/badge wiring holds.
         self.assertEqual(summaries[0].output_filename, "daily_gm_brief.md")
         for article in articles.ARTICLES:
@@ -691,6 +778,62 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Compare picks to market value.", prompt)
         self.assertIn("Never claim a trade", prompt)
         self.assertIn("The persona controls tone and emphasis only", persona_prompt_block(normalized))
+        self.assertIn("rest-of-season baseline is not recovery-adjusted", articles.load_prompt("team_report.md"))
+        self.assertIn("rest-of-season baseline is not recovery-adjusted", articles.load_prompt("market_watch.md"))
+        self.assertIn("not dollar market values or cross-position price rankings", articles.load_prompt("team_report.md"))
+        self.assertIn("dollar market values, or cross-position price rankings", articles.load_prompt("market_watch.md"))
+        self.assertIn("fit_coverage", articles.load_prompt("market_watch.md"))
+
+    def test_topline_article_scope_carries_news_matchup_and_move_context(self) -> None:
+        """Encodes docs/front_office_realization_epic.md's authored-publication evidence seam."""
+        from src import articles
+
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp)
+            (processed / "player_dossiers.csv").write_text(
+                "roster_id,player_id,player_name,position,market_value,projected_ppg,availability_note,signal_label,news_impact,source_trace\n"
+                "2,101,Anchor QB,QB,70,20.0,No current Sleeper injury flag; baseline projection,core_hold,,projection\n",
+                encoding="utf-8",
+            )
+            (processed / "league_news_impact.csv").write_text(
+                "event_id,published_at,player_id,player_name,roster_id,impact_type,evidence,risk,confidence,source_trace\n"
+                "news-1,2026-08-25T12:00:00Z,101,Anchor QB,2,role_or_value_change,Anchor QB named starter,medium,high,source-news\n"
+                "news-2,2026-08-25T13:00:00Z,202,League Rival,4,market_heat,Rival player trending,medium,medium,source-news\n",
+                encoding="utf-8",
+            )
+            (processed / "matchups.csv").write_text(
+                "season,league_id,week,matchup_id,roster_id,opponent_roster_id,opponent_team_name,points_for,points_against,margin,result,source_trace\n"
+                "2026,league-1,1,match-1,2,4,Rival Team,18.0,14.0,4.0,win,source-matchup\n",
+                encoding="utf-8",
+            )
+            (processed / "trades.csv").write_text(
+                "season,week,transaction_id,team_a_roster_id,team_a_name,team_a_players_received,team_a_picks_received,team_a_faab_received,team_b_roster_id,team_b_name,team_b_players_received,team_b_picks_received,team_b_faab_received\n"
+                "2026,1,trade-1,2,My Team,Anchor QB,,0,4,Rival Team,Other Player,2027 R2,0\n",
+                encoding="utf-8",
+            )
+            (processed / "waivers.csv").write_text(
+                "season,week,transaction_id,roster_id,player_added,player_dropped,waiver_bid\n"
+                "2026,1,waiver-1,2,Depth WR,Depth RB,12\n",
+                encoding="utf-8",
+            )
+
+            context = articles.ArticleContext(
+                analysis_dir=Path(tmp),
+                active_roster_id=2,
+                processed_dir=processed,
+                league_id="league-1",
+                season="2026",
+            )
+            evidence = articles._scope_team_report(context)
+            by_type = {kind: [row for row in evidence if row["entity_type"] == kind] for kind in ("player", "news", "matchup", "transaction")}
+            self.assertTrue(by_type["player"])
+            self.assertEqual(len(by_type["news"]), 2)
+            self.assertEqual(len(by_type["matchup"]), 1)
+            self.assertEqual(len(by_type["transaction"]), 2)
+            self.assertTrue(any(row["scope"] == "selected_roster" for row in by_type["news"]))
+            self.assertTrue(any(row["scope"] == "league_context" for row in by_type["news"]))
+            self.assertEqual({row["league_id"] for row in by_type["news"]}, {"league-1"})
+            self.assertTrue(all("league-1" not in row["text"] or row["entity_type"] != "matchup" for row in evidence))
 
     def test_two_league_vertical_keeps_profiles_writers_and_reader_bundles_isolated(self) -> None:
         """The core personalized-reader path must work for two leagues in one account.
@@ -814,7 +957,7 @@ class VModelTests(unittest.TestCase):
 
                 prompts: dict[str, list[str]] = {"alpha": [], "beta": []}
 
-                def fake_article(system_prompt, evidence, api_key, model):
+                def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
                     key = "alpha" if "Team: Alpha Custom" in system_prompt else "beta"
                     prompts[key].append(system_prompt)
                     marker = "Alpha" if key == "alpha" else "Beta"
@@ -860,7 +1003,8 @@ class VModelTests(unittest.TestCase):
                     )
                     html = (paths.site_dir / "index.html").read_text(encoding="utf-8")
                     self.assertIn("manager-outcome-receipt", html)
-                    self.assertIn("Recorded Matchups", html)
+                    self.assertIn("league-standings", html)
+                    self.assertIn("Scored Matchups", html)
                     bundle = json.loads((paths.site_dir / "data" / "app_bundle.json").read_text(encoding="utf-8"))
                     self.assertEqual(bundle["leagueId"], league_id)
                     self.assertEqual(bundle["myTeamName"], details["team_name"])
@@ -896,16 +1040,16 @@ class VModelTests(unittest.TestCase):
     def _seed_article_inputs(self, analysis_dir: Path, processed_dir: Path) -> None:
         processed_dir.mkdir(parents=True, exist_ok=True)
         (processed_dir / "player_dossiers.csv").write_text(
-            "player_id,player_name,position,roster_id,market_value,projected_ppg,signal_label,news_impact\n"
-            "1,Jayden Daniels,QB,2,90,21.1,productive_hold,\n"
-            "2,Tank Dell,WR,2,40,10.6,sell_candidate,\n",
+            "player_id,player_name,position,roster_id,market_value,projected_ppg,signal_label,news_impact,source_trace\n"
+            "1,Jayden Daniels,QB,2,90,21.1,productive_hold,,nflverse:test\n"
+            "2,Tank Dell,WR,2,40,10.6,sell_candidate,,nflverse:test\n",
             encoding="utf-8",
         )
         for filename, items in (
-            ("target_theses.json", [{"player_id": "1", "player_name": "Jayden Daniels", "analysis_text": "Buy-low angle."}]),
-            ("sell_theses.json", [{"player_id": "2", "player_name": "Tank Dell", "analysis_text": "Sell-high angle."}]),
-            ("trade_theses.json", [{"target_manager_roster_id": 3, "target_manager_name": "The Clapper", "analysis_text": "Trade angle."}]),
-            ("manager_dossiers.json", [{"roster_id": 3, "team_name": "The Clapper", "dynasty_cycle": "rebuild", "analysis_text": "Rebuild read."}]),
+            ("target_theses.json", [{"player_id": "1", "player_name": "Jayden Daniels", "analysis_text": "Buy-low angle.", "source_trace": "analysis:target_theses"}]),
+            ("sell_theses.json", [{"player_id": "2", "player_name": "Tank Dell", "analysis_text": "Sell-high angle.", "source_trace": "analysis:sell_theses"}]),
+            ("trade_theses.json", [{"target_manager_roster_id": 3, "target_manager_name": "The Clapper", "analysis_text": "Trade angle.", "source_trace": "analysis:trade_theses"}]),
+            ("manager_dossiers.json", [{"roster_id": 3, "team_name": "The Clapper", "dynasty_cycle": "rebuild", "analysis_text": "Rebuild read.", "source_trace": "analysis:manager_dossiers"}]),
         ):
             (analysis_dir / filename).write_text(json.dumps({"items": items}), encoding="utf-8")
 
@@ -958,7 +1102,42 @@ class VModelTests(unittest.TestCase):
             self.assertEqual(result["articles"]["daily_brief"]["state"], "complete")
             # The failed article was never written; a successful one carries the LLM marker.
             self.assertFalse((analysis / "team_report.md").exists())
-            self.assertIn("model_mode: automatic_llm", (analysis / "market_watch.md").read_text(encoding="utf-8"))
+            market_watch_text = (analysis / "market_watch.md").read_text(encoding="utf-8")
+            self.assertIn("model_mode: automatic_llm", market_watch_text)
+            self.assertIn("source_receipt_json:", market_watch_text)
+
+    def test_targeted_writer_retry_skips_unselected_desks(self) -> None:
+        from src import articles
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            calls = []
+
+            def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
+                calls.append(system_prompt)
+                return {
+                    "narrative_markdown": "## Buy-Low Targets\nInvestigate the evidence.\n\n## Sell-High Windows\nKeep the price discipline.",
+                    "cited_evidence_ids": [evidence[0]["evidence_id"]],
+                }
+
+            with patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                articles, "PROCESSED_DIR", processed
+            ), patch.object(operator, "generate_article_via_llm", side_effect=fake_article):
+                result = operator.generate_articles_workflow(article_keys={"market_watch"})
+
+            self.assertEqual(result["state"], "complete")
+            self.assertEqual(set(result["articles"]), {"market_watch"})
+            self.assertEqual(len(calls), 1)
+            self.assertTrue((analysis / "market_watch.md").is_file())
+            self.assertFalse((analysis / "team_report.md").exists())
 
     def test_generate_articles_reuses_current_receipts_without_another_llm_call(self) -> None:
         from app import db
@@ -980,7 +1159,7 @@ class VModelTests(unittest.TestCase):
             )
             calls = []
 
-            def fake_article(system_prompt, evidence, api_key, model):
+            def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
                 calls.append(system_prompt)
                 return {"narrative_markdown": narrative, "cited_evidence_ids": [evidence[0]["evidence_id"]]}
 
@@ -1007,7 +1186,200 @@ class VModelTests(unittest.TestCase):
             self.assertEqual(first["state"], "complete")
             self.assertEqual(second["state"], "complete")
             self.assertEqual(first_call_count, len(calls))
-            self.assertTrue(all(item["state"] == "unchanged" for item in second["articles"].values()))
+            self.assertTrue(all(item["state"] in {"unchanged", "skipped"} for item in second["articles"].values()))
+
+    def test_writer_plan_matches_reuse_after_a_multi_desk_run(self) -> None:
+        """Design source: AGENTS.md; the no-cost plan must use the same reuse key as the real run."""
+        from app import db
+        from src import articles
+        from src.context import FantasyContext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            (processed / "player_horizon_market_scores.csv").write_text(
+                "season,league_id,player_id,player_name,position,value_lane,next_game_market_score,source_trace\n"
+                "2026,writer-plan-league,horizon-1,Horizon Player,WR,balanced_window,50,test:horizon\n",
+                encoding="utf-8",
+            )
+            database_path = root / "app.db"
+            narrative = (
+                "## Cornerstones\nCore report.\n\n## Shop Candidates\nNames.\n\n"
+                "## Buy-Low Targets\nBuys.\n\n## Sell-High Windows\nSells.\n\n"
+                "## Best Fits\nFits.\n\n## Steer Clear\nFades.\n\n"
+                "## Contenders\nContenders.\n\n## Rebuilders\nRebuilders.\n\n"
+                "## Target Theses\nTargets.\n\n## Sell Windows\nWindows.\n\n"
+                "## Manager Angles\nAngles.\n\n## This Week\nThis week.\n\n"
+                "## Rest of Season\nSeason.\n\n## Dynasty Window\nDynasty.\n\n"
+                "## Market vs Clock\nCompare the clocks.\n\n## Contender vs Rebuilder\nFit."
+            )
+
+            def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
+                return {
+                    "headline": "Desk read",
+                    "dek": "A bounded read.",
+                    "lede": "The packet supports a bounded read.",
+                    "thesis": "The evidence supports a measured decision.",
+                    "what_changed": "The current packet changed.",
+                    "counter_evidence": "The sample remains limited.",
+                    "action": "Compare the evidence before acting.",
+                    "risk": "The estimate may be wrong.",
+                    "confidence": "medium",
+                    "visual_brief": "Use a simple evidence rail.",
+                    "narrative_markdown": narrative,
+                    "cited_evidence_ids": [evidence[0]["evidence_id"]],
+                }
+
+            with patch.object(db, "DB_PATH", database_path), patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"},
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                articles, "PROCESSED_DIR", processed
+            ), patch.object(operator, "generate_article_via_llm", side_effect=fake_article):
+                db.init_db()
+                user_id = int(db.get_or_create_user("writer-plan-parity")["id"])
+                context = FantasyContext(
+                    user_id=str(user_id),
+                    league_id="writer-plan-league",
+                    season="2026",
+                    roster_id=2,
+                    team_name="Plan Parity Team",
+                )
+                generated = operator.generate_articles_workflow(context=context)
+                plan = operator.plan_articles_workflow(context=context)
+                dossier_path = processed / "player_dossiers.csv"
+                dossier_path.write_text(
+                    dossier_path.read_text(encoding="utf-8").replace("Jayden Daniels", "Jayden Daniels Updated"),
+                    encoding="utf-8",
+                )
+                changed_plan = operator.plan_articles_workflow(context=context)
+
+            self.assertEqual(generated["state"], "complete")
+            self.assertEqual(plan["state"], "ready")
+            self.assertEqual(plan["counts"]["generate"], 0)
+            self.assertEqual(plan["counts"]["reuse"], len(articles.ARTICLES))
+            self.assertTrue(all(item["decision"] == "reuse" for item in plan["articles"].values()))
+            self.assertEqual(changed_plan["articles"]["daily_brief"]["decision"], "generate")
+            self.assertEqual(changed_plan["articles"]["daily_brief"]["state"], "ready")
+
+    def test_explicit_llm_editor_reviews_each_writer_draft_and_persists_receipt(self) -> None:
+        from src import articles
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            narrative = (
+                "## Cornerstones\nCore report.\n\n## Shop Candidates\nNames.\n"
+                "\n## Buy-Low Targets\nBuys.\n\n## Sell-High Windows\nSells.\n"
+                "\n## Best Fits\nFits.\n\n## Steer Clear\nFades.\n"
+                "\n## Contenders\nContenders.\n\n## Rebuilders\nRebuilders.\n"
+                "\n## Target Theses\nTargets.\n\n## Sell Windows\nWindows.\n"
+                "\n## Manager Angles\nAngles.\n\n## This Week\nThis week.\n"
+                "\n## Rest of Season\nSeason.\n\n## Dynasty Window\nDynasty.\n"
+                "\n## Market vs Clock\nCompare the clocks.\n\n## Contender vs Rebuilder\nFit."
+            )
+            writer_calls: list[str] = []
+            editor_calls: list[str] = []
+
+            def fake_article(system_prompt, evidence, api_key, model, editorial_context=None):
+                writer_calls.append(model)
+                return {
+                    "headline": "Desk read",
+                    "dek": "A bounded read.",
+                    "lede": "The packet supports a bounded read.",
+                    "thesis": "The evidence supports a measured decision.",
+                    "what_changed": "The current packet changed.",
+                    "counter_evidence": "The sample remains limited.",
+                    "action": "Compare the evidence before acting.",
+                    "risk": "The estimate may be wrong.",
+                    "confidence": "medium",
+                    "visual_brief": "Use a simple evidence rail.",
+                    "narrative_markdown": narrative,
+                    "cited_evidence_ids": [evidence[0]["evidence_id"]],
+                }
+
+            def fake_editor(system_prompt, evidence, draft, api_key, model):
+                editor_calls.append(model)
+                return {
+                    **draft,
+                    "decision": "modify",
+                    "editor_notes": "Added a bounded evidence caveat.",
+                    "changes": ["Clarified that the read is not a universal price."],
+                    "narrative_markdown": narrative.replace("Core report.", "Core report with a bounded caveat."),
+                    "cited_evidence_ids": [evidence[0]["evidence_id"]],
+                }
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FRONT_OFFICE_LLM_PROVIDER": "anthropic",
+                    "ANTHROPIC_API_KEY": "test-key",
+                    "FRONT_OFFICE_EDITOR_MODE": "llm",
+                },
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                articles, "PROCESSED_DIR", processed
+            ), patch.object(operator, "generate_article_via_llm", side_effect=fake_article), patch.object(
+                operator, "review_article_via_llm", side_effect=fake_editor
+            ):
+                result = operator.generate_articles_workflow()
+
+            self.assertEqual(result["state"], "complete", result)
+            self.assertEqual(result["editor_mode"], "llm")
+            self.assertEqual(len(writer_calls), len(editor_calls))
+            self.assertGreaterEqual(len(editor_calls), 5)
+            report = (analysis / "team_report.md").read_text(encoding="utf-8")
+            self.assertIn("editorial_review_json:", report)
+            front_matter = report.split("editorial_review_json: ", 1)[1].split("\n---", 1)[0]
+            review = json.loads(front_matter)
+            self.assertEqual(review["mode"], "llm")
+            self.assertEqual(review["status"], "approved")
+            self.assertEqual(review["decision"], "modify")
+
+    def test_article_generation_plan_is_read_only_and_reports_missing_writer_key(self) -> None:
+        """Encodes the cost gate: plan the six desks without invoking the provider."""
+        from app import db
+        from src import articles
+        from src.context import FantasyContext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            analysis = root / "analysis"
+            processed = root / "processed"
+            analysis.mkdir(parents=True)
+            self._seed_article_inputs(analysis, processed)
+            database_path = root / "app.db"
+
+            with patch.object(db, "DB_PATH", database_path), patch.dict(
+                os.environ,
+                {"FRONT_OFFICE_LLM_PROVIDER": "openai", "OPENAI_API_KEY": ""},
+                clear=False,
+            ), patch.object(operator, "ANALYSIS_DIR", analysis), patch.object(operator, "PROCESSED_DIR", processed), patch.object(
+                operator, "generate_article_via_llm"
+            ) as generate:
+                db.init_db()
+                user_id = int(db.get_or_create_user("generation-plan")['id'])
+                context = FantasyContext(
+                    user_id=str(user_id),
+                    league_id="generation-plan-league",
+                    season="2026",
+                    roster_id=2,
+                    team_name="Plan Team",
+                )
+                plan = operator.plan_articles_workflow(context=context)
+
+            generate.assert_not_called()
+            self.assertEqual(set(plan["articles"]), {article.key for article in articles.ARTICLES})
+            self.assertGreater(plan["counts"]["blocked"], 0)
+            self.assertIn("No provider request was made", plan["message"])
+            self.assertNotIn("OPENAI_API_KEY=", json.dumps(plan))
 
     def test_chat_context_markdown_includes_manager_and_player_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1055,6 +1427,7 @@ class VModelTests(unittest.TestCase):
             "news_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
             "player_projection_season": ["projection_method", "projection_confidence", "source_trace"],
             "player_projection_weekly": ["projection_method", "projection_confidence", "source_trace"],
+            "available_player_horizon_scores": ["availability_status", "identity_status", "market_value", "fit_coverage", "evidence", "risk", "confidence", "source_trace"],
             "projection_source_freshness": ["source", "dataset", "status", "source_url", "cache_path"],
             "projection_source_components": ["source", "source_confidence", "source_trace", "checked_at"],
             "source_accuracy_scores": ["sample_size", "accuracy_confidence", "source_trace"],
@@ -1063,6 +1436,7 @@ class VModelTests(unittest.TestCase):
             "breakout_candidates": ["evidence", "risk", "confidence", "source_trace"],
             "sell_candidates": ["evidence", "risk", "confidence", "source_trace"],
             "projection_market_gaps": ["evidence", "risk", "confidence", "source_trace"],
+            "news_market_edges": ["evidence", "risk", "confidence", "source_trace"],
             "team_fit_scores": ["evidence", "risk", "confidence", "source_trace"],
             "action_recommendations": ["consumer_label", "why", "evidence", "risk", "confidence", "source_trace"],
             "manager_valuation_profiles": ["evidence", "confidence", "label"],
@@ -1141,6 +1515,24 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(rows[0]["player_id"], "4881")
         self.assertEqual(rows[0]["full_name"], "Lamar Jackson")
         self.assertEqual(rows[0]["fantasy_positions"], "QB")
+
+    def test_player_availability_is_preserved_and_baseline_projection_is_explicit(self) -> None:
+        rows = players_table(
+            {
+                "3321": {
+                    "full_name": "Tyreek Hill",
+                    "position": "WR",
+                    "team": "MIA",
+                    "injury_status": "Questionable",
+                    "injury_body_part": "Knee - ACL",
+                }
+            }
+        )
+
+        self.assertEqual(rows[0]["injury_status"], "Questionable")
+        self.assertEqual(rows[0]["injury_body_part"], "Knee - ACL")
+        self.assertIn("baseline projection", _availability_note("Questionable", "Knee - ACL"))
+        self.assertIn("No current Sleeper injury flag", _availability_note("", ""))
 
     def test_pick_ownership_flags_melkor_2027_first(self) -> None:
         roster_map = {
@@ -1538,6 +1930,58 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(bundle["myTeamName"], "Lulu’s Potatoe’s")
         self.assertEqual(bundle["identityReceipt"]["roster_id"], 2)
 
+    def test_browser_available_market_route_has_identity_and_boundary_contract(self) -> None:
+        """Design source: AGENTS.md identity boundary and available-market research contract.
+
+        The front page and horizon board link by Sleeper player ID. This entry-path
+        contract keeps that link connected to the available evidence row even when
+        no roster dossier exists, while requiring the page to disclose that roster
+        absence is not a waiver-eligibility receipt.
+        """
+        from src.browser_site import build_browser_site
+
+        with tempfile.TemporaryDirectory() as tmp:
+            processed = Path(tmp) / "processed"
+            site = Path(tmp) / "site"
+            processed.mkdir()
+            self._write_minimal_processed_tables(processed)
+            pd.DataFrame(
+                [{"player_id": "available-1", "full_name": "Available Clock WR", "position": "WR", "team": "FA"}]
+            ).to_csv(processed / "players.csv", mode="a", header=False, index=False)
+            pd.DataFrame(
+                [{
+                    "league_id": "league",
+                    "season": "2026",
+                    "player_id": "available-1",
+                    "player_name": "Available Clock WR",
+                    "position": "WR",
+                    "identity_status": "sleeper_id",
+                    "availability_status": "not_rostered_in_selected_league",
+                    "market_value": "24",
+                    "market_percentile": "72",
+                    "next_game_market_score": "72",
+                    "rest_of_season_market_score": "84",
+                    "dynasty_market_score": "61",
+                    "career_projection_score": "70",
+                    "fit_coverage": "4/4",
+                    "availability_note": "No current Sleeper injury flag",
+                    "source_trace": "available_player_horizon_scores",
+                }]
+            ).to_csv(processed / "available_player_horizon_scores.csv", index=False)
+
+            output = build_browser_site(site, processed, league_id="league")
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            html = output.read_text(encoding="utf-8")
+
+        self.assertEqual(bundle["tables"]["available_player_horizon_scores"][0]["player_id"], "available-1")
+        self.assertIn("const availableHorizon = scopedCurrentRows(tables.available_player_horizon_scores || [])", html)
+        self.assertIn("const isAvailableMarket = Boolean(availableHorizon.player_id)", html)
+        self.assertIn("available-player-boundary", html)
+        self.assertIn("waiver or free-agent eligibility is not verified here", html)
+        self.assertIn("available-market cross-position anchor", html)
+        self.assertIn('data-testid="horizon-score-meter"', html)
+        self.assertIn("horizonScoreMeter", html)
+
     def test_browser_data_room_exposes_player_history_identity_receipt(self) -> None:
         """The Data Room must expose semantic history coverage, not freshness alone."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -1653,6 +2097,9 @@ class VModelTests(unittest.TestCase):
 
         self.assertIn("The Front Office", html)
         self.assertIn("front-office-manifest", html)
+        self.assertIn("Standings &amp; outcome coverage", html)
+        self.assertIn("issue-publication-nav", html)
+        self.assertIn("publication-${escapeHtml", html)
         self.assertNotIn('id="app-data"', html)
         self.assertIn("Data Room", html)
         self.assertIn("Team Overview", html)
@@ -1676,6 +2123,50 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("Value tags are planned as a strategy overlay", html)
         self.assertIn("Projection Board", html)
         self.assertIn("Signal Board", html)
+        self.assertIn("Four-Window Market Board", html)
+        self.assertIn("horizon_market_movements", html)
+        self.assertIn("Market clock changes", html)
+        self.assertIn("changed market-clock rows", html)
+        self.assertIn("Horizon movement rows", html)
+        self.assertIn('id="horizon-market-board"', html)
+        self.assertIn('data-horizon-scope="team"', html)
+        self.assertIn('data-horizon-scope="league"', html)
+        self.assertIn('id="horizon-lane-filter"', html)
+        self.assertIn('id="horizon-sort-filter"', html)
+        self.assertIn('id="horizon-view-note"', html)
+        self.assertIn('data-horizon-view="this_week"', html)
+        self.assertIn('data-horizon-view="rest_of_season"', html)
+        self.assertIn('data-horizon-view="dynasty"', html)
+        self.assertIn('data-horizon-view="fit"', html)
+        self.assertIn('data-horizon-view="repricing"', html)
+        self.assertIn("horizonTeamLens", html)
+        self.assertIn("horizonTeamFit", html)
+        self.assertIn("function filteredHorizonRows", html)
+        self.assertIn("function horizonMarketCard", html)
+        self.assertIn("function horizonMarketViewMarkup", html)
+        self.assertIn("function horizonViewDefinition", html)
+        self.assertIn("function renderHorizonMarketBoard", html)
+        self.assertIn("renderHorizonMarketBoard();", html)
+        self.assertIn("horizon-market-clock-grid", html)
+        self.assertIn("horizonScoreMeter", html)
+        self.assertIn("horizonCardMeter", html)
+        self.assertIn("Next game", html)
+        self.assertIn("Rest of season", html)
+        self.assertIn("Career window", html)
+        self.assertIn("position-relative percentile / 100", html)
+        self.assertIn("not yet outcome-calibrated forecasts", html)
+        self.assertIn("horizon-market-delta-grid", html)
+        self.assertIn("horizon-market-reprice-grid", html)
+        self.assertIn("horizonMarketDisagreement", html)
+        self.assertIn("market_disagreement", html)
+        self.assertIn("Career minus dynasty", html)
+        self.assertIn("Horizon evidence receipt", html)
+        self.assertIn("Projection percentile (position)", html)
+        self.assertIn("Market percentile (position)", html)
+        self.assertIn("Market price anchor", html)
+        self.assertIn("This-week percentile", html)
+        self.assertNotIn("Projection rank", html)
+        self.assertNotIn("Market rank", html)
         self.assertIn("Analyst Brief", html)
         self.assertIn("Target Theses", html)
         self.assertIn("Sell Theses", html)
@@ -1690,6 +2181,11 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Recommendation learning", html)
         self.assertIn("offer_candidates", html)
         self.assertIn("Potential assets from our roster to discuss (not a generated offer)", html)
+        self.assertIn("Who Might Value Our Assets?", html)
+        self.assertIn("counterparty-asset-interest", html)
+        self.assertIn("conversation_fit_score", html)
+        self.assertIn("manager-counterparty-interest", html)
+        self.assertIn("assets_target_may_value", html)
         self.assertIn("Trade decision packet", html)
         self.assertIn("Do-not-chase conditions", html)
         self.assertIn("Alternative counterparties", html)
@@ -1702,6 +2198,13 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Active Seasons", html)
         self.assertIn("No fit card is shown because the current evidence does not support one", html)
         self.assertIn("Manager Dossiers", html)
+        self.assertIn("Manager trajectory", html)
+        self.assertIn("manager-trajectory-snapshot", html)
+        self.assertIn("manager-trajectory-dossier", html)
+        self.assertIn("Observed Transaction Lanes", html)
+        self.assertIn("manager-transaction-preferences-table", html)
+        self.assertIn("manager-transaction-profile", html)
+        self.assertIn("current context for historically moved players", html)
         self.assertIn("Observed transaction timeline", html)
         self.assertIn("Event-level evidence", html)
         self.assertIn("Team construction", html)
@@ -1720,6 +2223,13 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Manager Behavior", html)
         self.assertIn("Market Gaps", html)
         self.assertIn("Counterparty Edges", html)
+        self.assertIn("target_team_lens", html)
+        self.assertIn("horizon_fit_edge", html)
+        self.assertIn("horizon_market_disagreement_window", html)
+        self.assertIn("Market vs clock", html)
+        self.assertIn("clock-market", html)
+        self.assertIn("Timeline fit", html)
+        self.assertIn("timeline fit unavailable", html)
         self.assertIn("We May Value More Than Owner", html)
         self.assertIn("Owner May Overvalue", html)
         self.assertIn("Market Lens Lab", html)
@@ -1746,18 +2256,70 @@ class VModelTests(unittest.TestCase):
         self.assertIn('id="player-page"', html)
         self.assertIn('id="team-page"', html)
         self.assertIn("function renderPlayerPage", html)
+        self.assertIn("function playerHorizonMarkup", html)
+        self.assertIn("Availability source", html)
+        self.assertIn("historical availability unavailable", html)
+        self.assertIn("Market clocks &amp; career window", html)
+        self.assertIn("Four-window fit", html)
+        self.assertIn("Four-window weighting receipt", html)
+        self.assertIn("career window ${horizon.career_projection_score || 'n/a'}", html)
+        self.assertIn('data-testid="player-horizons"', html)
+        self.assertIn("opponent-neutral until a schedule/bye source is available", html)
+        self.assertIn("rest-of-season baseline is not recovery-adjusted", html)
+        self.assertIn("function horizonRestSeasonPpgLabel", html)
+        self.assertIn("function horizonHasCurrentAvailabilityFlag", html)
+        self.assertIn("['none', 'healthy', 'active', 'available', 'no current injury', 'no current sleeper injury flag']", html)
+        self.assertIn("['questionable', 'doubtful', 'out', 'injured', 'injury', 'ir', 'pup'", html)
+        self.assertIn("conditional baseline PPG if active", html)
+        self.assertIn("Season baseline PPG", html)
+        self.assertIn("position-relative percentiles from 0–100, not dollar market values", html)
+        self.assertIn("horizon_score_basis", html)
+        self.assertIn("next_game_matchup_adjustment_status", html)
+        self.assertIn("factor descriptive only", html)
+        self.assertIn("cross-position price anchor", html)
+        self.assertIn("market value unavailable", html)
+        self.assertIn("scheduled game count unavailable", html)
+        self.assertIn("function horizonRestSeasonCountLabel", html)
+        self.assertIn("season projection unavailable", html)
+        self.assertIn("career_projection_score", html)
+        self.assertIn("Career window", html)
+        self.assertIn("fit coverage", html)
+        self.assertIn("ROS minus next", html)
+        self.assertIn("dynasty minus ROS", html)
+        self.assertIn("career minus dynasty", html)
+        self.assertIn("internal age-curve scenario", html)
+        self.assertIn("not a lifetime forecast", html)
+        self.assertIn("career_history_status", html)
+        self.assertIn("career_history_source_player_id", html)
+        self.assertIn("source player id", html)
+        self.assertIn("history anchor", html)
+        self.assertIn("horizon_model_version", html)
+        self.assertIn("fit_basis", html)
+        self.assertIn("player_horizon_market_scores", bundle["tables"])
         self.assertIn("function renderTeamPage", html)
         self.assertIn("const inventoryAsset", html)
         self.assertIn("Market source", html)
         self.assertIn("asset ledger value unavailable", html)
         self.assertIn("Player dossier", html)
         self.assertIn("Evidence chain", html)
+        self.assertIn("function scopedCurrentLeagueNews", html)
+        self.assertIn("function scopedCurrentRows", html)
+        self.assertIn("const horizonRows = scopedCurrentRows(tables.player_horizon_market_scores || [])", html)
+        self.assertIn("sameIdentifier(row.league_id, leagueId)", html)
+        self.assertIn("scopedCurrentLeagueNews().filter(row => String(row.player_id", html)
+        self.assertIn("scopedCurrentRows(tables.manager_event_log || []).filter(row => Number(row.roster_id) === state.teamId)", html)
+        self.assertIn(".side-rail .section-nav { display: flex;", html)
+        self.assertIn("function publicationListItemMarkup", html)
+        self.assertIn("news-market-edge-table", html)
+        self.assertIn("function filteredNewsMarketEdges", html)
         self.assertIn("Show full source traces", html)
         self.assertIn("Opponent roster", html)
         self.assertIn("It does not imply a trade, waiver claim, or future outcome", html)
         self.assertIn("entity-search", html)
         self.assertIn("Manager Cycle Profiles", html)
         self.assertIn("Player Dossiers", html)
+        self.assertIn("Coverage by clock", html)
+        self.assertIn("horizon_coverage_detail", html)
         self.assertIn("League Impact", html)
         self.assertIn("Watchlist / Waiver", html)
         self.assertIn("Unmatched Feed Items", html)
@@ -1802,6 +2364,12 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("Packet path", html)
         self.assertNotIn("Validated path", html)
         self.assertIn("Writer receipt detail", html)
+        self.assertIn("Preview Writer Plan (no call)", html)
+        self.assertIn("api/operator/generation-plan?league_id=", html)
+        self.assertIn("function previewWriterPlan", html)
+        self.assertIn("function writerPlanPanel", html)
+        self.assertIn('data-testid="writer-generation-plan"', html)
+        self.assertIn("No provider request was made", html)
         self.assertIn("No per-article writer receipts were returned", html)
         self.assertIn("Only articles marked complete or unchanged", html)
         self.assertIn("Legacy operator record; per-article writer receipts were not retained", html)
@@ -1904,6 +2472,26 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(room["draft_context"]["rounds"], 4)
         self.assertEqual(room["draft_context"]["teams"], 12)
         self.assertIn("preparation board", room["draft_context"]["message"])
+
+    def test_draft_room_does_not_call_another_manager_player_available(self) -> None:
+        """Design source: docs/data_contract.md; availability is a league fact, not a name-label comparison."""
+        room = build_draft_room(
+            {
+                "roster_players": [
+                    {"season": "2026", "roster_id": 2, "player_id": "mine", "player_name": "My Player"},
+                    {"season": "2026", "roster_id": 8, "player_id": "cook-id", "player_name": "James Cook"},
+                ],
+                "players": [{"player_id": "cook-id", "full_name": "James Cook", "position": "RB"}],
+                "team_needs_matrix": [{"roster_id": 2, "team_shape": "rebuild_asset_bank", "need_rb": "high"}],
+                "player_market_values": [{"player_id": "", "player_name": "James Cook III", "position": "RB", "market_value": 50, "source_trace": "market"}],
+            },
+            {"current_season": "2026"},
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="My Team",
+        )
+
+        self.assertFalse(any(row["player_name"] == "James Cook III" for row in room["draft_board"]))
 
     def test_draft_room_prefers_confirmed_active_event_over_completed_history(self) -> None:
         room = build_draft_room(
@@ -2136,6 +2724,180 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(len(tables["player_signal_scores"]), 1)
         self.assertIn("evidence", tables["player_signal_scores"].columns)
 
+    def test_news_market_edges_are_scoped_and_explain_the_dislocation(self) -> None:
+        scores = pd.DataFrame([
+            {
+                "player_id": "up",
+                "player_name": "News Lag WR",
+                "position": "WR",
+                "roster_id": 2,
+                "team_name": "My Team",
+                "market_value": 18,
+                "projected_ppg": 14.2,
+                "market_gap_score": 44,
+                "sell_score": 0,
+                "confidence": "high",
+                "source_trace": "signals",
+            },
+            {
+                "player_id": "down",
+                "player_name": "Pressure RB",
+                "position": "RB",
+                "roster_id": 2,
+                "team_name": "My Team",
+                "market_value": 78,
+                "projected_ppg": 8.1,
+                "market_gap_score": 0,
+                "sell_score": 52,
+                "confidence": "medium",
+                "source_trace": "signals",
+            },
+            {
+                "player_id": "quiet",
+                "player_name": "No News Player",
+                "position": "TE",
+                "roster_id": 2,
+                "team_name": "My Team",
+                "market_value": 30,
+                "projected_ppg": 10,
+                "market_gap_score": 50,
+                "sell_score": 0,
+                "confidence": "high",
+                "source_trace": "signals",
+            },
+        ])
+        news = pd.DataFrame([
+            {"player_id": "up", "player_name": "News Lag WR", "league_id": "league-a", "season": "2026", "impact_type": "market_heat", "evidence": "add volume is rising", "confidence": "high", "source_trace": "sleeper"},
+            {"player_id": "up", "player_name": "News Lag WR", "league_id": "league-b", "season": "2026", "impact_type": "sell_pressure", "evidence": "other league drop signal", "confidence": "high", "source_trace": "wrong-league"},
+            {"player_id": "down", "player_name": "Pressure RB", "league_id": "league-a", "season": "2026", "impact_type": "injury_risk", "evidence": "limited practice", "confidence": "medium", "source_trace": "rotowire"},
+            {"player_id": "quiet", "player_name": "No News Player", "league_id": "league-b", "season": "2026", "impact_type": "market_heat", "evidence": "wrong league", "confidence": "high", "source_trace": "wrong-league"},
+        ])
+
+        edges = build_news_market_edges(
+            scores,
+            news,
+            {"context": {"league_id": "league-a", "season": "2026"}},
+        )
+
+        self.assertEqual(set(edges["player_id"]), {"up", "down"})
+        upside = edges.loc[edges["player_id"] == "up"].iloc[0]
+        pressure = edges.loc[edges["player_id"] == "down"].iloc[0]
+        self.assertEqual(upside["edge_type"], "news_lag_upside")
+        self.assertEqual(pressure["edge_type"], "news_lag_pressure")
+        self.assertEqual(upside["league_id"], "league-a")
+        self.assertNotIn("wrong-league", str(upside["evidence"]))
+        self.assertIn("market_gap=44", str(upside["evidence"]))
+        self.assertIn("sell_score=52", str(pressure["evidence"]))
+        self.assertIn("news_market_edges", str(upside["source_trace"]))
+
+    def test_signal_evidence_keeps_injury_separate_from_baseline_ppg(self) -> None:
+        projections = pd.DataFrame(
+            [{
+                "player_id": "3321",
+                "player_name": "Tyreek Hill",
+                "position": "WR",
+                "roster_id": 2,
+                "team_name": "Lulu's Potatoe's",
+                "projected_fantasy_points": 255,
+                "projected_ppg": 15.0,
+                "projection_confidence": "high",
+                "source_trace": "projection",
+            }]
+        )
+        roster = pd.DataFrame(
+            [{
+                "player_id": "3321",
+                "player_name": "Tyreek Hill",
+                "position": "WR",
+                "age": 32,
+                "roster_id": 2,
+                "team_name": "Lulu's Potatoe's",
+                "injury_status": "Questionable",
+                "injury_body_part": "Knee - ACL",
+            }]
+        )
+        tables = build_signal_tables(
+            projections,
+            roster,
+            pd.DataFrame([{"player_id": "3321", "player_name": "Tyreek Hill", "market_value": 40, "source_trace": "market"}]),
+            pd.DataFrame([{"roster_id": 2, "team_name": "Lulu's Potatoe's", "need_pass_catcher": "medium", "team_shape": "balanced_or_unclear"}]),
+            pd.DataFrame(columns=["roster_id"]),
+            pd.DataFrame(columns=["player_id"]),
+            {"current_team": {"roster_id": 2}},
+        )
+
+        signal = tables["player_signal_scores"].iloc[0]
+        self.assertIn("baseline_ppg=15.0", str(signal["evidence"]))
+        self.assertIn("Questionable (Knee - ACL)", str(signal["evidence"]))
+        self.assertIn("baseline projection does not adjust for availability", str(signal["risk"]))
+
+    def test_canonical_high_market_values_are_not_divided_again(self) -> None:
+        """Encodes docs/data_contract.md: ingestion owns source-scale normalization."""
+        self.assertEqual(_normalize_market(102.32), 102.32)
+        self.assertEqual(_normalize_market(75.92), 75.92)
+
+        projections = pd.DataFrame([
+            {"player_id": "qb", "player_name": "High Value QB", "position": "QB", "roster_id": 1, "team_name": "Rival", "projected_fantasy_points": 408.51, "projected_ppg": 24.03, "projection_confidence": "high", "source_trace": "projection"},
+        ])
+        roster = pd.DataFrame([{"player_id": "qb", "player_name": "High Value QB", "position": "QB", "age": 28, "roster_id": 1, "team_name": "Rival"}])
+        signals = build_signal_tables(
+            projections,
+            roster,
+            pd.DataFrame([{"player_id": "qb", "player_name": "High Value QB", "market_value": 102.32, "source_trace": "market"}]),
+            pd.DataFrame([{"roster_id": 1, "team_name": "Rival", "need_qb": "low", "team_shape": "contender_shape"}]),
+            pd.DataFrame(columns=["roster_id"]),
+            pd.DataFrame(columns=["player_id"]),
+            {"current_team": {"roster_id": 2}},
+        )
+        self.assertLess(float(signals["player_signal_scores"].iloc[0]["market_gap_score"]), 80.0)
+
+        aging = build_signal_tables(
+            projections.assign(player_id="old-qb", player_name="Aging Backup", projected_ppg=18.57, projected_fantasy_points=315.69),
+            roster.assign(player_id="old-qb", player_name="Aging Backup", age=41),
+            pd.DataFrame([{"player_id": "old-qb", "player_name": "Aging Backup", "market_value": 0.03, "source_trace": "market"}]),
+            pd.DataFrame([{"roster_id": 1, "team_name": "Rival", "need_qb": "low", "team_shape": "contender_shape"}]),
+            pd.DataFrame(columns=["roster_id"]),
+            pd.DataFrame(columns=["player_id"]),
+            {"current_team": {"roster_id": 2}},
+        )
+        aging_signal = aging["player_signal_scores"].iloc[0]
+        self.assertEqual(aging_signal["signal_label"], "role_uncertain_watch")
+        self.assertIn("age/role uncertainty", str(aging_signal["risk"]))
+        self.assertEqual(aging["projection_market_gaps"].iloc[0]["gap_label"], "role_uncertain_gap")
+
+    def test_market_gap_is_position_relative_not_raw_ppg_minus_market(self) -> None:
+        """Encodes docs/data_contract.md: disagreement must compare calibrated peer ranks."""
+        projections = pd.DataFrame([
+            {"player_id": "qb1", "player_name": "Low QB", "position": "QB", "roster_id": 1, "team_name": "A", "projected_fantasy_points": 170, "projected_ppg": 10, "projection_confidence": "high", "source_trace": "projection"},
+            {"player_id": "qb2", "player_name": "Mid QB", "position": "QB", "roster_id": 2, "team_name": "B", "projected_fantasy_points": 255, "projected_ppg": 15, "projection_confidence": "high", "source_trace": "projection"},
+            {"player_id": "qb3", "player_name": "Elite QB", "position": "QB", "roster_id": 3, "team_name": "C", "projected_fantasy_points": 340, "projected_ppg": 20, "projection_confidence": "high", "source_trace": "projection"},
+            {"player_id": "qb4", "player_name": "Top QB", "position": "QB", "roster_id": 4, "team_name": "D", "projected_fantasy_points": 408, "projected_ppg": 24, "projection_confidence": "high", "source_trace": "projection"},
+        ])
+        roster = projections[["player_id", "player_name", "position", "roster_id", "team_name"]].assign(age=25)
+        market = pd.DataFrame([
+            {"player_id": "qb1", "player_name": "Low QB", "position": "QB", "market_value": 10, "source_trace": "market"},
+            {"player_id": "qb2", "player_name": "Mid QB", "position": "QB", "market_value": 20, "source_trace": "market"},
+            {"player_id": "qb3", "player_name": "Elite QB", "position": "QB", "market_value": 75, "source_trace": "market"},
+            {"player_id": "qb4", "player_name": "Top QB", "position": "QB", "market_value": 102, "value_format": "consensus_sources=1", "source_trace": "market"},
+        ])
+        signals = build_signal_tables(
+            projections,
+            roster,
+            market,
+            pd.DataFrame([{"roster_id": 1, "team_name": "A", "need_qb": "medium", "need_rb": "low", "need_pass_catcher": "low", "team_shape": "balanced_or_unclear"}]),
+            pd.DataFrame(columns=["roster_id"]),
+            pd.DataFrame(columns=["player_id"]),
+            {"current_team": {"roster_id": 2}},
+        )
+        top = signals["player_signal_scores"].loc[lambda frame: frame["player_id"] == "qb4"].iloc[0]
+        elite = signals["player_signal_scores"].loc[lambda frame: frame["player_id"] == "qb3"].iloc[0]
+        self.assertLessEqual(float(top["market_gap_score"]), 5.0)
+        self.assertLessEqual(float(elite["market_gap_score"]), 5.0)
+        self.assertEqual(top["market_gap_status"], "position_percentile_aligned")
+        self.assertEqual(top["confidence"], "medium")
+        self.assertIn("single-source market evidence", str(top["risk"]))
+        self.assertIn("projection_percentile=", str(top["evidence"]))
+
     def test_proxy_market_flows_into_signals_and_player_dossiers_with_receipt(self) -> None:
         """Encodes docs/data_contract.md: proxy values are explicit fallback evidence, not zero market."""
         projections = pd.DataFrame([
@@ -2243,10 +3005,12 @@ class VModelTests(unittest.TestCase):
         )
         market = pd.DataFrame(
             [
-                {"player_id": "elite", "player_name": "Elite QB", "market_value": 8000, "source_trace": "market"},
-                {"player_id": "rb", "player_name": "Aging RB", "market_value": 1200, "source_trace": "market"},
-                {"player_id": "wr", "player_name": "Young WR", "market_value": 20, "source_trace": "market"},
-                {"player_id": "noise", "player_name": "Rookie Noise", "market_value": 60, "source_trace": "market"},
+                {"player_id": "elite", "player_name": "Elite QB", "position": "QB", "market_value": 8000, "source_trace": "market"},
+                {"player_id": "rb", "player_name": "Aging RB", "position": "RB", "market_value": 1200, "source_trace": "market"},
+                {"player_id": "wr", "player_name": "Young WR", "position": "WR", "market_value": 20, "source_trace": "market"},
+                {"player_id": "noise", "player_name": "Rookie Noise", "position": "WR", "market_value": 60, "source_trace": "market"},
+                {"player_id": "wr-peer-1", "player_name": "WR Peer One", "position": "WR", "market_value": 70, "source_trace": "market"},
+                {"player_id": "wr-peer-2", "player_name": "WR Peer Two", "position": "WR", "market_value": 80, "source_trace": "market"},
             ]
         )
         needs = pd.DataFrame([{"roster_id": 2, "team_name": "Melkor Lord of Light", "team_shape": "rebuild_asset_bank"}])
@@ -2363,6 +3127,46 @@ class VModelTests(unittest.TestCase):
         self.assertIn("market_value_sources", frames)
         self.assertIn("market_consensus_values", frames)
 
+    def test_user_market_files_are_explicit_components_in_consensus(self) -> None:
+        """Design source: docs/data_contract.md; user market inputs stay labeled and never get rescaled."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pd.DataFrame([{
+                "player_name": "Manual Receiver", "position": "WR", "market_value": 72,
+                "confidence": "high", "market_rank": 10,
+            }]).to_csv(root / "market-a.csv", index=False)
+            pd.DataFrame([{
+                "player_name": "Manual Receiver", "position": "WR", "market_value": 64,
+                "confidence": "medium", "market_rank": 14,
+            }]).to_csv(root / "market-b.csv", index=False)
+
+            with patch("src.external_sources.DATA_DIR", root):
+                frames = refresh_external_sources(
+                    {
+                        "current_season": "2026",
+                        "source_policy": "restricted_for_test",
+                        "external_sources": {
+                            "enabled": [],
+                            "market_value_files": [
+                                {"path": "market-a.csv", "source": "analyst_a"},
+                                {"path": "market-b.csv", "source": "analyst_b"},
+                            ],
+                        },
+                    }
+                )
+
+        sources = frames["market_value_sources"]
+        consensus = frames["market_consensus_values"]
+        self.assertEqual(len(sources), 2)
+        self.assertTrue((sources["source_access_type"] == "user_provided").all())
+        self.assertEqual(len(consensus), 1)
+        self.assertAlmostEqual(float(consensus.iloc[0]["consensus_value"]), 68.0)
+        self.assertEqual(int(consensus.iloc[0]["source_count"]), 2)
+        self.assertAlmostEqual(float(consensus.iloc[0]["disagreement_score"]), 8.0)
+        self.assertEqual(consensus.iloc[0]["best_source"], "user_provided_analyst_a")
+        self.assertIn("manual_file:market-a.csv", str(consensus.iloc[0]["source_trace"]))
+        self.assertIn("manual_file:market-b.csv", str(consensus.iloc[0]["source_trace"]))
+
     def test_market_consensus_preserves_component_traces_and_access_policy(self) -> None:
         sources = pd.DataFrame(
             [
@@ -2406,6 +3210,22 @@ class VModelTests(unittest.TestCase):
         self.assertIn("DynastyProcess", consensus.iloc[0]["source_trace"])
         self.assertIn("manual_file", consensus.iloc[0]["source_trace"])
 
+    def test_dynastyprocess_value_scale_normalizes_small_values_before_ranking(self) -> None:
+        raw = pd.DataFrame(
+            [
+                {"sleeper_id": "11566", "player": "Jayden Daniels", "pos": "QB", "value_2qb": 7592},
+                {"sleeper_id": "8180", "player": "Jalen Nailor", "pos": "WR", "value_2qb": 93},
+            ]
+        )
+
+        normalized = _normalize_dynastyprocess_market_sources(raw)
+        values = {row["player_name"]: float(row["normalized_value"]) for _, row in normalized.iterrows()}
+
+        self.assertEqual(values["Jayden Daniels"], 75.92)
+        self.assertEqual(values["Jalen Nailor"], 0.93)
+        self.assertLess(values["Jalen Nailor"], values["Jayden Daniels"])
+        self.assertIn("value_2qb/100", str(normalized.iloc[0]["source_trace"]))
+
     def test_news_tables_match_sleeper_trending_to_rostered_player(self) -> None:
         class FakeAPI:
             BASE_URL = "https://api.sleeper.app/v1"
@@ -2442,6 +3262,70 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(tables["league_news_impact"].iloc[0]["team_name"], "Melkor Lord of Light")
         self.assertEqual(tables["league_news_impact"].iloc[0]["impact_type"], "market_heat")
         self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "refreshed")
+
+    def test_news_impact_preserves_league_boundary_when_roster_ids_repeat(self) -> None:
+        """Encodes AGENTS.md's Clerk -> Sleeper -> league -> roster identity rule for news."""
+        class FakeAPI:
+            BASE_URL = "https://api.sleeper.app/v1"
+
+            def trending_players(self, season: str, trend_type: str, force: bool = False):
+                return [{"player_id": "1", "count": 25}] if trend_type == "add" else []
+
+        players = {"1": {"full_name": "Jayden Daniels", "position": "QB", "team": "WAS"}}
+        teams = pd.DataFrame([
+            {"season": "2026", "league_id": "league-a", "roster_id": 2, "team_name": "A Team"},
+            {"season": "2026", "league_id": "league-b", "roster_id": 2, "team_name": "B Team"},
+        ])
+        roster_players = pd.DataFrame([
+            {"season": "2026", "league_id": "league-a", "roster_id": 2, "team_name": "A Team", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"},
+            {"season": "2026", "league_id": "league-b", "roster_id": 2, "team_name": "B Team", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"},
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("src.news.RAW_EXTERNAL_DIR", Path(tmp)):
+                tables = build_news_tables(
+                    {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
+                    FakeAPI(),
+                    players,
+                    teams,
+                    roster_players,
+                )
+
+        impact = tables["league_news_impact"]
+        self.assertEqual(set(impact["league_id"]), {"league-a", "league-b"})
+        self.assertEqual(set(impact["team_name"]), {"A Team", "B Team"})
+        self.assertEqual(set(impact["roster_id"]), {2})
+
+    def test_current_news_does_not_attach_to_completed_season_ownership(self) -> None:
+        """Encodes the current-news versus historical-roster provenance boundary."""
+        class FakeAPI:
+            BASE_URL = "https://api.sleeper.app/v1"
+
+            def trending_players(self, season: str, trend_type: str, force: bool = False):
+                return [{"player_id": "1", "count": 25}] if trend_type == "add" else []
+
+        players = {"1": {"full_name": "Jayden Daniels", "position": "QB", "team": "WAS"}}
+        teams = pd.DataFrame([
+            {"season": "2025", "league_id": "league-a", "roster_id": 2, "team_name": "Old Team"},
+            {"season": "2026", "league_id": "league-a", "roster_id": 2, "team_name": "Current Team"},
+        ])
+        roster_players = pd.DataFrame([
+            {"season": "2025", "league_id": "league-a", "roster_id": 2, "team_name": "Old Team", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"},
+            {"season": "2026", "league_id": "league-a", "roster_id": 2, "team_name": "Current Team", "player_id": "1", "player_name": "Jayden Daniels", "position": "QB"},
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("src.news.RAW_EXTERNAL_DIR", Path(tmp)):
+                tables = build_news_tables(
+                    {"current_season": "2026", "news_sources": {"enabled": ["sleeper_trending"]}},
+                    FakeAPI(),
+                    players,
+                    teams,
+                    roster_players,
+                )
+
+        impact = tables["league_news_impact"]
+        self.assertEqual(len(impact), 1)
+        self.assertEqual(str(impact.iloc[0]["season"]), "2026")
+        self.assertEqual(impact.iloc[0]["team_name"], "Current Team")
 
     def test_news_tables_deduplicate_repeated_source_events(self) -> None:
         from src import news
@@ -2510,6 +3394,25 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(tables["news_source_freshness"].iloc[0]["status"], "cached")
         observed_at = datetime.fromisoformat(str(tables["news_events"].iloc[0]["published_at"]))
         self.assertAlmostEqual(observed_at.timestamp(), cached_at, delta=1)
+
+    def test_manager_event_log_preserves_league_and_owner_identity(self) -> None:
+        teams = pd.DataFrame(
+            [
+                {"season": "2026", "league_id": "league-a", "roster_id": 2, "owner_id": "joe", "team_name": "Lulu's Potatoes"},
+                {"season": "2026", "league_id": "league-b", "roster_id": 2, "owner_id": "kyle", "team_name": "Moose Caboose"},
+            ]
+        )
+        trades = pd.DataFrame(
+            [
+                {"season": "2026", "league_id": "league-a", "week": 3, "transaction_id": "trade-a", "team_a_roster_id": 2, "team_a_name": "Lulu's Potatoes", "team_b_roster_id": 4, "team_b_name": "A Team"},
+                {"season": "2026", "league_id": "league-b", "week": 3, "transaction_id": "trade-b", "team_a_roster_id": 2, "team_a_name": "Moose Caboose", "team_b_roster_id": 4, "team_b_name": "B Team"},
+            ]
+        )
+        events = build_manager_event_log(teams, trades, pd.DataFrame())
+        owned = events[events["roster_id"] == 2].sort_values("league_id")
+        self.assertEqual(list(owned["league_id"]), ["league-a", "league-b"])
+        self.assertEqual(list(owned["owner_id"]), ["joe", "kyle"])
+        self.assertEqual(list(owned["team_name"]), ["Lulu's Potatoes", "Moose Caboose"])
 
     def test_economic_tables_create_market_gaps_and_behavior_signals(self) -> None:
         teams = pd.DataFrame(
@@ -2944,7 +3847,7 @@ class VModelTests(unittest.TestCase):
         pd.DataFrame(
             [{"owner_id": "u2", "roster_id": 2, "team_name": "Melkor Lord of Light", "asset_type": "pick", "position_group": "PICK", "preference_score": 20, "evidence_count": 1, "recency_weighted_score": 20, "confidence": "low", "label": "low-signal manager", "evidence": "test"}]
         ).to_csv(processed / "manager_valuation_profiles.csv", index=False)
-        pd.DataFrame(columns=["season", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"]).to_csv(
+        pd.DataFrame(columns=["season", "league_id", "owner_id", "event_type", "week", "created_datetime", "transaction_id", "roster_id", "team_name", "counterparty", "players_in", "picks_in", "faab_in", "players_out", "picks_out", "faab_out", "evidence"]).to_csv(
             processed / "manager_event_log.csv", index=False
         )
         pd.DataFrame(
@@ -3177,6 +4080,28 @@ class VModelTests(unittest.TestCase):
                     {"roster_id": 4, "position_group": "RB", "preference_score": 0.20, "evidence_count": 2, "confidence": "low", "label": "low RB lane"},
                 ]
             ),
+            "counterparty_asset_interest": pd.DataFrame(
+                [{
+                    "target_roster_id": 4,
+                    "asset_id": "wr-1",
+                    "asset_name": "My Wideout",
+                    "position": "WR",
+                    "market_value": 60,
+                    "conversation_fit_score": 78,
+                    "conversation_fit_label": "strong_conversation_fit",
+                    "transaction_lane_read": "observed acquisition lane",
+                    "target_need": "high",
+                    "target_need_fit_score": 82,
+                    "target_horizon_fit_score": 75,
+                    "active_horizon_fit_score": 60,
+                    "horizon_fit_edge": 15,
+                    "horizon_fit_read": "target_team_timeline_premium",
+                    "confidence": "high",
+                    "evidence": "interest evidence",
+                    "risk": "not intent",
+                    "source_trace": "counterparty_asset_interest",
+                }]
+            ),
         }
 
         theses = build_trade_theses(dataframes, 2, "Lulu's Potatoes", "2026-01-01T00:00:00+00:00")
@@ -3184,6 +4109,9 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(thesis["offer_candidates"][0]["asset_name"], "My Wideout")
         self.assertEqual(thesis["offer_candidates"][0]["manager_preference_evidence_count"], 5)
         self.assertNotIn("Opponent Player", thesis["assets_we_can_offer"])
+        self.assertEqual(thesis["assets_target_may_value"][0]["asset_name"], "My Wideout")
+        self.assertEqual(thesis["counterparty_interest_status"], "supported")
+        self.assertIn("counterparty_asset_interest", thesis["source_trace"])
         self.assertTrue(thesis["historical_evidence"]["valuation_lanes"])
         self.assertIn("observed valuation lane", " ".join(thesis["do_not_chase_conditions"]))
 
@@ -3239,7 +4167,7 @@ class VModelTests(unittest.TestCase):
 
         ctx = articles.ArticleContext(analysis_dir=Path("."), active_roster_id=2)
         first = [
-            {"evidence_id": "player:1:1", "entity_type": "player", "entity_id": "1", "name": "Shared Star", "text": "t"},
+            {"evidence_id": "player:1:1", "entity_type": "player", "entity_id": "1", "name": "Shared Star", "text": "t", "source_trace": "source:shared"},
             {"evidence_id": "player:2:2", "entity_type": "player", "entity_id": "2", "name": "Only First", "text": "t"},
         ]
         second = [
@@ -3256,6 +4184,7 @@ class VModelTests(unittest.TestCase):
         covered = [row for row in kept_second if row.get("entity_type") == "context"]
         self.assertEqual(len(covered), 1)
         self.assertIn("Shared Star", covered[0]["text"])
+        self.assertEqual(covered[0]["source_ids"], ["source:shared"])
 
 
 if __name__ == "__main__":

@@ -471,10 +471,23 @@ def get_user_league(user_id: int, league_id: str) -> dict[str, Any] | None:
 def upsert_team_profile(user_id: int, league_id: str, profile: dict[str, Any]) -> dict[str, Any]:
     """Persist customization that belongs to one user's team in one league."""
 
-    strategy = profile.get("strategy_profile", profile.get("strategy", {}))
+    # The browser sends only the editable strategy fields.  Merge those fields
+    # into the existing league-scoped JSON so saving a team name or horizon
+    # weight cannot erase core holds, tracked picks, or other private notes.
+    existing_profile = get_team_profile(user_id, str(league_id))
+    existing_strategy = (
+        existing_profile.get("strategy_profile", {})
+        if isinstance(existing_profile, dict)
+        else {}
+    )
+    incoming_strategy = profile.get("strategy_profile", profile.get("strategy", {}))
+    if not isinstance(existing_strategy, dict):
+        existing_strategy = {}
+    if not isinstance(incoming_strategy, dict):
+        incoming_strategy = {}
+    strategy = dict(existing_strategy)
+    strategy.update(incoming_strategy)
     writer_preferences = normalize_writer_preferences(profile.get("writer_preferences", {}))
-    if not isinstance(strategy, dict):
-        strategy = {}
     if not isinstance(writer_preferences, dict):
         writer_preferences = {}
     if profile.get("strategy_name"):
@@ -1040,7 +1053,7 @@ def content_artifact_status(
     fallback from a completed reporter run in the headquarters UI.
     """
 
-    expected_keys = ("team_report", "market_watch", "trade_desk", "manager_intel", "daily_brief")
+    expected_keys = ("team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel", "daily_brief")
     conn = _connect()
     try:
         rows = conn.execute(

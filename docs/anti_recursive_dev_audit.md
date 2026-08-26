@@ -10,6 +10,11 @@ not a standalone skill. Fantasy Dominator adopts the six failure classes and
 two orchestrator duties as repository practice without importing that foreign
 skill wholesale.
 
+Current publication-count note (2026-08-26): the reader now has six desks,
+including `horizon_watch`. The `0/5` and “five publication” references in older
+dated verification notes below describe the pre-horizon production surface and
+must not be read as the current local contract.
+
 ## Findings
 
 | Class | Fantasy Dominator finding | Current control or action |
@@ -427,3 +432,64 @@ and rendered the manager outcome receipt: `45-37-18` across 108 recorded
 matchup rows with the `manager_season_history;matchups` trace. The writer
 desk correctly remained `0/5` fallback because no operator token was
 provided; this proves the reader and data seam, not current Luna generation.
+
+## 2026-08-26 current-state metadata must not masquerade as historical fact
+
+The four-window audit found a source-boundary defect in `roster_players`:
+Sleeper's current player cache was being copied into every historical roster
+row. A current Tyreek Hill injury flag therefore appeared in 2021–2025 as if
+it were a dated observation. The normalizer now requires the configured
+current-season boundary and fails closed for historical or boundary-less calls;
+the refreshed artifact retains the current 2026 flag, clears older rows, and
+labels the boundary with `availability_scope`.
+
+The adversarial normalization tests, full data audit, generated bundle, and
+served HTTP checks now cover the seam. This fixes metadata provenance; it does
+not create a recovery timeline or make the rest-of-season production baseline
+injury-adjusted.
+
+## 2026-08-26 writer packet league-scope audit
+
+An entry-path review found that the Four-Window writer scope filtered by season
+but not by an identified `league_id`. The scope now fails closed for another
+league, with a named adversarial test covering the selected packet boundary.
+This is a writer-packet correction, not a claim that the local or production
+publication has completed a paid Luna run.
+
+## 2026-08-26 horizon reader-smoke amendment
+
+The revision-aware production smoke previously proved the authenticated shell,
+fact bundle, and generic publication receipts without requiring the new
+four-window decision surface or the manager/team depth tables. A healthy
+deployment could therefore regress to an older but structurally valid reader.
+The smoke contract now requires the static horizon-board entry markers and the
+canonical horizon, available-market, manager-dossier, manager-season, and
+asset-ledger tables in the owned edition bundle. A shallow bundle is rejected
+before any production claim is made; this strengthens the verifier without
+making a paid writer request.
+
+## 2026-08-26 horizon movement receipt amendment
+
+The current four-window board now has a longitudinal comparison artifact over
+the append-only snapshot log. The movement builder matches exact
+league/season/roster scope, player, position, and model, and selects only the
+latest genuinely earlier week. Its entry-path test and validator contract
+protect against cross-league history, same-week self-comparison, and a reader
+claim that movement is a new score. The first snapshot remains an explicit
+baseline with no fabricated changes.
+
+## 2026-08-26 live boundary check after the six-desk Luna run
+
+The local publication now completed all six writer desks with
+`gpt-5.6-luna`, six distinct reporter receipts, and desk-editor approval.
+The manager and trade writer packets were bounded so a single rate-limited
+desk could be retried without regenerating approved articles. Local tests and
+the data trust gate pass.
+
+Authenticated Chrome inspection of the current Railway deployment confirms
+the exact Dynasty edition is managing `Lulu’s Potatoe’s` with a verified roster
+receipt, but the served shell still reports the prior `0/5` five-desk fallback.
+Public smoke is healthy, which is not proof of propagation. The deployment gate
+remains open until this work is committed, deployed, and rechecked against the
+same authenticated league route; the identity recheck control also needs the
+new bounded browser timeout in that deployed revision.

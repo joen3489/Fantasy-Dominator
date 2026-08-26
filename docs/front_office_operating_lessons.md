@@ -1,6 +1,6 @@
 # Front Office operating lessons
 
-Last reviewed: 2026-08-25
+Last reviewed: 2026-08-26
 
 This is the short, durable memory for Fantasy Dominator. It exists so future
 work does not rediscover the same product and development lessons in chat.
@@ -8,11 +8,27 @@ The detailed requirements remain in `AGENTS.md`,
 `docs/front_office_principles.md`, `docs/data_contract.md`, and
 `docs/front_office_realization_epic.md`.
 
+Current publication note (2026-08-26): six desks are in the local contract.
+Older five-desk and `0/5` receipts in this historical log predate the
+Four-Window Market Read and are not current status claims.
+
 ## Product model
 
 Fantasy Dominator is a private personal headquarters with a media facade over
 a trustworthy data room. It is not a generic fantasy dashboard and it is not a
 collection of AI articles.
+
+## 2026-08-25 - setup and maintenance are different products
+
+Historical league assembly and recurring upkeep have different cost and
+freshness contracts. Bootstrap may traverse discovered historical seasons and
+their configured week range; the current season is bounded by Sleeper's
+observable leg so future placeholder rows cannot become evidence. Maintenance
+is bounded to the current league and current-season window, then merges fresh
+canonical rows into the prior snapshot by exact source keys before rebuilding
+derived analytics. Its receipt must say what was requested and what history was
+preserved. A maintenance run must never make omitted historical rows look
+freshly fetched.
 
 ```text
 Clerk user
@@ -431,3 +447,185 @@ authenticated private route. Lulu's Potatoe's remained linked to exact
 matchup rows and exposed the `manager_season_history;matchups` trace. The
 operator-gated writer remained visibly at `0/5`, so deployment verification
 did not get confused with a paid Luna publication.
+## 2026-08-25 - Market values and baseline PPG must carry their limits
+
+The market audit found a scale seam in DynastyProcess `values.csv`: the
+`value_2qb` field is stored in x100 units. A conditional divide made a raw
+value of `93` render as `93.0`, while `7592` became `75.92`; that could rank
+Jalen Nailor above Jayden Daniels. The normalization now divides every
+DynastyProcess value by 100, records the scale in `value_format`, and leaves
+the trace `value_2qb/100` beside the source URL. This is a deterministic
+contract and must be regression-tested with values below 100.
+
+The projection number has a separate boundary. `projected_ppg` is a baseline
+production estimate, not a start forecast or availability guarantee. Sleeper
+injury status and body part now survive the player and roster joins, appear in
+player dossiers, and are included in signal evidence/risk. An injury flag does
+not rewrite the baseline, but the reader must not mistake a healthy-looking
+number for current availability. Missing injury metadata means unknown, not
+cleared.
+
+## 2026-08-26 - Canonical market values cannot be heuristically rescaled
+
+The first scale fix exposed a second seam downstream: signal code divided any
+canonical market value above 100 by 100. A legitimate `102.32` asset therefore
+became `1.0232`, inflating the projection-market gap and making the newspaper
+headline look more confident than the evidence warranted. Source-unit
+conversion belongs at ingestion; signal code must consume canonical values
+without guessing from their magnitude.
+
+The signal layer now preserves high-end values, caps only the display-oriented
+liquidity component, and adds a role-uncertainty discount when an old player has
+a very low market value. Those rows become `role_uncertain_watch` with a
+`role_check` action, not a breakout claim. The front page calls these rows
+model disagreements or research leads, never guaranteed mispricing.
+
+## 2026-08-26 - A newspaper front page needs connected rails
+
+The editorial facade now exposes four deterministic front-page panels: the
+selected roster pulse, news linked to that roster with market context, model
+disagreement candidates, and manager dossier previews. Each item retains an
+entity anchor, source trace, uncertainty copy, and route into the relevant
+data-room or dossier view. This keeps the media layer useful before a Luna run
+and gives generated writers a durable front-page context to interpret rather
+than inventing a second data model.
+
+## 2026-08-26 - Publication bodies need a semantic template contract
+
+An article receipt and a markdown file are not yet a media product. The issue
+now exposes a desk-specific publication template plus semantic content blocks
+for headings, paragraphs, and lists. Markdown remains the operator/writer
+interchange format; the browser renders the same blocks through reusable
+feature, wide, and rail layouts. This lets each reporter feel distinct while
+keeping the evidence packet and fallback body shared.
+## 2026-08-25 - Three clocks, three market questions
+
+A dynasty front office cannot use one player grade for every decision. The next
+game asks who can help immediately; the rest-of-season lane asks how much
+current-season production remains; the dynasty lane asks what the asset is worth
+through the career window. These are related but not interchangeable questions.
+
+The deterministic `player_horizon_market_scores` table now makes those clocks
+explicit and adds contender/rebuilder fit scores plus a spread. The next-game
+lane is labeled opponent-neutral while weekly data is only a flat allocation,
+and Sleeper availability can reduce expected points without rewriting the
+underlying season baseline. The dynasty lane is a market/timeline lens, not a
+career-points forecast. Every writer packet should carry all three lanes when
+making a player case so the human manager can choose the weight that matches the
+team's current objective.
+
+## 2026-08-26 - Schedule context must be evidence, not decoration
+
+The next-game clock is useful only when the data room can answer who the team
+plays and whether it is on a bye. The normalized `nfl_schedule` table now owns
+that answer, while `nfl_team_defense_factors` supplies a bounded historical
+position-level context. The player card can therefore say “at opponent” and
+show the factor without pretending it has a complete defensive model. Partial
+or missing schedule coverage remains visible as opponent-neutral, and the
+rest-of-season clock counts scheduled games rather than silently treating every
+calendar week as a game.
+
+The long clock needs the same discipline. A five-year age-curve scenario can
+make future production comparable across assets, but it is not the market and
+it is not a lifetime total. Keep its score, assumptions, status, and confidence
+separate so the reader can value a young player for future output without
+mistaking a model scenario for a fact.
+
+## 2026-08-26 - Matchup adjustments need calibration receipts
+
+Historical matchup factors should earn their place in the next-game read. The
+deterministic factor table now compares later-season game totals with both the
+factor-adjusted expectation and the position baseline, carrying holdout sample,
+MAE delta, direction accuracy, and a clear validation status into the player
+horizon and writer packet. A limited or non-improving receipt is a visible
+qualification, not a hidden confidence boost.
+
+## 2026-08-26 - A score is not useful until it has a decision surface
+
+Three-clock scores buried in a player dossier still leave the reader to perform
+the league-wide comparison manually. The Trade Desk therefore exposes the same
+canonical horizon rows as a filterable Active Team/League market board, with
+contender/rebuilder lanes, explicit sorting, player routes, and row-level
+evidence drawers. Browser controls are presentation-only: they may change scope
+and ordering, but never alter the source rows or create a new recommendation
+model.
+
+The same rule applies to the score itself: every horizon row carries a model
+version and fit-weight receipt. A refresh may update evidence while preserving
+meaning; a formula change must be visible as a new version.
+
+## 2026-08-26 - Availability is not a recovery timeline
+
+The next-game clock can incorporate a current availability flag because the
+manager is making an immediate lineup decision. The rest-of-season clock is a
+production baseline unless the data room contains a defensible recovery and
+availability timeline. Every receipt and reader-facing template therefore says
+that the rest-of-season baseline is not recovery-adjusted. A current injury
+flag must not be silently stretched into a season-long forecast.
+
+## 2026-08-26 - Percentile scores are not trade prices
+
+The horizon market uses position-relative percentiles so that next-game,
+rest-of-season, dynasty, and bounded career-window evidence can share a stable
+0-100 analytical language. That creates a hard presentation boundary: a 90 at
+one position is not a 90-unit trade value and is not directly comparable with a
+90 at another position. The reader needs the separate market value and market
+percentile fields for cross-position pricing. Keep the score basis in the
+deterministic row, article packet, and evidence drawer so writers cannot turn a
+peer-relative signal into a fake universal market.
+
+## 2026-08-26 - A career scenario needs a production receipt
+
+The five-year career clock is more useful when it is anchored to observed
+production, but the source identity is not the same as Sleeper identity. The
+model now uses a unique normalized-name plus position match to one nflverse
+player ID, blends recency-weighted historical PPG with the current projection,
+and shows the depth of that history. If the bridge is missing or ambiguous,
+the model says so and falls back to the age-only scenario. This keeps more
+signal without disguising a name match as a canonical entity join.
+
+## 2026-08-26 - Historical production must not impersonate current availability
+
+Historical nflverse production is useful evidence, especially for a dynasty
+front office, but it answers a different question from whether an asset has a
+current NFL role. A current Sleeper player row with no NFL team is therefore a
+`no_current_nfl_team` availability state. Preserve the historical PPG baseline
+so a writer can discuss a conditional signing or career case, but withhold
+actionable next-game and rest-of-season scores, lower confidence, and label the
+baseline as conditional on signing. This prevents a free-agent veteran from
+appearing like an active weekly starter merely because the historical sample is
+large.
+
+The newsroom can then choose the relevant clock deliberately: the next-game
+desk prioritizes current role and availability, the season desk prioritizes
+scheduled games and current-season production, and the long-view desk uses
+market, age, and historical evidence with explicit uncertainty. No writer has
+permission to silently decide which clock a number belongs to.
+
+## 2026-08-26 - Writers need an editor before the facade
+
+Distinct reporter voices are useful only when they are differentiated views of
+the same validated packet. Each generated article may receive bounded previous
+or peer-edition context to create disagreement and continuity, but that room
+context is non-evidence and never replaces the deterministic receipt. A
+deterministic desk-editor gate reviews required structure, evidence IDs, source
+IDs, and generation mode before publication. Held copy stays off the printed
+facade with the reason visible in the receipt, so editorial energy can add
+meaning without weakening factual trust.
+
+The editor is now an explicit optional second pass, not just a future idea.
+`FRONT_OFFICE_EDITOR_MODE=llm` sends the same canonical packet and a bounded
+draft to Luna. Approve, modify, and hold are durable review outcomes; a modify
+must be a complete replacement that passes the writer validator, and a hold is
+excluded from peer context as well as the printed facade. The deterministic
+gate remains authoritative, and the editor cannot add facts, scores, motives,
+transactions, or sources.
+
+## 2026-08-26 - A market disagreement needs a decision surface
+
+Four separate clock-minus-market fields are useful evidence, but buried fields
+still make the manager do the synthesis manually. The Four-Window Market Read
+now has a dedicated Market vs Clock section, and the Trade Desk exposes
+position-scoped sorting for disagreement, clock lead, and market lead. The
+surface remains explicit that these are repricing leads, not dollar gaps or
+proof of a bad market.

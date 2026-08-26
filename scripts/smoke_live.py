@@ -24,12 +24,20 @@ REQUIRED_MARKERS = [
     "News Desk",
     "Market Gaps",
     "Market Lens Lab",
+    "Four-Window Market Board",
+    "Market decision view",
+    "This week",
+    "Rest of season",
+    "Dynasty / career",
+    "Contender vs rebuilder",
+    "Repricing leads",
+    "horizon-market-board",
     "Data Room",
     "Data Diagnostics",
 ]
 BOOT_ONLY_MARKER = "Data refresh is running; reload shortly"
 REQUIRED_EDITION_MARKERS = ["The Front Office", "Draft Room", "News Desk", "Data Room"]
-EXPECTED_ARTICLE_KEYS = ("daily_brief", "team_report", "market_watch", "trade_desk", "manager_intel")
+EXPECTED_ARTICLE_KEYS = ("daily_brief", "team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel")
 FALLBACK_ARTICLE_SCHEMA_VERSION = "deterministic_fallback_v2"
 
 
@@ -95,7 +103,19 @@ def validate_edition_bundle(payload: dict) -> list[str]:
     tables = payload.get("tables") if isinstance(payload, dict) else None
     if not isinstance(tables, dict):
         return ["edition bundle has no tables object"]
-    for table in ("today_priority_board", "player_dossiers", "source_freshness", "news_source_freshness", "projection_source_freshness"):
+    for table in (
+        "today_priority_board",
+        "player_dossiers",
+        "player_horizon_market_scores",
+        "available_player_horizon_scores",
+        "horizon_market_movements",
+        "manager_dossiers",
+        "manager_season_history",
+        "team_asset_inventory",
+        "source_freshness",
+        "news_source_freshness",
+        "projection_source_freshness",
+    ):
         if table not in tables:
             errors.append(f"edition bundle is missing {table}")
     if not tables.get("source_freshness"):
@@ -165,6 +185,20 @@ def _validate_publication_receipts(payload: dict) -> list[str]:
                 errors.append(f"publication receipt {article_key} is missing visual direction")
         if not str(receipt.get("reporter_id") or "").strip():
             errors.append(f"publication receipt {article_key} has no reporter identity")
+        editorial_review = receipt.get("editorial_review")
+        if editorial_review is not None:
+            if not isinstance(editorial_review, dict):
+                errors.append(f"publication receipt {article_key} has an invalid editorial review")
+            else:
+                review_mode = str(editorial_review.get("mode") or "").strip().lower()
+                review_status = str(editorial_review.get("status") or "").strip().lower()
+                review_decision = str(editorial_review.get("decision") or "").strip().lower()
+                if review_mode != "llm":
+                    errors.append(f"publication receipt {article_key} has unknown editorial review mode {review_mode!r}")
+                if review_status not in {"approved", "held"}:
+                    errors.append(f"publication receipt {article_key} has unknown editorial review status {review_status!r}")
+                if review_decision not in {"approve", "modify", "hold"}:
+                    errors.append(f"publication receipt {article_key} has unknown editorial decision {review_decision!r}")
     return errors
 
 

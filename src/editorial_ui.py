@@ -112,6 +112,43 @@ EDITORIAL_STYLE = r"""
       padding: 18px;
       background: #eef2eb;
     }
+    .front-page-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 0 18px 18px;
+      background: #eef2eb;
+    }
+    .front-page-panel {
+      min-width: 0;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--info);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .front-page-panel.tone-market { border-top-color: var(--buy); }
+    .front-page-panel.tone-news { border-top-color: var(--alert); }
+    .front-page-panel.tone-manager { border-top-color: var(--watch); }
+    .front-page-panel.tone-team { border-top-color: var(--gold); }
+    .front-page-panel h3 { margin: 5px 0 7px; font-family: Georgia, "Times New Roman", serif; font-size: 21px; line-height: 1.05; }
+    .front-page-panel .panel-eyebrow { color: var(--accent); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .front-page-panel .panel-dek { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .front-page-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+    .front-page-fact { padding: 7px 8px; border-radius: 7px; background: #f1f3ed; }
+    .front-page-fact strong { display: block; font-size: 15px; line-height: 1.05; }
+    .front-page-fact span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.2; }
+    .front-page-items { display: grid; gap: 8px; }
+    .front-page-item { padding-top: 8px; border-top: 1px dashed var(--line); }
+    .front-page-item:first-child { padding-top: 0; border-top: 0; }
+    .front-page-item h4 { margin: 0 0 3px; font-size: 13px; line-height: 1.2; }
+    .front-page-item h4 a { color: var(--ink); text-decoration: none; }
+    .front-page-item h4 a:hover { color: var(--accent); text-decoration: underline; }
+    .front-page-item p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.38; }
+    .front-page-item .item-meta { margin-top: 4px; color: var(--accent); font-size: 10px; font-weight: 800; line-height: 1.25; }
+    .front-page-panel .panel-uncertainty { margin: 12px 0 0; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .front-page-panel .panel-route { display: inline-block; margin-top: 11px; color: var(--accent); font-size: 11px; font-weight: 900; text-decoration: none; }
+    .front-page-panel .panel-route:hover { text-decoration: underline; }
     .editorial-story {
       min-width: 0;
       border: 1px solid var(--line);
@@ -215,12 +252,19 @@ EDITORIAL_STYLE = r"""
     .editorial-story-grid .story-action { margin-top: 12px; }
     .publication-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 0 18px 20px; }
     .publication-card { background: #fffdf7; border: 1px solid var(--line); border-radius: 16px; padding: 18px; box-shadow: 0 8px 22px rgba(19, 35, 27, .05); }
+    .publication-card.publication-layout-feature { grid-column: 1 / -1; border-top: 4px solid var(--gold); }
+    .publication-card.publication-layout-wide { grid-column: span 2; }
+    .publication-card.publication-layout-rail { grid-column: span 1; }
     .publication-card h3 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 24px; }
     .publication-card .publication-meta { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
     .publication-media { margin: 0 0 14px; overflow: hidden; border-radius: 10px; background: #e8ece5; }
     .publication-media img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; }
     .publication-media figcaption { padding: 6px 9px; color: var(--muted); background: #f1f3ed; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .publication-card .publication-receipt { margin-top: 14px; color: var(--muted); font-size: 12px; }
+    .publication-review-approved { color: var(--buy); border-color: rgba(31, 111, 82, .35); }
+    .publication-review-held-label { color: var(--sell); border-color: rgba(154, 63, 45, .35); }
+    .publication-review-held { margin: 12px 0; padding: 13px; border: 1px solid rgba(154, 63, 45, .28); border-radius: 10px; background: #fff2ed; color: var(--sell); }
+    .publication-review-held p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; }
     .publication-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
     .publication-actions button { border: 1px solid var(--line); border-radius: 999px; background: #f7f8f3; color: var(--accent); padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; }
     .publication-actions button:hover { background: #e4efe9; }
@@ -232,6 +276,17 @@ EDITORIAL_STYLE = r"""
     .publication-outcome button:disabled { opacity: .65; cursor: default; }
     .publication-card .article-body { color: var(--ink); }
     .publication-card .article-p { line-height: 1.6; }
+    .publication-card .publication-list-block { margin: 14px 0; }
+    .publication-card .publication-list-block > .article-list { margin: 0; }
+    .publication-list-item { padding: 9px 0 9px 2px; border-bottom: 1px solid rgba(200, 210, 197, .72); }
+    .publication-list-item:last-child { border-bottom: 0; }
+    .publication-list-item > p { margin: 0; line-height: 1.48; }
+    .publication-list-item > p strong { color: var(--accent); }
+    .publication-list-item .evidence-drawer { margin-top: 7px; }
+    .publication-list-item .evidence-drawer summary { font-size: 11px; }
+    .publication-more { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+    .publication-more summary { color: var(--accent); font-size: 12px; font-weight: 900; cursor: pointer; }
+    .publication-more .article-list { margin-top: 8px; }
     .publication-summary { margin: 0 0 14px; padding: 12px 13px; border-left: 3px solid var(--gold); background: #f4f0df; border-radius: 8px; }
     .publication-summary p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
     .publication-summary strong { color: var(--ink); }
@@ -273,11 +328,13 @@ EDITORIAL_STYLE = r"""
     .decision-list { margin: 0; padding-left: 17px; color: var(--muted); font-size: 13px; line-height: 1.5; }
     @media (max-width: 900px) {
       .editorial-layout { grid-template-columns: 1fr; }
+      .front-page-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .editorial-story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 620px) {
       .issue-title-row { display: grid; align-items: start; }
       .issue-date { margin-left: 0; }
+      .front-page-grid { grid-template-columns: 1fr; padding-left: 12px; padding-right: 12px; }
       .editorial-story-grid { grid-template-columns: 1fr; }
       .question-grid { grid-template-columns: 1fr; padding-left: 12px; padding-right: 12px; }
       .issue-data-drawer { margin-left: 12px; margin-right: 12px; }
@@ -312,6 +369,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-publication-receipt">Publication receipt is loading</span>
           </div>
           <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
+          <div id="issue-publication-nav" class="issue-quick-links" aria-label="Open desk reports"></div>
         </div>
         <div class="editorial-layout">
           <div id="issue-lead"></div>
@@ -322,6 +380,8 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <ul id="issue-source-health" class="health-list"></ul>
           </aside>
         </div>
+        <div class="editorial-divider"><span>Front page desk</span></div>
+        <div id="issue-front-page" class="front-page-grid" data-testid="front-page-desk"></div>
         <div class="editorial-divider"><span>More from this edition</span></div>
         <div id="issue-stories" class="editorial-story-grid"></div>
         <div class="editorial-divider"><span>Desk reports</span></div>
@@ -361,6 +421,13 @@ EDITORIAL_JS = r"""
       const freshnessNode = document.getElementById('issue-freshness');
       if (freshnessNode) freshnessNode.className = freshness.healthy === freshness.total ? 'health-current' : 'health-limited';
       document.getElementById('issue-lead').innerHTML = editorialStoryMarkup(issue.lead || {}, true);
+      const frontPage = document.getElementById('issue-front-page');
+      if (frontPage) {
+        const panels = issue.front_page_panels || [];
+        frontPage.innerHTML = panels.length
+          ? panels.map(frontPagePanelMarkup).join('')
+          : '<p class="note">The front-page desk has no connected panels yet. Open the Data Room to inspect the available evidence.</p>';
+      }
       document.getElementById('issue-stories').innerHTML = (issue.stories || []).length
         ? (issue.stories || []).map(story => editorialStoryMarkup(story, false)).join('')
         : '<p class="note">The edition has no secondary stories yet. That may be a quiet board, or a data problem worth opening below.</p>';
@@ -368,6 +435,10 @@ EDITORIAL_JS = r"""
       document.getElementById('issue-publication').innerHTML = publications.length
         ? publications.map(publicationArticleMarkup).join('')
         : '<p class="note">No generated desk reports are published for this edition yet. The evidence-led board remains available below.</p>';
+      const publicationNav = document.getElementById('issue-publication-nav');
+      if (publicationNav) publicationNav.innerHTML = publications.length
+        ? publications.map(article => `<a href="#publication-${escapeHtml(article.key || '')}">${escapeHtml(article.title || article.key || 'Desk report')}</a>`).join('')
+        : '<span class="note">Desk reports appear here when their evidence packet is available.</span>';
       const questions = issue.question_prompts || [];
       document.getElementById('issue-questions').innerHTML = questions.length
         ? questions.map(prompt => `<a class="question-card" href="${escapeHtml(prompt.route || '#view-data-room')}"><strong>${escapeHtml(prompt.question || 'Open the data room')}</strong><span>${escapeHtml(prompt.answer || '')}</span></a>`).join('')
@@ -375,6 +446,18 @@ EDITORIAL_JS = r"""
       document.getElementById('issue-pulse-metrics').innerHTML = editorialPulse(issue.signal_summary || {});
       document.getElementById('issue-source-health').innerHTML = editorialHealth(issue.source_health || []);
       hydrateContentInteractions();
+    }
+
+    function frontPagePanelMarkup(panel) {
+      const tone = String(panel.tone || 'info').replace(/[^a-z0-9_-]/gi, '');
+      const route = String(panel.route || '#view-data-room').startsWith('#') ? String(panel.route || '#view-data-room') : '#view-data-room';
+      const facts = (panel.facts || []).map(fact => `<div class="front-page-fact"><strong>${escapeHtml(String(fact.value ?? ''))}</strong><span>${escapeHtml(fact.label || 'Fact')}</span></div>`).join('');
+      const items = (panel.items || []).map(item => {
+        const anchor = String(item.anchor || '').replace(/[^a-zA-Z0-9:_-]/g, '');
+        const title = anchor ? `<a href="#${escapeHtml(anchor)}">${escapeHtml(item.title || 'Untitled read')}</a>` : escapeHtml(item.title || 'Untitled read');
+        return `<article class="front-page-item"><h4>${title}</h4><p>${escapeHtml(item.summary || '')}</p><p class="item-meta">${escapeHtml(item.meta || '')}</p><details class="evidence-drawer"><summary>Evidence</summary><p class="brief-card-evidence">${escapeHtml(item.evidence || 'Evidence trace not recorded.')}</p></details></article>`;
+      }).join('');
+      return `<article class="front-page-panel tone-${tone}" data-panel-key="${escapeHtml(panel.key || '')}"><div class="panel-eyebrow">${escapeHtml(panel.eyebrow || 'Desk')}</div><h3>${escapeHtml(panel.title || 'Front page desk')}</h3><p class="panel-dek">${escapeHtml(panel.dek || '')}</p>${facts ? `<div class="front-page-facts">${facts}</div>` : ''}<div class="front-page-items">${items || '<p class="note">No connected items are available for this desk.</p>'}</div>${panel.uncertainty ? `<p class="panel-uncertainty"><strong>Limit:</strong> ${escapeHtml(panel.uncertainty)}</p>` : ''}<a class="panel-route" href="${escapeHtml(route)}">${escapeHtml(panel.route_label || 'Open the evidence')} →</a></article>`;
     }
 
     function renderEditorialMedia() {
@@ -443,8 +526,12 @@ EDITORIAL_JS = r"""
 
     function publicationArticleMarkup(article) {
       const mode = String(article.mode || 'deterministic_template');
+      const review = article.editorial_review || {};
+      const reviewStatus = String(article.publication_status || review.status || 'approved');
       const reporter = article.reporter_name || article.reporter_id || 'The Front Office';
       const structured = article.structured || {};
+      const template = article.template || {};
+      const layout = String(template.layout || 'rail').replace(/[^a-z0-9_-]/gi, '');
       const mediaAsset = publicationMediaAsset(article.key);
       const mediaMarkup = publicationMediaMarkup(article.key);
       const summary = [
@@ -473,11 +560,59 @@ EDITORIAL_JS = r"""
           ? `<p><strong>Media:</strong> ${escapeHtml(mediaAsset.asset_id || 'section art')} · ${escapeHtml(mediaAsset.scope || 'article')} scope · ${escapeHtml(mediaAsset.status || 'available')}. Decorative only.</p>`
           : '';
         const fallbackReason = article.fallback_reason ? ` Fallback: ${escapeHtml(article.fallback_reason)}` : '';
-        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${visualDirection}${mediaReceipt}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
+        const deskReview = review.mode === 'llm'
+          ? `<p><strong>Desk review:</strong> ${escapeHtml(review.decision || 'hold')}${review.model ? ` · ${escapeHtml(review.model)}` : ''}${review.editor_notes ? ` · ${escapeHtml(review.editor_notes)}` : ''}</p>`
+          : '';
+        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${deskReview}${visualDirection}${mediaReceipt}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
       })();
-      const actions = `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`;
-      const outcome = `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`;
-      return `<article class="publication-card" data-article-key="${escapeHtml(article.key || '')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(reporter)}</span></div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${summary ? `<div class="publication-summary">${summary}</div>` : ''}${articleBody(article.body || '')}${receipt}${actions}${outcome}</article>`;
+      const actions = reviewStatus === 'approved'
+        ? `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`
+        : '';
+      const outcome = reviewStatus === 'approved'
+        ? `<div class="publication-outcome" aria-label="Track this article's outcome"><label>Follow-up state<select data-outcome-select="${escapeHtml(article.key || '')}"><option value="open">Track this call</option><option value="confirmed">Confirmed useful</option><option value="missed">Missed or wrong</option><option value="unclear">Unclear / needs more evidence</option></select></label><button type="button" data-content-interaction="outcome" data-artifact-key="${escapeHtml(article.key || '')}">Save outcome</button></div>`
+        : '';
+      const blocks = Array.isArray(article.content_blocks) ? article.content_blocks : [];
+      const bodyMarkup = blocks.length ? publicationContentBlocksMarkup(blocks, template) : articleBody(article.body || '');
+      const reviewMarkup = reviewStatus === 'approved'
+        ? `<span class="tag publication-review-approved">${review.decision === 'modify' ? 'Editor revised' : 'Editor approved'}</span>`
+        : `<div class="publication-review-held"><strong>Held by The Desk Editor</strong><p>${escapeHtml(review.note || 'This report is not printed until its evidence receipt is repaired.')}</p>${Array.isArray(review.errors) && review.errors.length ? `<p>${escapeHtml(review.errors.join('; '))}</p>` : ''}</div>`;
+      const reviewBadge = reviewStatus === 'approved'
+        ? `<span class="tag publication-review-approved">${review.decision === 'modify' ? 'Editor revised' : 'Editor approved'}</span>`
+        : '<span class="tag publication-review-held-label">Held</span>';
+      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(reporter)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${reviewStatus === 'approved' ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
+    }
+
+    function publicationListItemMarkup(item) {
+      const raw = String(item || '').replace(/\*\*/g, '').trim();
+      if (!raw) return '';
+      const detailStart = raw.search(/\s+(?:Evidence|Deep read|Front-office read|Confidence|Guardrail|Source trace):/i);
+      const summary = detailStart > 0 ? raw.slice(0, detailStart).trim() : raw;
+      const detail = detailStart > 0 ? raw.slice(detailStart).trim() : '';
+      const summaryMarkup = escapeHtml(summary);
+      const detailMarkup = detail
+        ? `<details class="evidence-drawer"><summary>Evidence and guardrails</summary><p class="brief-card-evidence">${escapeHtml(detail)}</p></details>`
+        : '';
+      return `<li class="publication-list-item"><p>${summaryMarkup}</p>${detailMarkup}</li>`;
+    }
+
+    function publicationContentBlocksMarkup(blocks, template) {
+      const previewLimit = Math.max(1, Number(template?.list_preview_items || 3));
+      const rendered = (blocks || []).map(block => {
+        const type = String(block.type || 'paragraph');
+        if (type === 'heading') return `<h4 class="article-h">${escapeHtml(block.text || '')}</h4>`;
+        if (type === 'list') {
+          const items = Array.isArray(block.items) ? block.items : [];
+          const visible = items.slice(0, previewLimit).map(publicationListItemMarkup).join('');
+          const remaining = items.slice(previewLimit).map(publicationListItemMarkup).join('');
+          const more = remaining
+            ? `<details class="publication-more"><summary>Show ${items.length - previewLimit} more evidence-backed calls</summary><ul class="article-list">${remaining}</ul></details>`
+            : '';
+          return `<div class="publication-list-block"><ul class="article-list">${visible}</ul>${more}</div>`;
+        }
+        if (type === 'paragraph') return `<p class="article-p">${escapeHtml(block.text || '')}</p>`;
+        return '';
+      }).join('');
+      return `<div class="article-body publication-blocks" data-content-block-schema="publication_blocks_v1">${rendered}</div>`;
     }
 
     function editorialStoryMarkup(story, isLead) {

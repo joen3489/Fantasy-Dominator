@@ -85,7 +85,7 @@ def _run_refresh(force_refresh: bool) -> None:
     _write_refresh_status("running", "Background data refresh in progress.")
     try:
         print("Starting background data refresh", flush=True)
-        refresh_all(force=force_refresh)
+        refresh_all(force=force_refresh, run_mode=os.environ.get("FRONT_OFFICE_REFRESH_MODE") or ("maintenance" if (SITE_DIR / "processed" / "teams.csv").is_file() else "bootstrap"))
         _write_refresh_status("complete", "Background data refresh complete.")
         print("Background data refresh complete", flush=True)
     except Exception as exc:  # noqa: BLE001 - we want to surface *any* refresh failure, not just expected ones.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -36,13 +37,140 @@ from src.pick_ownership import build_pick_ownership
 from src.players import load_players, players_table
 from src.priority_board import build_today_priority_board
 from src.profile_intelligence import build_profile_intelligence_tables
+from src.horizon_accuracy import (
+    append_horizon_snapshot,
+    build_horizon_accuracy_table,
+    build_horizon_movement_table,
+)
 from src.projection_accuracy import append_projection_accuracy_snapshot, build_projection_accuracy_table
 from src.opportunity import build_opportunity_scores
 from src.projections import _load_raw_stats, build_projection_tables
+from src.horizons import build_available_player_horizon_scores, build_player_horizon_market_scores
+from src.matchups import build_team_defense_factors
 from src.reports import build_weekly_report
 from src.sleeper_api import SleeperAPI, SleeperAPIError
-from src.signals import build_signal_tables
+from src.signals import (
+    build_signal_tables,
+    build_counterparty_asset_interest,
+    enrich_counterparty_trade_edges_with_horizons,
+)
 from src.utils import ANALYSIS_DIR, PROCESSED_DIR, RAW_EXTERNAL_DIR, REPORTS_DIR, SITE_DIR, ensure_dirs, load_config
+
+
+REFRESH_MODES = {"bootstrap", "maintenance"}
+
+# Maintenance refreshes intentionally replace only these canonical source tables.
+# Derived tables are rebuilt from the merged canonical set below, so a narrower
+# current-season refresh never erases the historical evidence assembled by setup.
+CANONICAL_TABLE_KEYS: dict[str, tuple[str, ...]] = {
+    "leagues": ("season", "league_id"),
+    "teams": ("season", "league_id", "roster_id"),
+    "players": ("player_id",),
+    "roster_players": ("season", "league_id", "roster_id", "player_id"),
+    "drafts": ("season", "league_id", "draft_id"),
+    "draft_picks": ("season", "league_id", "draft_id", "pick_no"),
+    "traded_picks": ("season", "league_id", "original_roster_id", "pick_season", "round"),
+    "transactions_raw": ("season", "league_id", "week", "transaction_id"),
+    "transactions_normalized": ("season", "league_id", "week", "transaction_id"),
+    "trades": ("season", "league_id", "week", "transaction_id"),
+    "waivers": ("season", "league_id", "week", "transaction_id"),
+    "matchups": ("season", "league_id", "week", "roster_id"),
+}
+
+
+def normalize_refresh_mode(run_mode: str | None = None) -> str:
+    """Return a fail-closed refresh lifecycle mode.
+
+    ``bootstrap`` is the explicit historical setup path. ``maintenance`` is
+    the recurring current-state path. An environment override is useful for
+    Railway scheduled jobs, but an invalid value must not silently choose a
+    destructive or surprising behavior.
+    """
+
+    value = str(run_mode or os.environ.get("FRONT_OFFICE_REFRESH_MODE", "bootstrap")).strip().lower()
+    if value not in REFRESH_MODES:
+        raise ValueError(f"refresh mode must be one of {sorted(REFRESH_MODES)}, got {value!r}")
+    return value
+
+
+def refresh_mode_for_paths(paths: "LeaguePaths", requested: str | None = None) -> str:
+    """Choose setup for an empty edition and maintenance for an existing one."""
+
+    if requested is not None:
+        return normalize_refresh_mode(requested)
+    configured = os.environ.get("FRONT_OFFICE_REFRESH_MODE", "").strip()
+    if configured:
+        return normalize_refresh_mode(configured)
+    return "maintenance" if (paths.processed_dir / "teams.csv").is_file() else "bootstrap"
+
+
+def _maintenance_week_end(config: dict, league: dict) -> int:
+    """Choose the latest week maintenance should request without guessing facts."""
+
+    configured_end = int(config.get("transaction_weeks", {}).get("end", 18))
+    override = os.environ.get("FRONT_OFFICE_MAINTENANCE_WEEK_END", "").strip()
+    if override:
+        try:
+            return max(0, min(configured_end, int(override)))
+        except ValueError:
+            pass
+    configured = config.get("maintenance_week_end")
+    if configured not in (None, ""):
+        try:
+            return max(0, min(configured_end, int(configured)))
+        except (TypeError, ValueError):
+            pass
+    settings = league.get("settings") if isinstance(league, dict) else {}
+    sleeper_leg = settings.get("leg") if isinstance(settings, dict) else None
+    try:
+        if sleeper_leg not in (None, "") and int(sleeper_leg) > 0:
+            return max(0, min(configured_end, int(sleeper_leg)))
+    except (TypeError, ValueError):
+        pass
+    # If Sleeper did not provide an observable leg, fail closed rather than
+    # requesting every future week and turning placeholder rows into evidence.
+    return 0
+
+
+def _merge_maintenance_canonical_tables(
+    all_tables: dict[str, list[dict]],
+    processed_dir: Path,
+) -> dict[str, list[dict]]:
+    """Merge a current maintenance slice into the last canonical snapshot.
+
+    The fresh row wins on an exact source key. This keeps renamed teams and
+    changed roster state current while preserving prior seasons/weeks that a
+    maintenance run deliberately did not request.
+    """
+
+    merged = dict(all_tables)
+    for table, keys in CANONICAL_TABLE_KEYS.items():
+        path = processed_dir / f"{table}.csv"
+        if not path.is_file():
+            continue
+        try:
+            previous = pd.read_csv(path, dtype=object).fillna("")
+        except (OSError, pd.errors.ParserError):
+            continue
+        fresh = pd.DataFrame(merged.get(table, []))
+        if previous.empty and fresh.empty:
+            merged[table] = []
+            continue
+        combined = pd.concat([previous, fresh], ignore_index=True, sort=False).fillna("")
+        available_keys = [key for key in keys if key in combined.columns]
+        if len(available_keys) == len(keys):
+            # CSV snapshots commonly read numeric IDs as strings while fresh
+            # API rows carry them as ints. Normalize only the dedupe keys so
+            # an exact source row is replaced across refresh boundaries.
+            dedupe_columns: list[str] = []
+            for key in keys:
+                marker = f"__maintenance_key_{key}"
+                combined[marker] = combined[key].map(lambda value: str(value).strip())
+                dedupe_columns.append(marker)
+            combined = combined.drop_duplicates(subset=dedupe_columns, keep="last")
+            combined = combined.drop(columns=dedupe_columns)
+        merged[table] = combined.to_dict(orient="records")
+    return merged
 
 
 def main(
@@ -52,7 +180,9 @@ def main(
     paths: "LeaguePaths | None" = None,
     league_type: str = "dynasty",
     context: FantasyContext | None = None,
+    run_mode: str | None = None,
 ) -> None:
+    run_mode = normalize_refresh_mode(run_mode)
     if paths is None and context is not None and context.user_id is not None:
         paths = LeaguePaths.for_user_league(context.user_id, context.league_id)
     if paths is None:
@@ -84,17 +214,25 @@ def main(
     configured_roster_id = int(configured_roster_id) if configured_roster_id not in (None, "") else None
     week_start = int(config.get("transaction_weeks", {}).get("start", 1))
     week_end = int(config.get("transaction_weeks", {}).get("end", 18))
+    current_season = str(config.get("current_season", "") or "")
     requested_league_id = str(league_id or "")
-    if league_id:
+    if league_id and run_mode == "bootstrap":
         league_ids_by_season = _discover_league_history_from_seed(config, api, requested_league_id, force=force)
+    elif league_id:
+        league_ids_by_season = {current_season: requested_league_id} if current_season else {"": requested_league_id}
+    elif run_mode == "maintenance":
+        configured_current_league = (config.get("leagues") or {}).get(current_season, "")
+        league_ids_by_season = {current_season: str(configured_current_league)} if configured_current_league else {}
     else:
         league_ids_by_season = _discover_league_history(config, api, force=force)
-    current_season = str(config.get("current_season", "") or "")
     current_scope_league_id = str(
         context.league_id
         if context
         else league_ids_by_season.get(current_season) or requested_league_id or ""
     )
+    # Derived tables may outlive the in-memory request context. Keep the
+    # selected league boundary explicit for every downstream horizon builder.
+    config["league_id"] = current_scope_league_id
 
     external_frames = refresh_external_sources(config, force=force)
 
@@ -114,6 +252,8 @@ def main(
     }
     current_my_roster_id = None
     matchup_source_statuses: list[str] = []
+    requested_week_ends: list[int] = []
+    requested_week_ends_by_season: dict[str, int] = {}
 
     for season, league_id in league_ids_by_season.items():
         if not league_id:
@@ -132,13 +272,20 @@ def main(
             for draft in drafts
             if draft.get("draft_id")
         }
+        # Historical seasons use the configured full week range. The current
+        # season is bounded by Sleeper's observable leg in both modes so a
+        # bootstrap cannot manufacture future 0-0 ties.
+        requested_week_end = _maintenance_week_end(config, league) if season == current_season else week_end
+        requested_week_ends.append(requested_week_end)
+        requested_week_ends_by_season[season] = requested_week_end
+        requested_weeks = range(week_start, requested_week_end + 1)
         transactions_by_week = {
             week: api.transactions(season, league_id, week, force=force)
-            for week in range(week_start, week_end + 1)
+            for week in requested_weeks
         }
         matchups_by_week: dict[int, list[dict]] = {}
         matchups_available = True
-        for week in range(week_start, week_end + 1):
+        for week in requested_weeks:
             try:
                 matchups_by_week[week] = api.matchups(season, league_id, week, force=force)
             except SleeperAPIError:
@@ -162,7 +309,15 @@ def main(
         all_tables["leagues"].extend(normalize_league(season, league))
         all_tables["teams"].extend(normalize_teams(season, league_id, users, rosters))
         all_tables["roster_players"].extend(
-            normalize_roster_players(season, league_id, rosters, roster_map, my_roster_id, players)
+            normalize_roster_players(
+                season,
+                league_id,
+                rosters,
+                roster_map,
+                my_roster_id,
+                players,
+                current_season=current_season,
+            )
         )
         all_tables["drafts"].extend(normalize_drafts(season, league_id, drafts))
         all_tables["draft_picks"].extend(normalize_draft_picks(season, league_id, draft_picks_by_draft, players))
@@ -176,6 +331,9 @@ def main(
         all_tables["trades"].extend(normalize_trades(season, league_id, transactions_by_week, roster_map, players))
         all_tables["waivers"].extend(normalize_waivers(season, league_id, transactions_by_week, roster_map, players))
         all_tables["matchups"].extend(normalize_matchups(season, league_id, matchups_by_week, roster_map))
+
+    if run_mode == "maintenance":
+        all_tables = _merge_maintenance_canonical_tables(all_tables, processed_dir)
 
     dataframes = to_dataframes(all_tables)
     manager_profiles = build_manager_profiles(
@@ -211,6 +369,14 @@ def main(
             accuracy_df,
         )
     )
+    dataframes["nfl_team_defense_factors"] = build_team_defense_factors(
+        dataframes.get("player_usage_weekly", pd.DataFrame()),
+        config,
+    )
+    # The current Sleeper leg is the only defensible local clock for horizon
+    # analysis.  Keep it in the in-memory config so every derived horizon row
+    # carries the same as-of boundary as refresh_metadata.
+    config["current_week"] = requested_week_ends_by_season.get(current_season, 0)
     # Append-only projection history log (Sprint 10 pattern) -- deliberately not part
     # of the overwrite-every-refresh export loop below.
     append_projection_accuracy_snapshot(accuracy_history_path, dataframes["projection_source_components"], config)
@@ -249,6 +415,49 @@ def main(
             dataframes["team_asset_inventory"],
         )
     )
+    dataframes["player_horizon_market_scores"] = build_player_horizon_market_scores(
+        dataframes["player_projection_season"],
+        dataframes["player_projection_weekly"],
+        dataframes["player_signal_scores"],
+        dataframes["roster_players"],
+        config,
+        schedule_df=dataframes.get("nfl_schedule", pd.DataFrame()),
+        defense_df=dataframes.get("nfl_team_defense_factors", pd.DataFrame()),
+        usage_df=dataframes.get("player_usage_weekly", pd.DataFrame()),
+        market_consensus_df=dataframes.get("market_consensus_values", pd.DataFrame()),
+    )
+    dataframes["available_player_horizon_scores"] = build_available_player_horizon_scores(
+        dataframes.get("market_consensus_values", pd.DataFrame()),
+        dataframes.get("players", pd.DataFrame()),
+        dataframes.get("roster_players", pd.DataFrame()),
+        dataframes.get("leagues", pd.DataFrame()),
+        config,
+        schedule_df=dataframes.get("nfl_schedule", pd.DataFrame()),
+        defense_df=dataframes.get("nfl_team_defense_factors", pd.DataFrame()),
+        usage_df=dataframes.get("player_usage_weekly", pd.DataFrame()),
+        raw_stats_df=raw_stats_for_grading,
+        season_projection_df=dataframes.get("player_projection_season", pd.DataFrame()),
+        weekly_projection_df=dataframes.get("player_projection_weekly", pd.DataFrame()),
+    )
+    horizon_history_path = processed_dir / "horizon_snapshot_history.csv"
+    horizon_snapshot_receipt = append_horizon_snapshot(
+        horizon_history_path,
+        dataframes["player_horizon_market_scores"],
+        config,
+    )
+    # The current refresh can only grade snapshots for which later realized
+    # nflverse usage exists.  An empty table is an honest cold start, not a
+    # reason to manufacture a forecast-quality number.
+    dataframes["horizon_score_accuracy"] = build_horizon_accuracy_table(
+        horizon_history_path,
+        dataframes.get("player_usage_weekly", pd.DataFrame()),
+        config,
+    )
+    dataframes["horizon_market_movements"] = build_horizon_movement_table(
+        horizon_history_path,
+        dataframes["player_horizon_market_scores"],
+        config,
+    )
     dataframes["today_priority_board"] = build_today_priority_board(
         dataframes["action_recommendations"],
         dataframes["league_news_impact"],
@@ -274,7 +483,22 @@ def main(
             dataframes["player_signal_scores"],
             config,
             dataframes["team_asset_inventory"],
+            dataframes["players"],
+            dataframes["player_horizon_market_scores"],
         )
+    )
+    dataframes["counterparty_trade_edges"] = enrich_counterparty_trade_edges_with_horizons(
+        dataframes.get("counterparty_trade_edges", pd.DataFrame()),
+        dataframes["player_horizon_market_scores"],
+        dataframes["team_needs_matrix"],
+        config,
+    )
+    dataframes["counterparty_asset_interest"] = build_counterparty_asset_interest(
+        dataframes.get("team_asset_inventory", pd.DataFrame()),
+        dataframes.get("manager_transaction_preferences", pd.DataFrame()),
+        dataframes.get("team_needs_matrix", pd.DataFrame()),
+        dataframes.get("player_horizon_market_scores", pd.DataFrame()),
+        config,
     )
     configured_seasons = [str(season) for season, league_id in league_ids_by_season.items() if league_id]
     ingested_seasons = sorted({str(value) for value in dataframes["leagues"].get("season", pd.Series(dtype=str)).dropna().tolist()})
@@ -283,6 +507,7 @@ def main(
         [
             {
                 "generated_at": datetime.now(timezone.utc).isoformat(),
+                "refresh_mode": run_mode,
                 "current_season": config.get("current_season", ""),
                 "configured_league_ids": ";".join(
                     str(value) for value in league_ids_by_season.values() if value
@@ -292,6 +517,12 @@ def main(
                 "historical_league_ids_configured": max(0, len(configured_seasons) - 1),
                 "transaction_week_start": week_start,
                 "transaction_week_end": week_end,
+                "requested_week_end": requested_week_ends_by_season.get(
+                    current_season,
+                    max(requested_week_ends) if requested_week_ends else week_end,
+                ),
+                "current_week": config.get("current_week", 0),
+                "historical_refresh_scope": "all_discovered_seasons" if run_mode == "bootstrap" else "preserved_from_prior_snapshot",
                 "matchups_status": ";".join(matchup_source_statuses) or "not_requested",
                 "matchup_rows": len(dataframes.get("matchups", pd.DataFrame())),
                 "source_scope": "Sleeper public API plus open/legal external sources",
@@ -314,10 +545,19 @@ def main(
                 "projection_accuracy_rows": len(dataframes.get("source_accuracy_scores", pd.DataFrame())),
                 "today_priority_board_rows": len(dataframes.get("today_priority_board", pd.DataFrame())),
                 "manager_valuation_profile_rows": len(dataframes.get("manager_valuation_profiles", pd.DataFrame())),
+                "manager_transaction_preference_rows": len(dataframes.get("manager_transaction_preferences", pd.DataFrame())),
                 "counterparty_edge_rows": len(dataframes.get("counterparty_trade_edges", pd.DataFrame())),
+                "counterparty_asset_interest_rows": len(dataframes.get("counterparty_asset_interest", pd.DataFrame())),
                 "manager_profile_tag_rows": len(dataframes.get("manager_profile_tags", pd.DataFrame())),
                 "player_profile_tag_rows": len(dataframes.get("player_profile_tags", pd.DataFrame())),
                 "player_dossier_rows": len(dataframes.get("player_dossiers", pd.DataFrame())),
+                "player_horizon_market_rows": len(dataframes.get("player_horizon_market_scores", pd.DataFrame())),
+                "available_player_horizon_rows": len(dataframes.get("available_player_horizon_scores", pd.DataFrame())),
+                "horizon_snapshot_rows": horizon_snapshot_receipt.get("row_count", 0),
+                "horizon_accuracy_rows": len(dataframes.get("horizon_score_accuracy", pd.DataFrame())),
+                "horizon_movement_rows": len(dataframes.get("horizon_market_movements", pd.DataFrame())),
+                "nfl_schedule_rows": len(dataframes.get("nfl_schedule", pd.DataFrame())),
+                "nfl_team_defense_factor_rows": len(dataframes.get("nfl_team_defense_factors", pd.DataFrame())),
             }
         ]
     )
@@ -368,6 +608,7 @@ def refresh_user(
     season: str,
     force: bool = False,
     user_id: int | str | None = None,
+    run_mode: str | None = None,
 ) -> dict[str, dict[str, str]]:
     api = SleeperAPI(current_season=str(season))
     entries = discover_leagues(api, username, str(season))
@@ -415,27 +656,40 @@ def refresh_user(
             if app_db and db_user_id is not None and profile is None:
                 app_db.migrate_legacy_team_profile(db_user_id, entry, load_config())
                 profile = app_db.get_team_profile(db_user_id, league_id)
+            manager_trade_profiles = (
+                app_db.list_manager_trade_profiles(db_user_id, league_id)
+                if app_db and db_user_id is not None
+                else []
+            )
             context = (
-                context_from_league_row(str(user_id), entry, profile)
+                context_from_league_row(
+                    str(user_id),
+                    entry,
+                    profile,
+                    manager_trade_profiles=manager_trade_profiles,
+                )
                 if user_id is not None
                 else None
             )
             roster_id = entry.get("roster_id")
+            refresh_paths = (
+                LeaguePaths.for_user_league(str(user_id), league_id)
+                if user_id is not None
+                else LeaguePaths.for_league(league_id)
+            )
+            selected_mode = refresh_mode_for_paths(refresh_paths, run_mode)
             main(
                 force=force,
                 league_id=league_id,
                 roster_id=int(roster_id) if roster_id not in (None, "") else None,
-                paths=(
-                    LeaguePaths.for_user_league(str(user_id), league_id)
-                    if user_id is not None
-                    else LeaguePaths.for_league(league_id)
-                ),
+                paths=refresh_paths,
                 league_type=league_type,
                 context=context,
+                run_mode=selected_mode,
             )
             if app_db and run_id is not None:
                 app_db.finish_refresh_run(run_id, "complete")
-            statuses[league_id] = {"state": "complete", "message": "Refresh complete.", "league_type": league_type}
+            statuses[league_id] = {"state": "complete", "message": f"{selected_mode.title()} refresh complete.", "league_type": league_type, "refresh_mode": selected_mode}
         except Exception as exc:  # noqa: BLE001 - one league failing must not stop the rest.
             if app_db and run_id is not None:
                 app_db.finish_refresh_run(run_id, "failed", str(exc))
@@ -496,4 +750,7 @@ def _discover_league_history_from_seed(
 
 
 if __name__ == "__main__":
-    main(force="--force" in sys.argv)
+    main(
+        force="--force" in sys.argv,
+        run_mode=(sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv and sys.argv.index("--mode") + 1 < len(sys.argv) else None),
+    )

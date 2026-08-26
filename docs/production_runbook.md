@@ -17,6 +17,13 @@ Keep values in Railway variables or a local secret store; never commit them.
 - `FRONT_OFFICE_OPERATOR_TOKEN` for protected refresh, writer, and rebuild
   actions.
 - `FRONT_OFFICE_SCHEDULER=on` only when scheduled per-user refresh is desired.
+- `FRONT_OFFICE_REFRESH_MODE` is optional: use `bootstrap` for first league setup
+  and historical backfill; recurring jobs default to the existing-edition
+  `maintenance` path when they call the user-scoped refresh workflow.
+- `FRONT_OFFICE_MAINTENANCE_WEEK_END` is an optional bounded override for the
+  maintenance window. Without it, the run uses Sleeper's current league leg
+  when available and otherwise fails closed at zero requested weeks rather
+  than treating future placeholder matchups as evidence.
 - `OPENAI_API_KEY` and `FRONT_OFFICE_LLM_PROVIDER=openai` for writer actions.
 - `FRONT_OFFICE_LLM_MODEL=gpt-5.6-luna`.
 - `FRONT_OFFICE_LLM_REASONING_EFFORT` chosen per workload: normally `medium`,
@@ -61,6 +68,27 @@ migration when explicitly configured.
 5. Trigger a writer action only after source freshness and identity are green.
    Confirm the receipt records the selected reporter, provider, model, and
    reasoning effort.
+
+## Data lifecycle
+
+The data room has two intentionally different build paths:
+
+- **Bootstrap** assembles the configured league plus discovered historical
+  leagues, their configured transaction/matchup weeks, raw caches, normalized
+  facts, derived analytics, and the browser bundle. The current season is
+  bounded by Sleeper's observable leg; it is the first setup or a deliberate
+  historical repair operation.
+- **Maintenance** refreshes the current league and bounded current-season week
+  range, then merges those canonical source rows into the prior snapshot by
+  exact source keys. Derived analytics and the browser bundle are rebuilt from
+  that merged evidence. Historical rows are preserved even when the current
+  maintenance window is narrower.
+
+Every refresh writes `refresh_metadata.refresh_mode`,
+`requested_week_end`, and `historical_refresh_scope`. A maintenance run is not
+allowed to imply that omitted historical rows were re-fetched. If a first
+edition has no prior canonical snapshot, the user-scoped workflow selects
+bootstrap automatically; otherwise it selects maintenance.
 
 ## Local trust gate
 

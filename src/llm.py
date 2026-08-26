@@ -82,6 +82,7 @@ def call_structured_tool(
     api_key: str,
     model: str,
     tool: dict[str, Any],
+    editorial_context: list[dict[str, Any]] | None = None,
     timeout: int = 60,
     request_post: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
@@ -89,9 +90,10 @@ def call_structured_tool(
 
     post = request_post or requests.post
     config = configured_llm(model)
+    context = editorial_context or []
     if config.provider == "openai":
-        return _call_openai(post, config, system_prompt, evidence, api_key, tool, timeout)
-    return _call_anthropic(post, config, system_prompt, evidence, api_key, tool, timeout)
+        return _call_openai(post, config, system_prompt, evidence, context, api_key, tool, timeout)
+    return _call_anthropic(post, config, system_prompt, evidence, context, api_key, tool, timeout)
 
 
 def _call_anthropic(
@@ -99,6 +101,7 @@ def _call_anthropic(
     config: LLMConfig,
     system_prompt: str,
     evidence: list[dict[str, Any]],
+    editorial_context: list[dict[str, Any]],
     api_key: str,
     tool: dict[str, Any],
     timeout: int,
@@ -116,7 +119,7 @@ def _call_anthropic(
             "system": system_prompt,
             "tools": [tool],
             "tool_choice": {"type": "tool", "name": tool["name"]},
-            "messages": [{"role": "user", "content": json.dumps({"evidence": evidence})}],
+            "messages": [{"role": "user", "content": json.dumps({"evidence": evidence, "editorial_context": editorial_context})}],
         },
         timeout=timeout,
     )
@@ -129,8 +132,6 @@ def _call_anthropic(
             payload = block.get("input", {})
             if not isinstance(payload, dict):
                 return {}
-            if tool.get("name") != "emit_article":
-                return payload
             return payload | {
                 "_provider_receipt": {
                     "provider": config.provider,
@@ -146,6 +147,7 @@ def _call_openai(
     config: LLMConfig,
     system_prompt: str,
     evidence: list[dict[str, Any]],
+    editorial_context: list[dict[str, Any]],
     api_key: str,
     tool: dict[str, Any],
     timeout: int,
@@ -168,7 +170,7 @@ def _call_openai(
             "reasoning": {"effort": config.reasoning_effort},
             "input": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps({"evidence": evidence})},
+                {"role": "user", "content": json.dumps({"evidence": evidence, "editorial_context": editorial_context})},
             ],
             "tools": [function_tool],
             "tool_choice": {"type": "function", "name": tool["name"]},
@@ -187,8 +189,6 @@ def _call_openai(
                 raise ValueError("OpenAI function-call arguments were not valid JSON.") from exc
             if not isinstance(payload, dict):
                 return {}
-            if tool.get("name") != "emit_article":
-                return payload
             return payload | {
                 "_provider_receipt": {
                     "provider": config.provider,

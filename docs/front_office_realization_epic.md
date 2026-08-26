@@ -4,6 +4,37 @@ Status: in progress
 Date: 2026-08-25
 Owner: Fantasy Dominator product
 
+Current publication contract (2026-08-26): six desks are registered and
+bundled—Daily Brief, Team Report, Market Watch, Four-Window Market Read, Trade
+Desk, and Manager Intel. Older dated checkpoints below may report five desks or
+`0/5` because they predate `horizon_watch`; those counts remain historical and
+are not current production status.
+
+## 2026-08-26 career-window presentation amendment
+
+The player dossier now gives the bounded five-year career-window score its own
+visible card instead of burying it in the Dynasty explanation. This keeps the
+four decision windows and their component evidence legible: weekly utility,
+rest-of-season production, dynasty market/timeline, and the separate internal
+career scenario. The new card carries projected points, years, blended PPG,
+status, and calculation basis; it does not change the deterministic formula or
+present the scenario as a lifetime forecast or trade price.
+
+## Data lifecycle boundary (2026-08-25)
+
+Historical league assembly and recurring upkeep are separate operations. A
+bootstrap run builds the historical Sleeper evidence base and derived
+analytics. A maintenance run requests the current league and bounded
+current-season weeks, merges canonical rows by exact source identity, and then
+rebuilds derived tables and the browser bundle. This keeps maintenance cheaper
+and prevents a narrow refresh from deleting the history that makes manager and
+league dossiers meaningful.
+
+The exact matchup-evidence slice is now promoted into the reusable
+`league_standings` table. The League view shows standings and coverage so a
+reader can distinguish a quiet/offseason team from a genuine 0-0 record. The
+next model-depth slice is the history-anchored career window documented below.
+
 This epic turns Fantasy Dominator from a well-intentioned collection of data,
 analysis, and presentation surfaces into one truthful, durable personal media
 and decision-support product.
@@ -177,13 +208,14 @@ Initial reporter assignments:
 
 - Topline Tony: what matters this week;
 - Waiver Wire Waverly: waiver movement and roster-specific adds;
+- Market Clock Morgan: separate this week, season, dynasty, and career clocks;
 - Trade Desk Talia: counterparties and trade opportunities;
 - Look-Ahead Lonnie: schedule, future value, stashes, and deadlines;
 - Dossier Dana: manager and team history.
 
 Acceptance criteria:
 
-- The five section articles are visibly different in voice and purpose.
+- The six section articles are visibly different in voice and purpose.
 - The daily brief synthesizes article objects rather than recreating their
   facts.
 - Unchanged articles are retained rather than regenerated.
@@ -448,10 +480,11 @@ still resolved through the linked Sleeper user and exact `roster_id`.
 
 The revision-aware public smoke and signed-in browser check have now been
 completed for the deployed revision. The selected owned league renders the
-current Sleeper label, five publication receipts, and the question-led Data
-Room. Release 1 remains open because Railway still reports `0/5 reporter
-articles` in deterministic fallback mode; the operator-authorized Luna run
-and its five reporter receipts still need to be completed and verified.
+current Sleeper label, five publication receipts at that historical checkpoint,
+and the question-led Data Room. `horizon_watch` was added afterward, making the
+current contract six desks. Release 1 remains open because Railway still
+reports deterministic fallback until the operator-authorized Luna run and its
+current reporter receipts are completed and verified.
 
 A first decorative masthead, `assets/media/front-office-masthead-v1.png`, is
 now versioned in the repo and copied into each generated site through the
@@ -461,7 +494,7 @@ through a guarded responsive `<picture>` path with eager loading, dimensions,
 and an explicit media receipt. Additional reporter art and article-specific
 media remain Release 4 work; the artwork contains no factual text or
 statistics.
-## 2026-08-25 writer and outcome checkpoint
+## 2026-08-25 writer and outcome checkpoint (five-desk contract)
 
 The first real Luna run completed all five section articles locally using the
 configured `gpt-5.6-luna` provider. Each result carried a distinct reporter,
@@ -1117,3 +1150,574 @@ manager dossier showed a recorded `45-37-18` outcome across 108 matchup rows
 with the `manager_season_history;matchups` trace. The writer desk remained
 at `0/5` fallback because the separate operator authorization was not
 supplied; no paid generation claim is made.
+
+## 2026-08-26 front-page depth and market trust checkpoint
+
+The front page now receives a structured `front_page_panels` contract from the
+issue builder. It presents the selected roster pulse, roster-linked news with
+market context, projection/market disagreement candidates, and manager dossier
+previews. Each panel item has an entity route, evidence trace, and explicit
+uncertainty copy, so the newspaper facade remains a connected presentation
+layer over the data room.
+
+The market audit also closed a second scale regression downstream of the
+DynastyProcess ingestion fix: canonical values above 100 are no longer divided
+again by signal scoring. Old-player/low-market rows are discounted and labeled
+`role_uncertain_watch` with a role-check action. This keeps recent per-game
+production from becoming a false starter forecast while preserving the research
+lead for human review. The refreshed local bundle now shows the selected
+Lulu’s Potatoe’s roster, four linked news signals, and the four front-page
+desks. The protected Luna run and production deployment remain separate gates.
+
+## 2026-08-26 manager trajectory depth checkpoint
+
+Manager dossiers now carry a deterministic `trajectory` object comparing the
+latest two observed seasons with the preceding observed window. It reports the
+season IDs, trade and waiver activity, records where available, per-season
+activity delta, and explicit `insufficient_history`/`not_comparable` states.
+The browser exposes this as a Manager trajectory evidence drawer on both the
+active manager snapshot and exact team dossier pages; the manager article
+packet receives the same object. This closes the remaining shallow-profile
+seam around contender/rebuilder transitions and transaction timing without
+turning partial current-season activity into intent or a forecast.
+
+## 2026-08-26 Topline newsroom context checkpoint
+
+The existing five-article publication contract now gives Topline Tony a real
+league beat packet instead of only a valuation slice of the selected roster.
+The `team_report` scope carries exact-roster player evidence plus current
+league news, selected-team matchup rows, and selected-team trades/waivers.
+The prompt names these as observed context and requires the reporter to
+connect them to the roster read without turning them into future-performance
+claims or manager intent. A contract test proves the packet includes all four
+evidence classes while preserving current-season and league scoping.
+
+## 2026-08-26 news boundary and presentation regression checkpoint
+
+The first generated league-news bundle exposed a seam failure: long Sleeper
+league IDs were loaded as scientific-notation numbers in the browser bundle,
+so string-only filters made the News desk look empty even though the source
+table contained rows. The impact table now preserves `league_id` and `season`,
+ownership is scoped by league and player, and the issue builder uses an
+ID-safe comparison at the presentation boundary. The browser now shows the
+selected team's linked signals and the full current-league count while keeping
+other leagues out of the private facade; a focused test protects the seam.
+
+## 2026-08-26 written-depth and manager-identity checkpoint
+
+The deterministic publication fallback now renders the same bounded Topline
+Tony week ledger that the protected writer receives: selected-roster and
+league news, matchup status, and recent trade/waiver evidence. Its receipt
+reserves evidence IDs for those context classes instead of spending the whole
+24-row cap on player valuation rows. Manager Intel now consumes the dossier
+objects, exposing history sample size, recorded outcomes, descriptive
+trajectory, and supported trade-fit lanes. Dossier history follows stable
+Sleeper `owner_id` across historical roster-ID changes while current assets
+remain exact-roster scoped.
+
+The event-level browser table is now aligned with that rule: it carries the
+canonical league and owner identity and cannot present a repeated roster
+number from another league as the selected manager's history.
+
+## 2026-08-26 publication-template checkpoint
+
+The issue no longer treats all six article bodies as one generic blob. Each
+desk has a reusable template contract (`morning-ledger`, `team-notebook`,
+`market-ticker`, `trade-desk`, or `manager-dossier`) and a semantic block
+projection from the durable markdown. The browser renders feature, wide, and
+rail layouts with the same evidence receipt underneath, so the newspaper
+facade can gain personality without forking the fact or writer pipeline.
+
+## 2026-08-26 entity-news scope checkpoint
+
+The refreshed browser bundle now scopes `league_news_impact` consistently in the
+News Desk, question-led event pulse, and player entity pages. This matters
+because a single global Sleeper event is materialized once per historical league
+owner; the raw table is correct to repeat it, but a player page is not allowed
+to present those historical copies as six current signals. Long league IDs are
+compared numerically as well as textually at the browser seam. Local acceptance
+is one current Tyreek Hill signal in the selected Lulu's Potatoe's league and
+zero browser errors.
+
+## 2026-08-26 mobile reading facade checkpoint
+
+The publication templates now control list preview density. The first three
+calls remain readable on the front page; long evidence, guardrails, and
+additional calls are available through explicit drawers. The narrow shell also
+uses a horizontal desk rail and removes duplicate masthead weight so the
+reader reaches the issue sooner. This is a presentation-only projection: the
+durable markdown, semantic blocks, receipts, and Data Room remain intact.
+
+## 2026-08-26 news-to-market depth slice
+
+The publication facade now has a deterministic `news_market_edges` table. It
+is built only from current scoped `league_news_impact` rows and a meaningful
+existing market-gap or sell-pressure score. It labels upside lag, pressure
+lag, or mixed news, carries event count, market value, baseline PPG, evidence,
+risk, confidence, and source trace, and is visible in the front-page Market
+desk, Trade Desk signal board, Data Room diagnostics, and the Market Watch
+writer packet. The existing projection-gap lane remains as a fallback.
+
+This is the model for future editorial lanes: deterministic code identifies a
+bounded, inspectable disagreement; a writer explains why it might matter; the
+reader can inspect the receipt and decide. The LLM must not manufacture a
+dislocation from prose or blend news across leagues.
+
+## 2026-08-26 current writer-state reconciliation
+
+The current local refresh produced deterministic-template fallback articles,
+with receipts showing `model_mode=deterministic_template` and an explicit
+fallback reason. The protected operator gate was not enabled, so no paid Luna
+generation was run as part of this refresh. The earlier writer checkpoint above
+records a prior local Luna exercise and remains historical; it must not be used
+as proof that the current bundle or production has fresh Luna-written copy.
+
+## 2026-08-25 manager outcome receipt checkpoint
+
+Manager trajectory now separates activity coverage from outcome coverage. A
+partial current season remains visible in the activity window, but its missing
+matchups cannot create a stronger/weaker results claim. The dossier and browser
+show recorded seasons, partial seasons, and the limited/not-comparable state.
+The dossier also exposes `scored_matchups` separately from scheduled matchup
+rows so the profile tile and narrative use the same denominator.
+## 2026-08-25 horizon-market slice
+
+The player decision layer now has a deterministic three-clock contract. Refresh
+builds `player_horizon_market_scores` from season projections, weekly allocations,
+availability, roster ownership, and signal/market evidence. It exposes separate
+next-game, rest-of-season, and dynasty scores, plus contender fit, rebuilder fit,
+and the spread between them. The player page, Market desk, team-report fallback,
+and Market Watch writer packet all carry the same receipt.
+
+This is intentionally a foundation rather than a claim that schedule-aware
+weekly projections or career forecasts exist. The next-game lane stays
+opponent-neutral until schedule/bye evidence is added; dynasty remains a
+market/timeline lens. The next follow-up is schedule-aware weekly evidence and
+calibration of horizon scores against observed outcomes, not a new ungrounded
+ranking formula.
+
+## 2026-08-26 matchup calibration receipt checkpoint
+
+The schedule-aware horizon now carries an out-of-sample calibration receipt for
+historical defensive factors. Each team/position factor is evaluated on later
+seasons than the evidence used to build it, with validation seasons, evaluated
+games, factor MAE, baseline MAE, MAE delta, direction accuracy, and a status.
+The receipt reaches the player card and Market Watch/Team Report packets. This
+does not claim that a factor predicts the next game; it lets the reader see
+whether the adjustment has added signal in the available holdout sample.
+
+## 2026-08-26 schedule-aware horizon follow-up
+
+The next-game seam now consumes a preserved nflverse schedule and a small
+historical position-level points-allowed factor. The browser and writer packets
+carry the opponent, home/away state, bye status, matchup factor, and the
+schedule coverage receipt. The remaining calibration work is to grade these
+factors against observed weekly outcomes and eventually replace the internal
+dynasty timeline proxy with a real multi-year production projection. The
+following matchup-calibration checkpoint records that holdout grading was then
+added; the multi-year production model remains future work.
+
+The current implementation makes that distinction visible by adding a
+five-year career-window projection and score to the same horizon receipt. The
+score uses projected PPG, projected games, age, and documented position curves;
+it is intentionally labeled an internal scenario and does not overwrite the
+separate dynasty market score.
+
+## 2026-08-26 three-clock market board checkpoint
+
+The Three-Clock Market Board is now a first-class Trade Desk surface rather than
+an implementation detail of player pages and writer packets. It supports active
+team versus league scope, value-lane filtering, horizon sorting, player dossier
+links, and an evidence/risk receipt on every displayed row. The board reuses the
+canonical `player_horizon_market_scores` rows; it does not create a second
+ranking formula or let browser controls rewrite deterministic facts. This is the
+required bridge between the data room and the media facade: a reader can find a
+contender/rebuilder disagreement, read the article lens, and inspect the same
+hard evidence without leaving the decision surface.
+
+The default board ordering now follows the selected team's configured strategy
+(`contender`, `rebuilder`, or balanced) while preserving both fit scores and
+the spread. This makes the board personal without creating a private or
+untraceable score.
+
+The horizon rows also carry `horizon_model_version` and `fit_basis`. The
+version is part of the evidence receipt, and the weighting basis is visible to
+the writer and reader, so a future formula change cannot masquerade as a data
+refresh.
+
+## 2026-08-26 availability-boundary checkpoint
+
+The next-game lane may adjust expected points for a current Sleeper
+availability flag, but the rest-of-season lane remains a production baseline
+when no recovery timeline is available. The basis, risk receipt, fallback
+writer prose, and player Three Clocks card now state that the rest-of-season
+baseline is not recovery-adjusted. This keeps a questionable player from being
+read as though the model had projected a full-season absence or recovery.
+
+## 2026-08-26 score-scale checkpoint
+
+The horizon score contract now carries `horizon_score_basis` with every row:
+the four clock scores and contender/rebuilder fits are position-relative
+percentiles from 0-100, not dollar market values or cross-position price
+rankings. The browser and writer surfaces expose this receipt and direct the
+reader to `market_value`/`market_percentile` for price comparisons. This is a
+small but important guard against reproducing the earlier failure mode where a
+surface-level score made a low-value player appear to outrank a star from a
+different position.
+
+## 2026-08-26 counterparty timeline bridge
+
+The three clocks now inform the actual counterparty workflow. Exact player and
+target-roster joins add target-team lens, active-team lens, fit spread, and a
+versioned timeline read to every edge without changing the independent market
+price calculation. The same receipt is carried into trade theses, manager
+dossiers, deterministic Trade Desk prose, and the visible edge table/cards.
+This turns contender-versus-rebuilder value from a concept on the market board
+into a concrete question attached to a possible conversation while preserving
+the human decision boundary.
+
+## 2026-08-26 three-clock publication amendment
+
+The three-clock market is now also a dedicated `horizon_watch` publication
+desk, with Market Clock Morgan as its default reporter. Its evidence packet and
+fallback article separate This Week, Rest of Season, Dynasty Window, and
+Contender vs Rebuilder reads. The packet selects a small sample within each
+position; position-relative percentiles are never presented as a universal
+cross-position leaderboard, while canonical `market_value` remains the
+cross-position price anchor. This adds an editorial layer on top of the hard
+data without duplicating score calculations or changing the human decision
+boundary.
+## 2026-08-26 clock-transition receipt amendment
+
+The three-clock market now records the movement between adjacent decision
+windows: rest-of-season minus next-game, dynasty minus rest-of-season, and
+five-year career-window minus dynasty. These later-minus-earlier deltas make
+the disagreement legible as a market transition rather than leaving the reader
+to subtract scores from a card or asking a writer to infer it. They remain
+position-relative percentiles, not prices or new blended grades, and become
+unavailable when either endpoint is unavailable.
+
+The same fields now reach the Market Clock Morgan packet, deterministic
+fallback, front-page market read, Three-Clock Market Board, and player dossier.
+The contender/rebuilder weighted fit and its spread stay separate: a transition
+can explain why a player's value moves through time, while the fit lens
+explains which roster strategy benefits from that shape.
+
+Each horizon row also reports `fit_coverage` and names omitted clock inputs in
+the fit basis. When a partial row is still usable, the deterministic fit
+renormalizes the remaining weights; the reader can therefore distinguish a
+four-clock strategy fit from a partial evidence lead.
+
+## 2026-08-26 history-anchored career-window checkpoint
+
+The career clock now uses preserved nflverse weekly production when a current
+Sleeper player has a unique normalized-name plus position match to one source
+player ID. The five-year age curve blends the current season projection with a
+recency-weighted historical PPG anchor and exposes the source player ID, join
+method, history seasons, games, latest season, and PPG in the horizon receipt. A name
+that resolves to multiple source IDs is withheld and falls back to the
+age-only scenario with an explicit ambiguity risk; the Sleeper ID remains the
+canonical player identity. This is a versioned deterministic model change,
+not a claim that the scenario is a lifetime forecast or a trade price.
+
+## 2026-08-26 manager transaction-lane depth checkpoint
+
+The manager dossier now has a separate `manager_transaction_preferences` table
+for identity-resolved player movement by position. It follows stable
+`owner_id` lineage across historical roster IDs and distinguishes trade,
+waiver, and draft acquisitions from disposals. Where those player IDs are
+present in the current `player_horizon_market_scores` table, it adds the
+current next-game, rest-of-season, dynasty, career-window, contender-fit, and
+rebuilder-fit context plus acquired-minus-sold deltas.
+
+This is intentionally not a historical price model. The horizon averages are
+current context for names a manager previously moved; they do not prove that
+the manager preferred those assets at the time, wants them now, or will accept
+an offer. Unresolved player identities stay in an `UNKNOWN` lane, and sparse
+lanes remain low-confidence. The Manager Room and Manager Map expose the same
+receipt, giving Trade Desk analysis a deeper evidence layer without making a
+new browser-only score.
+
+## 2026-08-26 active-asset audience checkpoint
+
+The counterparty workflow now has a two-sided audience layer. The new
+`counterparty_asset_interest` table joins active-roster player assets to
+identity-resolved manager transaction lanes, current team need, and available
+horizon fit. Its `conversation_fit_score` is explicitly a research-priority
+signal, not a market value, probability of acceptance, or claim about intent.
+
+Trade theses, the Trade Desk, manager dossiers, and the writer packet now show
+possible audiences for our assets alongside the existing seller-side
+counterparty edges. Missing lanes remain absent rather than becoming inferred
+demand; sparse history, missing horizons, confidence, risk, and source traces
+remain visible. This is the bridge from “who owns the asset?” to “which
+conversation is worth investigating?” without creating an offer generator or
+a second market model.
+
+## 2026-08-26 available-market publication checkpoint
+
+The available-market research table now reaches the publication surface. Market
+Watch gives Waiver Wire Waverly a position-aware packet of identity-resolved
+names absent from the selected league roster, carrying all four clock scores,
+clock-to-clock deltas, fit coverage, and the canonical price anchor. The front
+page reserves one card for the same lane when usable evidence exists, while the
+Draft Room remains the deeper board. Market Clock Morgan continues to own the
+full-league clock comparison; Waverly interprets the available names. Both
+articles sit on one deterministic source table, preserve missing evidence, and
+state that roster absence is not proof of waiver eligibility.
+
+## 2026-08-26 entity-entry follow-through
+
+The available-market publication now has a connected player route. When a
+front-page or horizon-board card points to a player who has no roster dossier,
+the browser joins the identity-resolved available horizon row with canonical
+player metadata and renders a player evidence page. It preserves missing
+clocks, fit coverage, market anchor, and source trace, while explicitly
+labeling the row as snapshot-based research rather than ownership or waiver
+eligibility. This closes the publication-to-data-room entry path without
+creating a second player model or another generation call.
+
+## 2026-08-26 horizon surface integrity amendment
+
+The Trade Desk now presents the four horizon scores as visual percentile
+meters, preserving the numeric labels, separate contender/rebuilder fit row,
+transition deltas, and evidence drawer. Missing scores render as unavailable;
+they are never silently turned into zero. The homepage desk shelf now exposes
+all six registered publication desks, including the Market Clock Morgan read,
+so the new analysis has a reader entry path.
+
+The local validator also checks score range, clock coverage, transition
+arithmetic, model version, score basis, and value-lane vocabulary. This is a
+structural trust gate, not a claim that the horizon percentiles are outcome-
+calibrated forecasts. Calibration remains a separate future slice requiring
+dated snapshots and realized outcomes.
+## 2026-08-26 horizon feedback foundation
+
+The horizon layer now has a path to learn from realized results. Each refresh
+preserves the current deterministic comparison in an idempotent
+`horizon_snapshot_history.csv`; later refreshes derive
+`horizon_score_accuracy.csv` for next-game and active rest-of-season outcomes
+when the Sleeper-named player can be joined unambiguously to nflverse usage.
+The browser and trust gate expose the cold-start state instead of implying
+calibration. Dynasty, career-window, and contender/rebuilder fit remain
+separate decision constructs until a longitudinal outcome contract exists.
+
+## 2026-08-26 horizon repricing-lead checkpoint
+
+The horizon layer now also shows each decision clock against the current
+same-position market percentile: next-game minus market, rest-of-season minus
+market, dynasty minus market, and career-window minus market. This gives the
+newsroom a precise way to look for a player's utility moving ahead of or behind
+the market without calling that difference a dollar price or a proven
+mispricing. The canonical market value remains the cross-position price anchor;
+missing endpoint evidence stays unavailable. The validator reconciles these
+deltas, and the Trade Desk, Market Clock Morgan packet, fallback article, and
+front-page market read consume them from the canonical horizon row.
+
+## 2026-08-26 four-window repricing publication checkpoint
+
+The live naming now matches the actual model: next game, rest of season,
+dynasty market, and the separate five-year career-window scenario are presented
+as a Four-Window Market Read. The deterministic fallback adds a Market vs Clock
+section that selects the largest positive and negative same-position deltas per
+position, while the Trade Desk adds disagreement sorting and a visible four-cell
+repricing grid. These are discovery leads layered over the hard data; they do
+not create a universal player rank, dollar price, or proof of mispricing.
+
+## 2026-08-26 counterparty repricing bridge
+
+The counterparty workflow now carries the canonical four-window scores,
+clock-minus-market deltas, transition deltas, and largest same-position
+disagreement window into both target-owned trade edges and possible audiences
+for our owned assets. Trade theses, manager dossier fit cards, and the Trade
+Desk packet can therefore answer two separate questions together: which team
+has the stronger timeline fit, and which time window is leading or lagging the
+current market percentile. The existing trade and conversation scores remain
+unchanged; copied horizon context is validated against the canonical horizon
+table and missing joins stay unavailable.
+
+## 2026-08-26 personalized horizon fit amendment
+
+The four horizon scores remain the shared deterministic instrument, while each
+private league may optionally set `strategy_profile.horizon_fit_weights` for
+its contender and rebuilder lenses. Values are normalized and malformed lanes
+fall back to the documented defaults with an explicit fit receipt. This lets a
+manager decide how much urgency, current-season production, dynasty runway, or
+career-window scenario should influence the fit read without creating a new
+market score or changing the underlying evidence. The profile editor exposes
+the setting, and profile updates merge private strategy JSON so an edit cannot
+erase core holds or tracked picks. The scheduler/user refresh path also carries
+private manager-trade profiles into the same scoped context used by the
+app-triggered refresh.
+
+## 2026-08-26 strategy receipt entry-path amendment
+
+The private horizon fit is now visible on the My Team strategy panel, including
+the active contender/rebuilder/balanced lens, the number of roster horizon rows,
+the resolved weighting profile, and the deterministic `fit_basis` receipt. A
+player evidence chain now carries all four canonical horizons plus contender and
+rebuilder fit scores, so the reader can follow the same decision model from a
+team-level strategy setting to an individual player page. This is presentation
+and traceability over the existing evidence model; it does not create a second
+score or imply that a fit lens is a forecast.
+
+## 2026-08-26 current-availability provenance amendment
+
+The normalization path now treats Sleeper player-cache availability as
+current-state metadata. `roster_players` emits an explicit
+`availability_scope`: `current_season_snapshot` for the configured current
+season and `historical_unavailable` for older or boundary-less rows. Historical
+injury fields are blank rather than inheriting today's status, preventing a
+current injury flag from becoming false evidence in multi-season manager or
+player dossiers. This corrects provenance without pretending that a current
+status supplies a recovery timeline or recovery-adjusted rest-of-season
+projection.
+
+## 2026-08-26 availability receipt follow-through
+
+The same `availability_scope` receipt now travels into `player_dossiers` and
+`player_horizon_market_scores`, then appears in the player table, player page,
+and horizon evidence card. A reader can distinguish a current Sleeper snapshot
+from intentionally unavailable historical status without inspecting a raw CSV.
+This is provenance only: it does not turn a current injury flag into a
+recovery timeline or change any horizon score.
+
+## 2026-08-26 market-quality receipt follow-through
+
+The hard-data boundary now carries the canonical market consensus receipt into
+the four-window rows: source count, component disagreement, and consensus
+confidence. The same values appear in horizon snapshots, writer evidence, the
+Trade Desk, and player pages. This lets the newsroom distinguish a real
+clock-versus-market research lead from a thin or divided price anchor without
+creating a second valuation formula or silently rescaling a horizon score.
+## Horizon markets: decision instrument and media layer
+
+The three requested market questions are separate deterministic instruments:
+next game, rest of season, and dynasty/career horizon. Their deltas are not
+another price model; they explain where urgency, season production, or dynasty
+patience changes the audience for an asset. Contender and rebuilder fit are
+personalized combinations of those canonical lanes.
+
+The newsroom should use those fields to produce distinct stories—weekly
+lineup/market context, season planning, and dynasty repricing—without
+regenerating duplicate articles when the evidence fingerprint is unchanged.
+Each story must keep the hard-data receipt one click away. The public read is
+therefore short and decision-led, while the full player cohort, conditional
+PPG baseline, injury provenance, market-source quality, transition deltas, and
+source traces remain queryable in the data room.
+
+## 2026-08-26 data relevance and editor checkpoint
+
+The data room now makes relevance a first-class input rather than forcing each
+writer to infer it from a mixed historical/current bundle. Current Sleeper
+availability is separated from historical production: a player with no current
+NFL team may retain historical evidence, but the weekly and rest-of-season
+actionable scores are unavailable and the baseline is labeled conditional on
+signing. The next-game, season, and dynasty/career desks therefore receive the
+same canonical packet with different declared questions, not different facts.
+
+The newsroom also now supports bounded peer and previous-edition context. This
+is editorial context only, is excluded from evidence receipts, and exists to
+create useful disagreement and continuity between voices. A deterministic desk
+editor reviews every candidate for required story fields and evidence/source
+receipts before it reaches the printed facade. Held articles remain inspectable
+in the publication receipt but do not display unsupported copy or actions.
+
+## 2026-08-26 decision-view presentation slice
+
+The Four-Window Market Board now has focused views for All Clocks, This Week,
+Rest of Season, Dynasty/Career, Contender vs Rebuilder, and Repricing Leads.
+Changing the view changes the default sort and the amount of card copy shown;
+it does not create or recompute a score. This makes each market number useful
+as its own decision instrument while keeping the shared evidence packet and
+position-relative comparison boundary intact. The full card and evidence
+drawer remain available when the manager wants the complete read.
+
+## 2026-08-26 inspectable writer generation plan
+
+The operator now exposes a protected, read-only writer generation plan before
+the cost-incurring action. It runs the real desk scopes and compares each
+desk's evidence fingerprint, content hash, reporter, writer mode, and
+configured model to its current publication receipt. The plan reports whether
+each desk will generate, reuse, keep its deterministic fallback, or is blocked
+by missing evidence or a missing provider key. It makes the expected Luna
+work visible without making a provider request, and the eventual writer run
+continues to use the same predicate rather than a second planning model.
+
+## 2026-08-26 writer identity seam correction
+
+The horizon publication scope now enforces `league_id` in addition to season.
+This closes a multi-league entry-path risk in which a correct-looking
+four-window article could have received another league's identified rows from
+the same processed workspace. The correction is covered by a cross-league
+adversarial scope test; blank legacy league IDs remain allowed only where the
+row itself does not claim a conflicting league.
+
+## 2026-08-26 horizon movement receipt follow-through
+
+The four-window scores now have a dated reader-facing change seam. Each refresh
+compares the current row with the latest genuinely earlier snapshot in the same
+league, season, roster, player, position, and model scope and writes
+`horizon_market_movements.csv`. Same-week reruns and first-run baselines remain
+empty; missing endpoints stay unavailable. The newsroom uses changed rows to
+explain what moved, while preserving the rule that a movement receipt is not a
+fifth score, a dollar price, or proof of mispricing.
+
+## 2026-08-26 current-news scope correction
+
+Current RotoWire and Sleeper-trending events are now attached only to
+current-season ownership in the league-impact table. The previous join could
+fan a current event into every historical season in which a player appeared,
+which made a correct event look like repeated news and weakened the historical
+evidence boundary. The change preserves multi-league current-season coverage,
+keeps blank legacy rows explicitly unscoped, and is protected by an adversarial
+current-versus-completed-season test.
+
+## 2026-08-26 identity fallback correction
+
+The presentation audit found two last-mile identity fallbacks that could undo
+the source-of-truth work: a missing manager roster match selected the first
+manager row, and a missing team dossier match selected all players. Both paths
+now fail closed to an empty or quiet read, and team-report evidence is
+intersected with the exact scoped `roster_players` player IDs before it reaches
+the writer. Cross-roster and cross-league entry-path tests protect the seam.
+
+## 2026-08-26 desk editor repair pass
+
+The newsroom now has an optional explicit Luna editor pass after each writer
+draft. `FRONT_OFFICE_EDITOR_MODE=llm` is the paid opt-in; deterministic review
+remains mandatory in every mode. The editor receives the same selected,
+validated evidence packet plus bounded draft context and must approve, return a
+complete evidence-cited repair, or hold the article. Persisted review receipts
+survive markdown reload and browser bundling, so a held article cannot be
+printed accidentally and a revised article is labeled as revised. Held
+sections are also excluded from the daily brief's peer context. This closes the
+editorial quality seam without allowing an LLM to become a source of facts,
+scores, manager motives, or transactions.
+
+## 2026-08-26 writer-plan parity repair
+
+The protected writer preview and the paid workflow now share a stable article
+reuse key. Peer and previous-edition prose remains available to a writer as
+bounded editorial context, but it is not part of the evidence fingerprint:
+newly generated peer prose cannot be known by a no-cost plan and cannot cause a
+false regeneration cascade across the newsroom. The fingerprint still changes
+for the article's selected evidence, league/roster scope, prompt, reporter,
+model, and editor mode. An entry-path test generates the multi-desk issue and
+then proves the preview reports reuse for every unchanged desk.
+
+## 2026-08-26 bounded newsroom packets and scoped retries
+
+The first real Luna run exposed an operational seam rather than a content
+problem: the manager dossier and trade packets carried raw transaction and
+counterparty histories into the provider request, making a single desk more
+likely to hit rate limits and harder to retry safely. The durable dossiers stay
+complete in the data room, while writer packets now carry bounded aggregates,
+recent history, leading fits, and explicit source traces. The workflow also
+supports a targeted article retry, so a failed desk can be repaired without
+regenerating approved articles or their editor receipts.
+
+The authenticated identity recheck now has a bounded browser wait. A slow
+Sleeper discovery cannot leave the control permanently stuck on “Checking”;
+the saved verified identity remains visible and the manager gets a truthful
+retry message while the server-side request completes or times out.

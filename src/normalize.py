@@ -122,7 +122,14 @@ def normalize_roster_players(
     roster_map: dict[int, dict[str, Any]],
     my_roster_id: int | None,
     players: dict[str, dict[str, Any]],
+    current_season: str | None = None,
 ) -> list[dict[str, Any]]:
+    # Sleeper's player cache is current-state metadata.  It can safely describe
+    # the current-season roster, but copying its injury flag into an older
+    # roster row turns today's availability into a false historical observation.
+    # When the caller has no current-season boundary, fail closed: the injury
+    # fields stay blank and the explicit scope receipt records why.
+    availability_is_current = current_season not in (None, "") and str(season) == str(current_season)
     rows = []
     for roster in rosters:
         roster_id = int(roster.get("roster_id"))
@@ -152,6 +159,9 @@ def normalize_roster_players(
                     "nfl_team": player_field(players, player_id, "team"),
                     "age": player_field(players, player_id, "age"),
                     "years_exp": player_field(players, player_id, "years_exp"),
+                    "availability_scope": "current_season_snapshot" if availability_is_current else "historical_unavailable",
+                    "injury_status": player_field(players, player_id, "injury_status") if availability_is_current else "",
+                    "injury_body_part": player_field(players, player_id, "injury_body_part") if availability_is_current else "",
                     "roster_status": roster_status,
                     "is_my_team": roster_id == my_roster_id,
                     "team_name": roster_map.get(roster_id, {}).get("team_name", ""),
@@ -517,6 +527,11 @@ def _format_number(value: float | None) -> float | str:
 
 def _matchup_result(points_for: float | None, points_against: float | None) -> str:
     if points_for is None or points_against is None:
+        return "unplayed"
+    # Sleeper returns placeholder 0-0 rows for future weeks. A real zero-score
+    # tie is not distinguishable at this seam, but treating the placeholder as
+    # played would fabricate a season of ties before games exist.
+    if points_for == 0 and points_against == 0:
         return "unplayed"
     if points_for > points_against:
         return "win"

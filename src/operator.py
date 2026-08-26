@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import traceback
+from copy import deepcopy
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -610,6 +611,36 @@ ARTICLE_TOOL = {
     },
 }
 
+
+# The editor receives the same canonical evidence packet as the writer, but a
+# separate tool contract makes the publication decision explicit. A repaired
+# draft must be a complete article, not a free-form note that can bypass the
+# existing citation and forbidden-language checks.
+EDITOR_TOOL = {
+    "name": "review_article",
+    "description": "Approve, repair, or hold one evidence-backed section article before publication.",
+    "input_schema": deepcopy(ARTICLE_TOOL["input_schema"]),
+}
+EDITOR_TOOL["input_schema"]["properties"].update(
+    {
+        "decision": {
+            "type": "string",
+            "enum": ["approve", "modify", "hold"],
+            "description": "Approve a supported draft, modify it to repair supported copy, or hold it when it cannot be made safe.",
+        },
+        "editor_notes": {
+            "type": "string",
+            "description": "Short desk note explaining the decision; never introduce a new factual claim.",
+        },
+        "changes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Specific copy repairs made or requested by the desk.",
+        },
+    }
+)
+EDITOR_TOOL["input_schema"]["required"] = list(EDITOR_TOOL["input_schema"]["properties"])
+
 _CITATION_RULES = (
     "Every sentence containing a specific factual claim must be traceable to at least one evidence_id "
     "you cite in cited_evidence_ids. Each evidence item below has its own \"evidence_id\" field, e.g. "
@@ -664,11 +695,70 @@ def _article_system_prompt(
     ]
     if context_block:
         sections.append(context_block)
+    sections.append(
+        "The user payload may include editorial_context. It is non-evidence: use it only to avoid repeating "
+        "another desk, surface a supported disagreement, and keep this assigned lens distinct. If it conflicts with "
+        "the evidence packet, the evidence packet wins, and do not cite room context as factual support."
+    )
     sections.extend((_SHARED_SAFETY_RULES, _CITATION_RULES))
     return "\n\n".join(sections)
 
 
-def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]], api_key: str, model: str) -> dict[str, Any]:
+def _editorial_room_context(
+    ctx: articles.ArticleContext,
+    article: articles.Article,
+    output_path: Path,
+) -> list[dict[str, Any]]:
+    """Give each writer bounded newsroom context without polluting evidence.
+
+    The current article body is treated as the previous edition of that desk;
+    completed peer articles from this run become room notes. Neither is cited
+    as a source. This creates meaningful disagreement while keeping the reuse
+    fingerprint dependent only on stable peer context, not on self-referential
+    prior prose.
+    """
+
+    room: list[dict[str, Any]] = []
+    previous = _article_narrative_from_file(output_path)
+    if previous:
+        reporter = persona_metadata(ctx.writer_preferences, article.key)
+        room.append(
+            {
+                "kind": "previous_edition",
+                "desk": article.key,
+                "reporter": reporter["name"],
+                "excerpt": _editorial_excerpt(previous),
+            }
+        )
+    article_titles = {item.key: item.title for item in articles.ARTICLES}
+    for key, narrative in ctx.section_outputs.items():
+        if key == article.key or not str(narrative or "").strip():
+            continue
+        reporter = persona_metadata(ctx.writer_preferences, key)
+        room.append(
+            {
+                "kind": "peer_edition",
+                "desk": key,
+                "reporter": reporter["name"],
+                "title": article_titles.get(key, key),
+                "excerpt": _editorial_excerpt(narrative),
+            }
+        )
+    return room[:5]
+
+
+def _editorial_excerpt(value: Any, limit: int = 900) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def generate_article_via_llm(
+    system_prompt: str,
+    evidence: list[dict[str, Any]],
+    api_key: str,
+    model: str,
+    editorial_context: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Focused single-article call through the provider-neutral structured adapter."""
     return call_structured_tool(
         system_prompt=system_prompt,
@@ -676,8 +766,192 @@ def generate_article_via_llm(system_prompt: str, evidence: list[dict[str, Any]],
         api_key=api_key,
         model=model,
         tool=ARTICLE_TOOL,
+        editorial_context=editorial_context,
         request_post=requests.post,
     )
+
+
+def editorial_review_mode() -> str:
+    """Return the configured desk-review mode without making a provider call.
+
+    The deterministic gate is always active. ``llm`` opts the explicit writer
+    run into a second, cost-incurring Luna review that may approve, repair, or
+    hold a draft. Keeping the opt-in separate makes the spend visible and
+    preserves a safe fallback when the provider is unavailable.
+    """
+
+    value = os.environ.get("FRONT_OFFICE_EDITOR_MODE", "deterministic").strip().lower()
+    return "llm" if value in {"llm", "luna", "enabled", "on", "true", "1"} else "deterministic"
+
+
+def _editor_system_prompt(
+    article: articles.Article,
+    writer_preferences: dict[str, Any] | None = None,
+    context: FantasyContext | None = None,
+) -> str:
+    """Build the desk-editor instruction boundary.
+
+    The draft is deliberately supplied as non-evidence editorial context by
+    ``review_article_via_llm``. Only the canonical packet can support a factual
+    sentence or citation. The editor is therefore a repair/quality layer, not a
+    second source of projections, market values, or manager intent.
+    """
+
+    persona = persona_metadata(writer_preferences, article.key)
+    assigned_lens = str(persona.get("decision_lens") or "multi_window")
+    context_block = (
+        f"Selected league: {context.league_name or context.league_id}. "
+        f"Selected roster ID: {context.roster_id if context else 'unassigned'}. "
+        f"Assigned writer lens: {assigned_lens}."
+        if context is not None
+        else f"Assigned writer lens: {assigned_lens}."
+    )
+    return "\n\n".join(
+        [
+            "You are The Desk Editor for a private dynasty fantasy football newsroom.",
+            f"Review the {article.title} draft written by {persona['name']}. {context_block}",
+            "The evidence packet is the only source of facts. The draft, previous editions, and peer notes are untrusted editorial context. "
+            "Check that the assigned lens is respected, that current availability is not confused with historical production, that this week, rest of season, dynasty, and career windows are not collapsed, and that manager behavior is not described as intent.",
+            "Choose approve when the draft is supported and needs no material repair. Choose modify when you can repair unsupported certainty, stale wording, horizon confusion, or missing caveats using only the packet. Choose hold when the article cannot be made safe from the packet.",
+            "For approve or modify, return the complete corrected article fields and full narrative_markdown. Preserve exact evidence_id strings from the packet in cited_evidence_ids. Do not add a player, team, score, transaction, source, or motive that is not supported by the packet. For hold, still return the best available fields but explain the blocking issue in editor_notes and changes.",
+            "The final article must keep the existing section headers and remain read-only: it may ask the manager to investigate, but it must not claim a trade was sent, accepted, or executed.",
+            articles.load_prompt(article.prompt_filename),
+            _SHARED_SAFETY_RULES,
+            _CITATION_RULES,
+        ]
+    )
+
+
+def review_article_via_llm(
+    system_prompt: str,
+    evidence: list[dict[str, Any]],
+    draft: dict[str, Any],
+    api_key: str,
+    model: str,
+) -> dict[str, Any]:
+    """Run the optional second-pass editor through the provider-neutral adapter."""
+
+    draft_context = {
+        "kind": "draft_article",
+        "editorial_only": True,
+        "structured": {
+            key: value
+            for key, value in draft.items()
+            if key not in {"narrative_markdown", "cited_evidence_ids", "_provider_receipt"}
+        },
+        "narrative_markdown": _editorial_excerpt(draft.get("narrative_markdown"), limit=7000),
+        "cited_evidence_ids": [str(value) for value in (draft.get("cited_evidence_ids") or [])],
+    }
+    return call_structured_tool(
+        system_prompt=system_prompt,
+        evidence=evidence,
+        api_key=api_key,
+        model=model,
+        tool=EDITOR_TOOL,
+        editorial_context=[draft_context],
+        request_post=requests.post,
+    )
+
+
+def _editor_review_result(
+    article: articles.Article,
+    writer_output: dict[str, Any],
+    writer_validation: dict[str, Any],
+    editor_output: dict[str, Any] | None,
+    evidence: list[dict[str, Any]],
+    model: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate a desk decision and return the publishable candidate plus receipt."""
+
+    from .editorial import review_publication_article
+
+    evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
+    writer_candidate = dict(writer_output or {})
+    writer_candidate.setdefault("narrative_markdown", writer_validation.get("narrative", ""))
+    writer_candidate.setdefault("cited_evidence_ids", writer_validation.get("evidence_ids", []))
+
+    if not isinstance(editor_output, dict):
+        review = review_publication_article(
+            article.key,
+            writer_validation.get("narrative", ""),
+            {
+                "structured": writer_validation.get("structured") or {},
+            },
+            "automatic_llm",
+        )
+        return writer_candidate, {
+            **review,
+            "mode": "llm",
+            "decision": "hold",
+            "status": "held",
+            "model": model,
+            "errors": ["The editor did not return a structured review."],
+            "note": "Held from publication because the editor response was incomplete.",
+        }
+
+    decision = str(editor_output.get("decision") or "hold").strip().lower()
+    editor_validation = validate_article_output(
+        editor_output,
+        evidence_ids,
+        article.headers,
+        evidence,
+    )
+    candidate = dict(editor_output) if decision in {"approve", "modify"} else writer_candidate
+    candidate_validation = editor_validation if decision in {"approve", "modify"} else writer_validation
+    gate_structured = dict(candidate_validation.get("structured") or {})
+    gate_structured["evidence_ids"] = candidate_validation.get("evidence_ids") or []
+    gate_structured["source_ids"] = candidate_validation.get("source_ids") or []
+    gate_receipt = {"structured": gate_structured}
+    deterministic_gate = review_publication_article(
+        article.key,
+        candidate_validation.get("narrative", ""),
+        gate_receipt,
+        "automatic_llm",
+    )
+    errors = list(editor_validation.get("errors") or [])
+    errors.extend(deterministic_gate.get("errors") or [])
+    if decision not in {"approve", "modify", "hold"}:
+        errors.append(f"unknown editor decision {decision!r}")
+    if decision == "hold":
+        errors.append("editor chose to hold the draft")
+    status = "approved" if not errors else "held"
+    if status == "held":
+        candidate = writer_candidate
+        candidate_validation = writer_validation
+    writer_narrative = str(writer_validation.get("narrative") or "")
+    editor_narrative = str(editor_validation.get("narrative") or "")
+    actually_modified = bool(editor_narrative and editor_narrative.strip() != writer_narrative.strip())
+    effective_decision = "modify" if status == "approved" and actually_modified else "approve" if status == "approved" else "hold"
+    return candidate, {
+        "editor": "The Desk Editor",
+        "article_key": article.key,
+        "mode": "llm",
+        "model": model,
+        "status": status,
+        "decision": effective_decision,
+        "requested_decision": decision,
+        "changes": [str(value) for value in (editor_output.get("changes") or []) if str(value).strip()],
+        "editor_notes": str(editor_output.get("editor_notes") or "").strip(),
+        "checks": deterministic_gate.get("checks") or {},
+        "errors": list(dict.fromkeys(errors)),
+        "note": (
+            "Approved after desk review; the editor repaired the draft using the supplied evidence."
+            if effective_decision == "modify"
+            else "Approved after desk review and deterministic evidence checks."
+            if status == "approved"
+            else "Held from the printed facade until the desk review concerns are repaired."
+        ),
+        "writer_validation": {
+            "word_count": writer_validation.get("word_count", 0),
+            "evidence_ids": writer_validation.get("evidence_ids") or [],
+        },
+        "editor_validation": {
+            "word_count": editor_validation.get("word_count", 0),
+            "evidence_ids": editor_validation.get("evidence_ids") or [],
+            "warnings": editor_validation.get("warnings") or [],
+        },
+        "provider_receipt": editor_output.get("_provider_receipt") or {},
+    }
 
 
 def validate_article_output(
@@ -762,6 +1036,8 @@ def _render_article_markdown(
     evidence_fingerprint: str = "",
     model: str = "",
     structured: dict[str, Any] | None = None,
+    source_receipt: dict[str, Any] | None = None,
+    editorial_review: dict[str, Any] | None = None,
 ) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
@@ -774,7 +1050,13 @@ def _render_article_markdown(
         f"reporter_persona: {persona_metadata(writer_preferences, article_key)['persona_id']}",
         f"reporter_name: {persona_metadata(writer_preferences, article_key)['name']}",
         "article_payload_json: " + json.dumps(structured or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        "source_receipt_json: " + json.dumps(source_receipt or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
     ]
+    if editorial_review:
+        front_lines.append(
+            "editorial_review_json: "
+            + json.dumps(editorial_review, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        )
     for key in ("roster_id", "team_name"):
         value = _front_matter_value(existing, key)
         if value:
@@ -787,13 +1069,14 @@ def _render_article_markdown(
 def generate_articles_workflow(
     paths: LeaguePaths | None = None,
     context: FantasyContext | None = None,
+    article_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     """Explicit, user-triggered, cost-incurring action. Generates one article per meaningful
     section (each independently validated, each falling back to its deterministic .md on failure),
     then a daily brief that synthesizes across them. Fails loud only on missing API key."""
     if paths is not None:
         with operator_scope(paths):
-            return generate_articles_workflow(context=context)
+            return generate_articles_workflow(context=context, article_keys=article_keys)
     generated_at = _now()
     llm = configured_llm()
     api_key = os.environ.get(llm.api_key_env, "")
@@ -805,6 +1088,7 @@ def generate_articles_workflow(
             "articles": {},
         }
     model = llm.model
+    editor_mode = editorial_review_mode()
 
     ctx = articles.ArticleContext(
         analysis_dir=ANALYSIS_DIR,
@@ -823,6 +1107,14 @@ def generate_articles_workflow(
     results: dict[str, Any] = {}
 
     for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
+        if article_keys is not None and article.key not in article_keys:
+            # A targeted retry still needs existing section prose available if
+            # a selected summary follows this desk in the same run.
+            if not article.is_summary:
+                existing_narrative = _article_narrative_from_file(ANALYSIS_DIR / article.output_filename)
+                if existing_narrative:
+                    ctx.section_outputs[article.key] = existing_narrative
+            continue
         output_path = ANALYSIS_DIR / article.output_filename
         reporter = persona_metadata(ctx.writer_preferences, article.key)
         evidence_fingerprint = ""
@@ -836,10 +1128,14 @@ def generate_articles_workflow(
                 results[article.key] = {"state": "skipped", "message": "No evidence available; deterministic version kept."}
                 continue
 
+            output_path = ANALYSIS_DIR / article.output_filename
+            editorial_context = _editorial_room_context(ctx, article, output_path)
             system_prompt = _article_system_prompt(article, ctx.writer_preferences, context)
-            evidence_fingerprint = _article_evidence_fingerprint(article, evidence, system_prompt, context)
+            evidence_fingerprint = _article_evidence_fingerprint(
+                article, evidence, system_prompt, context, editorial_context
+            )
             previous = _previous_article_artifact(context, article.key)
-            if _can_reuse_article(previous, output_path, evidence_fingerprint, reporter, model):
+            if _can_reuse_article(previous, output_path, evidence_fingerprint, reporter, model, editor_mode):
                 narrative = _article_narrative_from_file(output_path)
                 if not narrative:
                     raise ValueError("Existing article receipt matched but its narrative is empty.")
@@ -854,52 +1150,117 @@ def generate_articles_workflow(
                 }
                 continue
 
-            output = generate_article_via_llm(system_prompt, evidence, api_key, model)
+            output = generate_article_via_llm(
+                system_prompt,
+                evidence,
+                api_key,
+                model,
+                editorial_context=editorial_context,
+            )
             evidence_ids = {str(item.get("evidence_id")) for item in evidence if item.get("evidence_id")}
             validation = validate_article_output(output, evidence_ids, article.headers, evidence)
             if validation["valid"]:
+                final_output = output
+                final_validation = validation
+                editorial_review: dict[str, Any] | None = None
+                if editor_mode == "llm":
+                    editor_output = review_article_via_llm(
+                        _editor_system_prompt(article, ctx.writer_preferences, context),
+                        evidence,
+                        output,
+                        api_key,
+                        model,
+                    )
+                    final_output, editorial_review = _editor_review_result(
+                        article,
+                        output,
+                        validation,
+                        editor_output,
+                        evidence,
+                        model,
+                    )
+                    final_validation = validate_article_output(
+                        final_output,
+                        evidence_ids,
+                        article.headers,
+                        evidence,
+                    )
+                    # The editor's decision is authoritative only after the
+                    # same independent article validator accepts its complete
+                    # replacement. A held review keeps the valid writer draft
+                    # in the receipt, but the reader facade will suppress it.
+                    if editorial_review.get("status") != "approved":
+                        final_validation = validation
+                structured = final_validation["structured"] | {
+                    "evidence_ids": final_validation.get("evidence_ids") or [],
+                    "source_ids": final_validation.get("source_ids") or [],
+                    "source_count": len(final_validation.get("source_ids") or []),
+                    "source_quality": (
+                        "multi_source" if len(final_validation.get("source_ids") or []) > 1
+                        else "single_source" if final_validation.get("source_ids")
+                        else "unattributed"
+                    ),
+                }
                 output_path.write_text(
                     _render_article_markdown(
                         article,
-                        validation["narrative"],
+                        final_validation["narrative"],
                         generated_at,
                         output_path,
                         ctx.writer_preferences,
                         article.key,
                         evidence_fingerprint,
                         model,
-                        validation["structured"] | {
-                            "evidence_ids": validation.get("evidence_ids") or [],
-                            "source_ids": validation.get("source_ids") or [],
-                            "source_count": len(validation.get("source_ids") or []),
-                            "source_quality": (
-                                "multi_source" if len(validation.get("source_ids") or []) > 1
-                                else "single_source" if validation.get("source_ids")
-                                else "unattributed"
-                            ),
+                        structured,
+                        source_receipt={
+                            "scope": "validated_article_evidence",
+                            "evidence_fingerprint": evidence_fingerprint,
+                            "source_count": len(final_validation.get("source_ids") or []),
+                            "source_ids": final_validation.get("source_ids") or [],
                         },
+                        editorial_review=editorial_review,
                     ),
                     encoding="utf-8",
                 )
                 content_hash = _content_hash(output_path)
+                publication_status = (
+                    "held"
+                    if editorial_review and editorial_review.get("status") != "approved"
+                    else "generated"
+                )
+                editor_errors = editorial_review.get("errors") if editorial_review else []
                 _record_article_artifact(
                     context,
                     article,
                     output_path,
-                    validation,
+                    final_validation,
                     evidence_fingerprint=evidence_fingerprint,
                     content_hash=content_hash,
                     reporter=reporter,
                     model=model,
-                    generation_metadata=output.get("_provider_receipt") if isinstance(output, dict) else None,
-                    status="generated",
+                    generation_metadata={
+                        "writer": output.get("_provider_receipt") if isinstance(output, dict) else {},
+                        "editor": (editorial_review or {}).get("provider_receipt", {}) if editorial_review else {},
+                        "editor_mode": editor_mode,
+                        "cost_known": False,
+                    },
+                    status=publication_status,
+                    fallback_reason="; ".join(str(value) for value in (editor_errors or []) if str(value).strip()),
+                    editorial_review=editorial_review,
                 )
-                if not article.is_summary:
-                    ctx.section_outputs[article.key] = validation["narrative"]
+                if not article.is_summary and publication_status == "generated":
+                    ctx.section_outputs[article.key] = final_validation["narrative"]
                 results[article.key] = {
-                    "state": "complete",
-                    "message": f"{article.title} written.",
-                    "warnings": validation["warnings"],
+                    "state": "complete" if publication_status == "generated" else "held",
+                    "message": (
+                        f"{article.title} written and desk-approved."
+                        if publication_status == "generated" and editorial_review
+                        else f"{article.title} written."
+                        if publication_status == "generated"
+                        else f"{article.title} held by The Desk Editor."
+                    ),
+                    "warnings": final_validation["warnings"],
+                    "editorial_review": editorial_review or {"mode": "deterministic", "status": "pending_llm_review"},
                     "reporter": reporter,
                     "evidence_fingerprint": evidence_fingerprint,
                     "content_hash": content_hash,
@@ -935,21 +1296,223 @@ def generate_articles_workflow(
 
     attempted = [state for state in results.values() if state["state"] != "skipped"]
     completed = [state for state in attempted if state["state"] in {"complete", "unchanged"}]
+    held = [state for state in attempted if state["state"] == "held"]
+    failed = [state for state in attempted if state["state"] == "failed"]
     if attempted and len(completed) == len(attempted):
         state = "complete"
-    elif completed:
+    elif completed or held:
         state = "partial"
     else:
         state = "failed"
     return {
         "state": state,
-        "message": f"Articles published: {len(completed)} current, {len(attempted) - len(completed)} failed, {len(results) - len(attempted)} skipped.",
+        "message": (
+            f"Articles published: {len(completed)} current, {len(held)} held by the desk editor, "
+            f"{len(failed)} failed, {len(results) - len(attempted)} skipped."
+        ),
         "generated_at": generated_at,
         "provider": llm.provider,
         "model": model,
         "reasoning_effort": llm.reasoning_effort,
+        "editor_mode": editor_mode,
         "reporter_persona": persona_metadata(ctx.writer_preferences, "daily_brief"),
         "articles": results,
+    }
+
+
+def plan_articles_workflow(
+    paths: LeaguePaths | None = None,
+    context: FantasyContext | None = None,
+) -> dict[str, Any]:
+    """Describe the next writer run without making a provider request.
+
+    The plan deliberately uses the same article scopes, prompt fingerprints,
+    reporter identities, and reuse predicate as ``generate_articles_workflow``.
+    It is therefore an inspectable cost gate rather than a second estimation
+    model.  No secret, filesystem path, article body, or provider call is
+    returned or performed.
+    """
+    if paths is not None:
+        with operator_scope(paths):
+            return plan_articles_workflow(context=context)
+
+    generated_at = _now()
+    llm = configured_llm()
+    writer_config = writer_api_configuration()
+    editor_mode = editorial_review_mode()
+    ctx = articles.ArticleContext(
+        analysis_dir=ANALYSIS_DIR,
+        active_roster_id=(
+            context.roster_id
+            if context is not None
+            else articles.resolve_active_roster_id()
+        ),
+        processed_dir=PROCESSED_DIR,
+        user_id=context.user_id if context else None,
+        league_id=context.league_id if context else "",
+        season=context.season if context else "",
+        team_name=context.team_name if context else "",
+        writer_preferences=context.writer_preferences if context else {},
+    )
+
+    entries: dict[str, Any] = {}
+    counts = {
+        "generate": 0,
+        "reuse": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unavailable": 0,
+    }
+    planned_summary_inputs_changed = False
+    for article in sorted(articles.ARTICLES, key=lambda item: item.is_summary):
+        reporter = persona_metadata(ctx.writer_preferences, article.key)
+        entry: dict[str, Any] = {
+            "article": article.key,
+            "title": article.title,
+            "section": article.section,
+            "reporter": reporter,
+            "provider": llm.provider,
+            "model": llm.model,
+            "reasoning_effort": llm.reasoning_effort,
+            "editor_mode": editor_mode,
+            "state": "unavailable",
+            "decision": "fallback",
+            "reason": "The article plan could not inspect this desk.",
+            "evidence_count": 0,
+            "source_count": 0,
+            "evidence_fingerprint": "",
+            "current_content_hash": "",
+            "current_receipt_status": "",
+            "current_receipt_model": "",
+        }
+        try:
+            evidence = article.scope(ctx)
+            if not article.is_summary:
+                evidence = articles.apply_entity_dedup(ctx, evidence)
+            entry["evidence_count"] = len(evidence)
+            entry["source_count"] = len(
+                {
+                    str(item.get("source_trace") or "").strip()
+                    for item in evidence
+                    if str(item.get("source_trace") or "").strip()
+                }
+            )
+            if article.is_summary and planned_summary_inputs_changed and writer_config["configured"]:
+                entry.update(
+                    state="ready",
+                    decision="generate",
+                    summary_inputs_changed=True,
+                    reason="A preceding desk is planned to change; the summary must be regenerated after its new prose exists.",
+                )
+                counts["generate"] += 1
+                entries[article.key] = entry
+                continue
+            if not evidence:
+                entry.update(
+                    state="skipped",
+                    decision="keep_fallback",
+                    reason="No validated evidence is available for this desk.",
+                )
+                counts["skipped"] += 1
+                entries[article.key] = entry
+                continue
+
+            output_path = ANALYSIS_DIR / article.output_filename
+            editorial_context = _editorial_room_context(ctx, article, output_path)
+            system_prompt = _article_system_prompt(article, ctx.writer_preferences, context)
+            evidence_fingerprint = _article_evidence_fingerprint(
+                article, evidence, system_prompt, context, editorial_context
+            )
+            previous = _previous_article_artifact(context, article.key)
+            entry["evidence_fingerprint"] = evidence_fingerprint
+            entry["current_content_hash"] = _content_hash(output_path)
+            if previous:
+                entry["current_receipt_status"] = str(previous.get("status") or "")
+                entry["current_receipt_model"] = str(previous.get("model") or "")
+
+            if _can_reuse_article(previous, output_path, evidence_fingerprint, reporter, llm.model, editor_mode):
+                entry.update(
+                    state="unchanged",
+                    decision="reuse",
+                    reason="Evidence, article content, reporter, and configured model still match.",
+                )
+                counts["reuse"] += 1
+                if not article.is_summary:
+                    narrative = _article_narrative_from_file(output_path)
+                    if narrative:
+                        # The summary scope consumes the section narratives.
+                        # Replaying reused inputs keeps its no-cost fingerprint
+                        # identical to the real workflow.
+                        ctx.section_outputs[article.key] = narrative
+            elif not writer_config["configured"]:
+                entry.update(
+                    state="blocked",
+                    decision="generate",
+                    reason=f"{writer_config['api_key_env']} is not configured; no provider request would be attempted.",
+                )
+                counts["blocked"] += 1
+            else:
+                reasons = []
+                if not previous:
+                    reasons.append("no current receipt")
+                elif previous.get("status") != "generated":
+                    reasons.append(f"receipt status is {previous.get('status') or 'unknown'}")
+                elif previous.get("evidence_fingerprint") != evidence_fingerprint:
+                    reasons.append("evidence changed")
+                elif previous.get("content_hash") != entry["current_content_hash"]:
+                    reasons.append("article content hash changed")
+                elif previous.get("reporter_id") != str(reporter.get("persona_id") or ""):
+                    reasons.append("reporter changed")
+                elif previous.get("model") != llm.model:
+                    reasons.append("configured model changed")
+                entry.update(
+                    state="ready",
+                    decision="generate",
+                    reason="; ".join(reasons) or "Current article receipt does not match the selected evidence.",
+                )
+                counts["generate"] += 1
+                if not article.is_summary:
+                    # A later daily brief cannot know the newly generated
+                    # prose during a no-cost preview. It must be generated
+                    # after any upstream desk changes, rather than being
+                    # falsely reported as reusable from incomplete context.
+                    planned_summary_inputs_changed = True
+        except Exception as exc:  # noqa: BLE001 - plan must show a local seam failure, not hide it.
+            entry.update(
+                state="unavailable",
+                decision="keep_fallback",
+                # Do not echo exception text: local paths and provider details
+                # do not belong in an authenticated browser receipt.
+                reason=f"Evidence scope failed: {type(exc).__name__}.",
+            )
+            counts["unavailable"] += 1
+        entries[article.key] = entry
+
+    state = "ready" if writer_config["configured"] else "blocked"
+    if counts["unavailable"] and not counts["generate"] and not counts["reuse"]:
+        state = "unavailable"
+    return {
+        "state": state,
+        "message": (
+            f"Writer plan: {counts['generate']} generation call(s), "
+            f"{counts['reuse']} reuse(s), {counts['skipped']} evidence-limited desk(s), "
+            f"{counts['blocked']} blocked, {counts['unavailable']} unavailable. "
+            "No provider request was made."
+        ),
+        "generated_at": generated_at,
+        "scope": (
+            f"{context.league_id}:{context.season}:{context.roster_id or 'unassigned'}"
+            if context
+            else "legacy"
+        ),
+        "provider": llm.provider,
+        "model": llm.model,
+        "reasoning_effort": llm.reasoning_effort,
+        "editor_mode": editor_mode,
+        "writer_api_configured": bool(writer_config["configured"]),
+        "writer_api_key_env": writer_config["api_key_env"],
+        "counts": counts,
+        "articles": entries,
     }
 
 
@@ -966,6 +1529,7 @@ def _record_article_artifact(
     status: str = "generated",
     fallback_reason: str = "",
     generation_metadata: dict[str, Any] | None = None,
+    editorial_review: dict[str, Any] | None = None,
 ) -> None:
     if context is None or context.user_id is None:
         return
@@ -986,6 +1550,8 @@ def _record_article_artifact(
                 "writer_preferences": context.writer_preferences,
                 "reporter_persona": persona_metadata(context.writer_preferences, article.key),
                 "llm": writer_api_configuration(),
+                "editor_mode": editorial_review.get("mode", "deterministic") if editorial_review else "deterministic",
+                "editorial_review": editorial_review or {},
             },
             article_id=f"article:{context.league_id}:{context.season}:{article.key}",
             section=article.section,
@@ -1020,9 +1586,20 @@ def _article_evidence_fingerprint(
     evidence: list[dict[str, Any]],
     system_prompt: str,
     context: FantasyContext | None,
+    editorial_context: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Stable receipt for the exact evidence and editorial contract used by an article."""
+    """Stable receipt for the exact evidence and editorial contract used by an article.
+
+    Peer and previous-edition prose is deliberately excluded from this receipt.
+    It is bounded, non-evidence context for a paid call, but it is not a stable
+    factual input: during one run a peer may be newly generated after the
+    read-only plan was calculated. Keeping it out of the reuse key makes the
+    protected plan and the real workflow agree while still allowing a newly
+    generated article to read the newsroom context.
+    """
+    del editorial_context
     payload = {
+        "fingerprint_version": "article_evidence_v2",
         "article": article.key,
         "reporter": persona_metadata(context.writer_preferences if context else {}, article.key),
         "league_id": context.league_id if context else "",
@@ -1065,6 +1642,7 @@ def _can_reuse_article(
     evidence_fingerprint: str,
     reporter: dict[str, Any],
     model: str,
+    editor_mode: str = "deterministic",
 ) -> bool:
     if not previous or previous.get("status") != "generated" or not output_path.exists():
         return False
@@ -1074,7 +1652,11 @@ def _can_reuse_article(
         return False
     if previous.get("reporter_id") != str(reporter.get("persona_id") or ""):
         return False
-    return previous.get("model") == model and previous.get("writer_mode") == "automatic_llm"
+    if previous.get("model") != model or previous.get("writer_mode") != "automatic_llm":
+        return False
+    source = previous.get("source") if isinstance(previous.get("source"), dict) else {}
+    previous_editor_mode = str(source.get("editor_mode") or "deterministic").strip().lower()
+    return previous_editor_mode == str(editor_mode or "deterministic").strip().lower()
 
 
 def _article_narrative_from_file(path: Path) -> str:

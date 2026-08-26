@@ -14,6 +14,7 @@ from .editorial_ui import inject_editorial_facade
 from .draft_room import build_draft_room
 from .media_assets import build_media_manifest, materialize_media_assets, media_manifest_json
 from .manager_profiles import build_manager_season_history
+from .economics import build_league_standings
 from .personas import reporter_lineup
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
@@ -43,6 +44,8 @@ def build_browser_site(
         "draft_picks": _records(processed_dir / "draft_picks.csv"),
         "refresh_metadata": _records(processed_dir / "refresh_metadata.csv"),
         "player_usage_weekly": _records(processed_dir / "player_usage_weekly.csv"),
+        "nfl_schedule": _records(processed_dir / "nfl_schedule.csv"),
+        "nfl_team_defense_factors": _records(processed_dir / "nfl_team_defense_factors.csv"),
         "market_value_sources": _records(processed_dir / "market_value_sources.csv"),
         "market_consensus_values": _records(processed_dir / "market_consensus_values.csv"),
         "player_market_values": _records(processed_dir / "player_market_values.csv"),
@@ -52,10 +55,12 @@ def build_browser_site(
         "team_needs_matrix": _records(processed_dir / "team_needs_matrix.csv"),
         "manager_behavior_signals": _records(processed_dir / "manager_behavior_signals.csv"),
         "manager_valuation_profiles": _records(processed_dir / "manager_valuation_profiles.csv"),
+        "manager_transaction_preferences": _records(processed_dir / "manager_transaction_preferences.csv"),
         "liquidity_scores": _records(processed_dir / "liquidity_scores.csv"),
         "asset_market_gaps": _records(processed_dir / "asset_market_gaps.csv"),
         "opportunity_board": _records(processed_dir / "opportunity_board.csv"),
         "counterparty_trade_edges": _records(processed_dir / "counterparty_trade_edges.csv"),
+        "counterparty_asset_interest": _records(processed_dir / "counterparty_asset_interest.csv"),
         "source_freshness": _records(processed_dir / "source_freshness.csv", safe_cache_paths=True),
         "news_events": _records(processed_dir / "news_events.csv"),
         "player_news_matches": _records(processed_dir / "player_news_matches.csv"),
@@ -63,11 +68,16 @@ def build_browser_site(
         "news_source_freshness": _records(processed_dir / "news_source_freshness.csv", safe_cache_paths=True),
         "player_projection_season": _records(processed_dir / "player_projection_season.csv"),
         "player_projection_weekly": _records(processed_dir / "player_projection_weekly.csv"),
+        "player_horizon_market_scores": _records(processed_dir / "player_horizon_market_scores.csv"),
+        "available_player_horizon_scores": _records(processed_dir / "available_player_horizon_scores.csv"),
+        "horizon_score_accuracy": _records(processed_dir / "horizon_score_accuracy.csv"),
+        "horizon_market_movements": _records(processed_dir / "horizon_market_movements.csv"),
         "projection_source_freshness": _records(processed_dir / "projection_source_freshness.csv", safe_cache_paths=True),
         "player_signal_scores": _records(processed_dir / "player_signal_scores.csv"),
         "breakout_candidates": _records(processed_dir / "breakout_candidates.csv"),
         "sell_candidates": _records(processed_dir / "sell_candidates.csv"),
         "projection_market_gaps": _records(processed_dir / "projection_market_gaps.csv"),
+        "news_market_edges": _records(processed_dir / "news_market_edges.csv"),
         "team_fit_scores": _records(processed_dir / "team_fit_scores.csv"),
         "action_recommendations": _records(processed_dir / "action_recommendations.csv"),
         "today_priority_board": _records(processed_dir / "today_priority_board.csv"),
@@ -79,6 +89,7 @@ def build_browser_site(
         "player_opportunity_scores": _records(processed_dir / "player_opportunity_scores.csv"),
     }
     tables["manager_season_history"] = _manager_season_history_records(processed_dir, tables)
+    tables["league_standings"] = _league_standings_records(processed_dir, tables)
     config = dict(config) if config is not None else load_config()
     my_roster = [row for row in tables["roster_players"] if _is_true(row.get("is_my_team"))]
     context = config.get("context") if isinstance(config, Mapping) and isinstance(config.get("context"), Mapping) else {}
@@ -147,6 +158,7 @@ def rebuild_browser_shell(
     )
     tables = app_payload.get("tables") if isinstance(app_payload.get("tables"), dict) else {}
     tables["manager_season_history"] = _manager_season_history_records(output_dir / "processed", tables)
+    tables["league_standings"] = _league_standings_records(output_dir / "processed", tables)
     analysis = dict(app_payload.get("analysis") or {}) if isinstance(app_payload.get("analysis"), dict) else {}
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
@@ -426,6 +438,22 @@ def _manager_season_history_records(
     return history.to_dict(orient="records")
 
 
+def _league_standings_records(
+    processed_dir: Path,
+    tables: Mapping[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Keep the League surface useful when a deploy preserved matchups only."""
+
+    path = processed_dir / "league_standings.csv"
+    if path.exists():
+        return _records(path)
+    standings = build_league_standings(
+        pd.DataFrame(tables.get("matchups", [])),
+        pd.DataFrame(tables.get("teams", [])),
+    )
+    return standings.to_dict(orient="records")
+
+
 def _upgrade_manager_dossier_payload(
     analysis: dict[str, Any],
     tables: Mapping[str, list[dict[str, Any]]],
@@ -509,6 +537,8 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "teamReportMode": _front_matter_field(analysis_dir / "team_report.md", "model_mode"),
         "marketWatch": _text_or_empty(analysis_dir / "market_watch.md"),
         "marketWatchMode": _front_matter_field(analysis_dir / "market_watch.md", "model_mode"),
+        "horizonWatch": _text_or_empty(analysis_dir / "horizon_watch.md"),
+        "horizonWatchMode": _front_matter_field(analysis_dir / "horizon_watch.md", "model_mode"),
         "tradeDeskRead": _text_or_empty(analysis_dir / "trade_desk.md"),
         "tradeDeskReadMode": _front_matter_field(analysis_dir / "trade_desk.md", "model_mode"),
         "managerIntel": _text_or_empty(analysis_dir / "manager_intel.md"),
@@ -543,6 +573,7 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
         "daily_brief": "daily_gm_brief.md",
         "team_report": "team_report.md",
         "market_watch": "market_watch.md",
+        "horizon_watch": "horizon_watch.md",
         "trade_desk": "trade_desk.md",
         "manager_intel": "manager_intel.md",
     }
@@ -555,6 +586,18 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError:
             content_hash = ""
+        structured = _front_matter_json(path, "article_payload_json")
+        source_receipt = _front_matter_json(path, "source_receipt_json")
+        if not source_receipt and structured.get("source_ids"):
+            # Older LLM articles embedded their source IDs in the structured
+            # story but omitted the dedicated receipt line. Preserve the
+            # evidence path in the reader until those artifacts are refreshed.
+            source_ids = [str(value) for value in structured.get("source_ids", []) if str(value).strip()]
+            source_receipt = {
+                "scope": "legacy_structured_article_evidence",
+                "source_count": len(source_ids),
+                "source_ids": source_ids,
+            }
         receipts[key] = {
             "mode": _front_matter_field(path, "model_mode") or "deterministic_template",
             "model": _front_matter_field(path, "model"),
@@ -563,9 +606,10 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             "generated_at": _front_matter_field(path, "generated_at"),
             "evidence_fingerprint": _front_matter_field(path, "evidence_fingerprint"),
             "fallback_reason": _front_matter_field(path, "fallback_reason"),
-            "source_receipt": _front_matter_json(path, "source_receipt_json"),
+            "source_receipt": source_receipt,
             "content_hash": content_hash,
-            "structured": _front_matter_json(path, "article_payload_json"),
+            "structured": structured,
+            "editorial_review": _front_matter_json(path, "editorial_review_json"),
             "path": filename,
         }
     return receipts
@@ -1110,6 +1154,25 @@ def _page(
     .brief-card.cat-watch {{ border-left-color: var(--watch); }}
     .brief-card.cat-info {{ border-left-color: var(--info); }}
     .brief-card.cat-alert {{ border-left-color: var(--alert); }}
+    .manager-trajectory {{
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--watch);
+      border-radius: 8px;
+      background: #f7f4e7;
+    }}
+    .manager-trajectory-heading {{ display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }}
+    .manager-trajectory-heading strong {{ font-size: 13px; }}
+    .manager-trajectory-heading span {{ color: var(--muted); font-size: 11px; }}
+    .manager-trajectory-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }}
+    .manager-trajectory-window {{ padding: 8px 9px; border-radius: 7px; background: #fffdf7; }}
+    .manager-trajectory-window strong {{ display: block; font-size: 13px; }}
+    .manager-trajectory-window span {{ display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.35; }}
+    .manager-trajectory-read {{ margin: 0; color: var(--accent); font-size: 12px; line-height: 1.4; }}
+    @media (max-width: 620px) {{ .manager-trajectory-grid {{ grid-template-columns: 1fr; }} }}
     .brief-card-media {{
       display: grid;
       gap: 6px;
@@ -1306,6 +1369,50 @@ def _page(
     .entity-header h2 {{ margin: 0 0 8px; }}
     .entity-headshot .headshot-img, .entity-headshot .headshot-fallback {{ width: 72px; height: 72px; font-size: 20px; }}
     .tile-row {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }}
+    .horizon-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }}
+    .horizon-card {{ background: #f7f8f4; border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }}
+    .horizon-card .brief-card-evidence {{ margin: 8px 0 4px; }}
+    .horizon-card-meter {{ height: 7px; margin: 10px 0 8px; overflow: hidden; border-radius: 99px; background: #dce4dc; }}
+    .horizon-card-meter-fill {{ display: block; height: 100%; border-radius: inherit; background: var(--accent); }}
+    .horizon-card-meter-na {{ background: repeating-linear-gradient(135deg, #dce4dc 0 4px, #f2f4ee 4px 8px); }}
+    .horizon-basis summary {{ color: var(--accent); cursor: pointer; font-size: 0.82rem; }}
+    .horizon-market-list {{ display: grid; gap: 10px; }}
+    .horizon-market-card {{ border: 1px solid var(--line); border-radius: 10px; background: #fbfcf8; padding: 12px; }}
+    .horizon-market-card .brief-card-title {{ margin-bottom: 5px; }}
+    .horizon-market-card .brief-card-title a {{ color: var(--ink); text-decoration: none; }}
+    .horizon-market-card .brief-card-title a:hover {{ color: var(--accent); text-decoration: underline; }}
+    .horizon-market-score-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 9px 0; }}
+    .horizon-market-fit-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    .horizon-market-delta-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    .horizon-market-score {{ border-left: 3px solid var(--accent); background: #f2f4ee; padding: 7px 8px; min-width: 0; }}
+    .horizon-market-score strong {{ display: block; font-size: 17px; }}
+    .horizon-market-score span {{ color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }}
+    .horizon-market-score-top {{ display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }}
+    .horizon-market-score-top strong {{ flex: 0 0 auto; }}
+    .horizon-market-score-top span {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+    .horizon-market-meter {{ height: 6px; margin: 7px 0 4px; overflow: hidden; border-radius: 99px; background: #dce4dc; }}
+    .horizon-market-meter-fill {{ display: block; height: 100%; min-width: 0; border-radius: inherit; background: var(--accent); }}
+    .horizon-market-meter-na {{ background: repeating-linear-gradient(135deg, #dce4dc 0 4px, #f2f4ee 4px 8px); }}
+    .horizon-market-scale {{ display: block; color: var(--muted); font-size: 9px; letter-spacing: 0; text-transform: none; }}
+    .horizon-market-delta {{ border-left-color: var(--gold); background: #fbf7e9; }}
+    .horizon-market-card .evidence-drawer {{ margin-top: 8px; }}
+    .horizon-view-row {{ display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 4px; margin: 4px 0 8px; scrollbar-width: thin; }}
+    .horizon-view {{ flex: 0 0 auto; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); font-size: 12px; font-weight: 800; }}
+    .horizon-view.active {{ color: var(--panel); border-color: var(--accent); background: var(--accent); }}
+    .horizon-view-note {{ margin: 0 0 10px; padding: 9px 10px; border-left: 3px solid var(--gold); color: #4c514a; background: #fbf7e9; font-size: 12px; line-height: 1.4; }}
+    .horizon-market-primary {{ display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin: 10px 0; padding: 10px; border: 1px solid #c8d2c5; border-radius: 8px; background: #f2f4ee; }}
+    .horizon-market-primary strong {{ display: block; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }}
+    .horizon-market-primary p {{ margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; }}
+    .horizon-market-primary-score {{ color: var(--accent); font-size: 25px; font-weight: 900; font-variant-numeric: tabular-nums; text-align: right; }}
+    .horizon-market-primary-score small {{ display: block; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }}
+    .horizon-market-card.is-focused {{ border-color: #a8c4b1; box-shadow: 0 2px 0 rgba(15, 92, 74, .08); }}
+    .horizon-position-section {{ margin: 16px 0; }}
+    .horizon-position-section h4 {{ margin: 0 0 8px; color: var(--accent); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }}
+    .horizon-position-section h4 .note {{ color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none; }}
+    @media (max-width: 900px) {{ .horizon-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+    @media (max-width: 700px) {{ .horizon-grid {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 900px) {{ .horizon-market-score-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .horizon-market-fit-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }} }}
+    @media (max-width: 700px) {{ .horizon-market-score-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     .entity-tile {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 96px; text-align: center; }}
     .entity-tile-value {{ font-size: 20px; font-weight: 800; }}
     .entity-tile-value.score-high {{ color: var(--buy); }}
@@ -1328,8 +1435,19 @@ def _page(
     .list {{ margin: 0; padding-left: 20px; font-size: 13px; }}
     @media (max-width: 720px) {{
       .app-shell {{ display: block; }}
-      .side-rail {{ position: static; height: auto; }}
+      .side-rail {{ position: static; height: auto; padding: 14px 14px 10px; }}
+      .side-rail h1 {{ font-size: 21px; margin-bottom: 4px; }}
+      .side-rail p {{ display: none; }}
+      .side-rail .nav-group {{ margin-bottom: 10px; }}
+      .side-rail .nav-group .nav-group-title {{ display: none; }}
+      .side-rail .section-nav {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }}
+      .side-rail .section-nav a {{ flex: 0 0 auto; padding: 7px 10px; font-size: 12px; white-space: nowrap; }}
+      .side-rail .find-nav {{ margin-bottom: 0; }}
+      header {{ padding: 10px 14px; }}
+      header h1 {{ display: none; }}
+      header p {{ margin: 0; font-size: 12px; }}
       header, main {{ padding-left: 14px; padding-right: 14px; }}
+      main {{ padding-top: 14px; }}
       .grid {{ grid-template-columns: 1fr; }}
       th {{ position: static; }}
       select, input {{ width: 100%; }}
@@ -1345,7 +1463,7 @@ def _page(
       <p>Find the market leak, then pretend it was obvious all along.</p>
       <div class="nav-group">
         <div class="nav-group-title">Where To</div>
-        <nav>
+        <nav class="section-nav">
           <a href="#view-today">Today</a>
           <a href="#view-draft-room">Draft Room</a>
           <a href="#view-my-team">My Team</a>
@@ -1358,7 +1476,7 @@ def _page(
       </div>
       <div class="nav-group">
         <div class="nav-group-title">Find</div>
-        <nav>
+        <nav class="find-nav">
           <input id="entity-search" type="search" placeholder="player or team..." autocomplete="off">
           <div id="entity-search-results"></div>
         </nav>
@@ -1484,6 +1602,7 @@ def _page(
     <div id="manager-room" class="view-block">
       <h2>League</h2>
       <div class="panel article-panel"><h3>Manager Intel <span id="manager-intel-mode" class="tag"></span></h3><div id="manager-intel"></div></div>
+      <div class="panel"><h3>Standings &amp; outcome coverage</h3><div id="league-standings" data-testid="standings-panel"></div></div>
       <h3>Manager Room</h3>
       <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly. Click a manager card to open their page.</p>
       <div id="manager-grid"></div>
@@ -1503,6 +1622,7 @@ def _page(
       <h2>Manager Map</h2>
       <div class="grid">
         <div class="panel"><h3>Manager Valuation Profiles</h3><div id="manager-valuation-table"></div></div>
+        <div class="panel"><h3>Observed Transaction Lanes</h3><p class="note">Identity-resolved acquisitions and disposals by position. The clock averages are current context for historically moved players, not historical prices or proof of intent.</p><div id="manager-transaction-preferences-table"></div></div>
         <div class="panel"><h3>Behavior Signals</h3><div id="manager-signal-table"></div></div>
         <div class="panel"><h3>Manager Event Log</h3><div id="manager-event-table"></div></div>
       </div>
@@ -1520,6 +1640,25 @@ def _page(
     <div id="signal-board" class="view-block">
       <h2>Trade Desk</h2>
       <div class="panel article-panel"><h3>Market Watch <span id="market-watch-mode" class="tag"></span></h3><div id="market-watch"></div></div>
+      <h3>Four-Window Market Board</h3>
+      <p class="note">This is the deterministic market underneath the articles. The four scores—next game, rest of season, dynasty, and career window—are position-relative percentiles from 0–100, not dollar market values or cross-position price rankings, and are not yet outcome-calibrated forecasts. Use the clock-versus-market deltas to find same-position repricing leads, then compare immediate utility, remaining-season value, and dynasty value before deciding whether an asset fits a contender, a rebuilder, or neither. Every row links to the player dossier and keeps its evidence receipt one click away.</p>
+      <div class="horizon-view-row" role="tablist" aria-label="Market decision view">
+        <button class="horizon-view active" data-horizon-view="all" type="button">All clocks</button>
+        <button class="horizon-view" data-horizon-view="this_week" type="button">This week</button>
+        <button class="horizon-view" data-horizon-view="rest_of_season" type="button">Rest of season</button>
+        <button class="horizon-view" data-horizon-view="dynasty" type="button">Dynasty / career</button>
+        <button class="horizon-view" data-horizon-view="fit" type="button">Contender vs rebuilder</button>
+        <button class="horizon-view" data-horizon-view="repricing" type="button">Repricing leads</button>
+      </div>
+      <p id="horizon-view-note" class="horizon-view-note">All clocks: use this when you want the full player card. Scores remain position-relative percentiles; market value is the cross-position price anchor.</p>
+      <div class="controls">
+        <button class="horizon-scope active" data-horizon-scope="team" type="button">Active Team</button>
+        <button class="horizon-scope" data-horizon-scope="league" type="button">League</button>
+        <label>Value lane<select id="horizon-lane-filter"></select></label>
+        <label>Sort by<select id="horizon-sort-filter"></select></label>
+      </div>
+      <div id="horizon-market-summary" class="tile-row"></div>
+      <div id="horizon-market-board"></div>
       <h3>Signal Board</h3>
       <div class="controls">
         <button class="signal-scope active" data-signal-scope="team" type="button">Active Team</button>
@@ -1533,6 +1672,9 @@ def _page(
       </div>
       <h3>Projection Market Gaps</h3>
       <div id="signal-gap-table"></div>
+      <h3>News-Market Dislocations</h3>
+      <p class="note">These rows connect a current scoped catalyst to a deterministic price or sell-pressure gap. They are research leads, not proof that the market is wrong.</p>
+      <div id="news-market-edge-table"></div>
       <h3>Team Fit Scores</h3>
       <div id="team-fit-table"></div>
     </div>
@@ -1570,8 +1712,12 @@ def _page(
         <div class="panel"><h3>We May Value More Than Owner</h3><div id="edge-we-value-more"></div></div>
         <div class="panel"><h3>Owner May Overvalue</h3><div id="edge-owner-overvalues"></div></div>
         <div class="panel"><h3>Do Not Chase</h3><div id="edge-do-not-chase"></div></div>
-        <div class="panel"><h3>Best Manager Fits</h3><div id="edge-mutual-fit"></div></div>
+       <div class="panel"><h3>Best Manager Fits</h3><div id="edge-mutual-fit"></div></div>
       </div>
+      <h3>Who Might Value Our Assets?</h3>
+      <p class="note">These are audience signals for players on the active roster. They combine an identity-resolved historical position lane, current team need, and available horizon fit. A conversation-fit score is a research priority, not intent, willingness, or a generated offer.</p>
+      <div id="counterparty-asset-interest" data-testid="counterparty-interest-board"></div>
+      <div id="counterparty-asset-interest-table"></div>
       <h3>Counterparty Edge Table</h3>
       <div id="counterparty-edge-table"></div>
     </div>
@@ -1720,15 +1866,17 @@ def _page(
           <button id="operator-refresh" type="button">Refresh Data</button>
           <button id="operator-build-packet" type="button">Build Insight Packet</button>
           <button id="operator-generate-insights" type="button">Update &amp; Write Analysis (LLM)</button>
+          <button id="operator-generation-plan" type="button">Preview Writer Plan (no call)</button>
           <button id="operator-import" type="button">Import Insight JSON</button>
           <button id="operator-validate" type="button">Validate Insights</button>
           <button id="operator-rebuild" type="button">Rebuild Browser</button>
           <button id="operator-reload" type="button">Reload Latest</button>
           <button id="operator-copy-chat-context" type="button">Copy Chat Context</button>
         </div>
-      <p class="note">Update &amp; Write Analysis refreshes the data, then has the configured writer provider write one focused article per section (Team Report, Market Watch, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site. Each article has its own reporter lens and falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
+      <p class="note">Update &amp; Write Analysis refreshes the data, then has the configured writer provider write one focused article per section (Team Report, Market Watch, Four-Window Market Read, Trade Desk Read, Manager Intel) plus the Daily GM Brief, and rebuilds the site. Each article has its own reporter lens and falls back to its deterministic version if its own call fails. Copy Chat Context copies clean markdown, ready to paste into any chat, instead of raw JSON.</p>
         <textarea id="operator-insight-json" rows="8" placeholder="Paste Codex/ChatGPT insight JSON here when you want the app to validate and import it."></textarea>
         <div id="operator-status-panel"></div>
+        <div id="operator-generation-plan-panel"></div>
         <div id="operator-chat-context-status"></div>
       </div>
     </div>
@@ -1778,13 +1926,18 @@ def _page(
       signalScope: 'team',
       signalLabel: 'ALL',
       signalConfidence: 'ALL',
+      horizonScope: 'team',
+      horizonLane: 'ALL',
+      horizonSort: 'team_fit',
+      horizonView: 'all',
       analysisScope: 'team',
       analysisConfidence: 'ALL',
       dataQuestion: 'changed',
       lensPreset: 'Balanced Market',
       lensWeights: {{ market: 25, projection: 25, manager: 20, timeline: 20, news: 10 }},
       operatorToken: '',
-      operatorStatus: null
+      operatorStatus: null,
+      writerPlan: null
     }};
 
     const marketLensPresets = {{
@@ -1803,27 +1956,31 @@ def _page(
     const waiverColumns = ['week', 'team_name', 'player_added', 'player_dropped', 'waiver_bid', 'status', 'failure_reason'];
     const draftColumns = ['pick_no', 'round', 'roster_id', 'player_name', 'position', 'nfl_team'];
     const marketGapColumns = ['opportunity_type', 'target_team', 'asset_type', 'asset_name', 'position', 'market_value', {{ field: 'market_gap_score', kind: 'delta' }}, 'timeline_fit', 'evidence', 'risk', 'confidence'];
-    const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', {{ field: 'our_value_score', kind: 'score' }}, {{ field: 'market_consensus_value', kind: 'score' }}, {{ field: 'estimated_owner_value_score', kind: 'score' }}, {{ field: 'trade_edge_score', kind: 'delta' }}, 'evidence', 'risk', 'confidence'];
+    const counterpartyColumns = ['edge_type', 'target_team', 'player_name', 'position', 'target_team_lens', {{ field: 'target_horizon_fit_score', label: 'Target fit percentile', kind: 'score' }}, {{ field: 'active_horizon_fit_score', label: 'Active fit percentile', kind: 'score' }}, {{ field: 'horizon_fit_edge', label: 'Fit spread', kind: 'delta' }}, 'horizon_fit_read', 'horizon_market_disagreement_window', {{ field: 'horizon_market_disagreement_delta', label: 'Clock / market delta', kind: 'delta' }}, {{ field: 'next_game_market_score', label: 'This-week percentile', kind: 'score' }}, {{ field: 'rest_of_season_market_score', label: 'Season percentile', kind: 'score' }}, {{ field: 'dynasty_market_score', label: 'Dynasty percentile', kind: 'score' }}, {{ field: 'career_projection_score', label: 'Career-window percentile', kind: 'score' }}, {{ field: 'our_value_score', kind: 'score' }}, {{ field: 'market_consensus_value', label: 'Market price anchor', kind: 'score' }}, {{ field: 'estimated_owner_value_score', kind: 'score' }}, {{ field: 'trade_edge_score', kind: 'delta' }}, 'evidence', 'risk', 'confidence'];
+    const counterpartyInterestColumns = ['asset_name', 'position', 'target_team', 'target_team_lens', 'transaction_lane_read', 'transaction_acquired_count', 'transaction_sold_count', 'target_need', {{ field: 'target_need_fit_score', label: 'Need-fit percentile', kind: 'score' }}, {{ field: 'target_horizon_fit_score', label: 'Target fit percentile', kind: 'score' }}, {{ field: 'conversation_fit_score', label: 'Conversation priority', kind: 'score' }}, 'conversation_fit_label', 'horizon_market_disagreement_window', {{ field: 'horizon_market_disagreement_delta', label: 'Clock / market delta', kind: 'delta' }}, {{ field: 'next_game_market_score', label: 'This-week percentile', kind: 'score' }}, {{ field: 'rest_of_season_market_score', label: 'Season percentile', kind: 'score' }}, {{ field: 'dynasty_market_score', label: 'Dynasty percentile', kind: 'score' }}, {{ field: 'career_projection_score', label: 'Career-window percentile', kind: 'score' }}, 'horizon_fit_read', 'confidence', 'evidence', 'risk'];
     const scenarioColumns = ['scenario_label', 'target_team', 'player_name', 'position', {{ field: 'scenario_score', kind: 'score' }}, 'canonical_model', {{ field: 'market_component', kind: 'score' }}, {{ field: 'projection_component', kind: 'score' }}, {{ field: 'manager_component', kind: 'score' }}, {{ field: 'timeline_component', kind: 'score' }}, {{ field: 'news_component', kind: 'score' }}, 'scenario_warning', 'confidence'];
     const assetLedgerColumns = ['asset_type', 'asset_name', 'position', 'market_value', 'liquidity_tier', 'timeline_fit', 'source_trace'];
     const opportunityColumns = ['action_type', 'target_team', 'asset_in', 'asset_out', 'manager_signal', 'evidence', 'risk', 'confidence', 'source_trace'];
     const marketConsensusColumns = ['player_name', 'position', 'consensus_value', 'source_count', 'disagreement_score', 'best_source', 'confidence', 'source_trace'];
     const managerSignalColumns = ['team_name', {{ field: 'trade_activity_score', kind: 'score' }}, {{ field: 'pick_buyer_score', kind: 'score' }}, {{ field: 'pick_seller_score', kind: 'score' }}, {{ field: 'faab_aggression_score', kind: 'score' }}, {{ field: 'waiver_activity_score', kind: 'score' }}, 'plain_language_label', 'evidence'];
     const managerValuationColumns = ['team_name', 'asset_type', 'position_group', 'preference_score', 'evidence_count', 'confidence', 'label', 'evidence'];
-    const managerEventColumns = ['event_type', 'week', 'team_name', 'counterparty', 'players_in', 'picks_in', 'faab_in', 'players_out', 'picks_out', 'faab_out', 'evidence'];
+    const managerTransactionPreferenceColumns = ['team_name', 'position_group', 'transaction_read', 'acquired_count', 'sold_count', 'net_acquired_count', 'current_roster_acquired_count', 'current_roster_sold_count', {{ field: 'acquired_next_game_market_score', label: 'Acquired this-week percentile' }}, {{ field: 'sold_next_game_market_score', label: 'Sold this-week percentile' }}, {{ field: 'acquired_rest_of_season_market_score', label: 'Acquired season percentile' }}, {{ field: 'sold_rest_of_season_market_score', label: 'Sold season percentile' }}, {{ field: 'acquired_dynasty_market_score', label: 'Acquired dynasty percentile' }}, {{ field: 'sold_dynasty_market_score', label: 'Sold dynasty percentile' }}, {{ field: 'acquired_career_projection_score', label: 'Acquired career-window percentile' }}, {{ field: 'sold_career_projection_score', label: 'Sold career-window percentile' }}, {{ field: 'acquired_rebuilder_fit_score', label: 'Acquired rebuilder-fit percentile' }}, {{ field: 'sold_rebuilder_fit_score', label: 'Sold rebuilder-fit percentile' }}, 'horizon_coverage', {{ field: 'horizon_coverage_detail', label: 'Coverage by clock' }}, 'history_status', 'confidence', 'evidence'];
+    const managerEventColumns = ['season', 'league_id', 'owner_id', 'event_type', 'week', 'team_name', 'counterparty', 'players_in', 'picks_in', 'faab_in', 'players_out', 'picks_out', 'faab_out', 'evidence'];
+    const leagueStandingsColumns = ['team_name', 'record', 'wins', 'losses', 'ties', 'points_for', 'points_against', 'point_diff', 'outcome_status'];
     const sourceColumns = ['source', 'dataset', 'status', 'row_count', 'checked_at', 'source_url', 'cache_path'];
-    const newsImpactColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence', 'source_trace'];
+    const newsImpactColumns = ['published_at', 'source', 'player_name', 'league_id', 'season', 'roster_id', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence', 'source_trace'];
     const newsMatchColumns = ['source', 'input_player_name', 'matched_player_name', 'match_method', 'match_confidence', 'is_ambiguous', 'source_trace'];
     const todayOpportunityColumns = ['opportunity_type', 'target_team', 'asset_name', 'position', 'market_gap_score', 'evidence', 'risk', 'confidence'];
-    const todayNewsColumns = ['published_at', 'source', 'player_name', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
+    const todayNewsColumns = ['published_at', 'source', 'player_name', 'league_id', 'season', 'roster_id', 'team_name', 'impact_type', 'evidence', 'risk', 'confidence'];
     const todayManagerColumns = ['team_name', 'plain_language_label', 'trade_activity_score', 'pick_seller_score', 'faab_aggression_score', 'evidence'];
-    const projectionColumns = ['player_name', 'position', 'team', 'team_name', {{ field: 'projected_fantasy_points', kind: 'score' }}, {{ field: 'projected_ppg', kind: 'score' }}, 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
-    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', 'projected_ppg', 'market_value', {{ field: 'gap_score', kind: 'delta' }}, 'gap_label', 'risk', 'confidence', 'evidence'];
+    const projectionColumns = ['player_name', 'position', 'team', 'team_name', {{ field: 'projected_fantasy_points', kind: 'score' }}, {{ field: 'projected_ppg', label: 'Season baseline PPG', kind: 'score' }}, 'projected_games', 'projection_confidence', 'projection_method', 'projection_note'];
+    const signalGapColumns = ['player_name', 'position', 'projected_fantasy_points', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, {{ field: 'market_value', label: 'Market price anchor' }}, {{ field: 'projection_percentile', label: 'Projection percentile (position)' }}, {{ field: 'market_percentile', label: 'Market percentile (position)' }}, 'market_gap_status', {{ field: 'gap_score', label: 'Projection minus market percentile', kind: 'delta' }}, 'gap_label', 'risk', 'confidence', 'evidence'];
+    const newsMarketEdgeColumns = ['player_name', 'position', 'team_name', 'news_direction', 'edge_type', 'news_impact', 'news_event_count', 'market_value', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, {{ field: 'news_market_edge_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
     const teamFitColumns = ['team_name', 'player_name', 'position', 'fit_label', {{ field: 'timeline_fit_score', kind: 'score' }}, {{ field: 'need_fit_score', kind: 'score' }}, {{ field: 'liquidity_fit_score', kind: 'score' }}, 'risk', 'confidence', 'evidence'];
-    const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'action_score', 'projected_ppg', 'market_value', 'why', 'risk', 'confidence'];
+    const actionColumns = ['consumer_label', 'player_name', 'position', 'team_name', 'current_availability_status', 'action_score', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, 'market_value', 'why', 'risk', 'confidence'];
     const managerCycleColumns = ['team_name', 'dynasty_cycle', 'trade_temperature', 'pick_posture', 'waiver_posture', 'likely_needs', 'likely_sells', 'confidence', 'evidence'];
     const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
-    const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', 'market_value', 'projected_ppg', 'projection_confidence', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
+    const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', {{ field: 'availability_scope', label: 'Availability source' }}, 'current_availability_status', 'market_value', {{ field: 'projected_ppg', label: 'Season baseline PPG' }}, 'projection_confidence', 'availability_note', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
     const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'identity_method', 'evidence'];
     async function init() {{
       try {{
@@ -1844,6 +2001,8 @@ def _page(
       populateSelect('projection-confidence-filter', ['ALL', ...unique(tables.player_projection_season.map(row => row.projection_confidence)).sort()]);
       populateSelect('signal-label-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.signal_label)).sort()]);
       populateSelect('signal-confidence-filter', ['ALL', ...unique(tables.player_signal_scores.map(row => row.confidence)).sort()]);
+      populateSelect('horizon-lane-filter', ['ALL', ...unique(tables.player_horizon_market_scores.map(row => row.value_lane)).sort()]);
+      populateSelect('horizon-sort-filter', ['team_fit', 'rebuilder_contender_spread', 'market_disagreement', 'market_lead', 'market_lag', 'next_game_market_score', 'rest_of_season_market_score', 'dynasty_market_score', 'career_projection_score']);
       populateSelect('analysis-confidence-filter', ['ALL', ...unique([...(analysis.targetTheses || []), ...(analysis.sellTheses || []), ...(analysis.tradeTheses || [])].map(row => row.confidence)).sort()]);
       renderMarketLensPresetButtons();
       bindControls();
@@ -1885,6 +2044,7 @@ def _page(
         render();
         return;
       }}
+      if (path.includes('/generate-insights')) state.writerPlan = null;
       try {{
         const response = await fetch(path, {{
           method: 'POST',
@@ -1901,6 +2061,29 @@ def _page(
       }}
       render();
       pollOperatorStatus();
+    }}
+
+    async function previewWriterPlan() {{
+      const panel = document.getElementById('operator-generation-plan-panel');
+      if (!state.operatorToken) {{
+        panel.innerHTML = '<p class="note">Enter the operator token before previewing the writer plan.</p>';
+        return;
+      }}
+      panel.innerHTML = '<p class="note">Inspecting scoped evidence and publication receipts. No provider request will be made.</p>';
+      try {{
+        const response = await fetch('/api/operator/generation-plan?league_id=' + encodeURIComponent(manifest.leagueId || ''), {{
+          method: 'GET',
+          cache: 'no-store',
+          headers: {{ 'X-Front-Office-Token': state.operatorToken }}
+        }});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || 'writer plan failed (' + response.status + ')');
+        state.writerPlan = payload;
+        render();
+      }} catch (error) {{
+        state.writerPlan = {{ state: 'failed', message: `Writer plan failed: ${{error.message}}`, articles: {{}} }};
+        render();
+      }}
     }}
 
     async function copyChatContext() {{
@@ -1975,14 +2158,15 @@ def _page(
 
     function ensureTables() {{
       [
-        'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers', 'matchups',
-        'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'market_value_sources', 'market_consensus_values',
+        'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers', 'matchups', 'league_standings',
+        'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'nfl_schedule', 'nfl_team_defense_factors', 'market_value_sources', 'market_consensus_values',
         'player_market_values', 'pick_market_values', 'team_asset_inventory', 'manager_event_log', 'manager_season_history', 'team_needs_matrix', 'manager_behavior_signals',
-        'manager_valuation_profiles', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'source_freshness', 'news_events',
+        'manager_valuation_profiles', 'manager_transaction_preferences', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'counterparty_asset_interest', 'source_freshness', 'news_events',
         'player_news_matches', 'league_news_impact', 'news_source_freshness', 'player_projection_season',
         'player_projection_weekly', 'projection_source_freshness', 'player_signal_scores', 'breakout_candidates',
-        'sell_candidates', 'projection_market_gaps', 'team_fit_scores', 'action_recommendations',
-        'manager_profile_tags', 'manager_cycle_profiles', 'player_dossiers', 'player_transaction_history', 'player_profile_tags'
+        'sell_candidates', 'projection_market_gaps', 'news_market_edges', 'team_fit_scores', 'action_recommendations',
+        'manager_profile_tags', 'manager_cycle_profiles', 'player_dossiers', 'player_transaction_history', 'player_profile_tags',
+        'player_horizon_market_scores', 'available_player_horizon_scores', 'horizon_score_accuracy', 'horizon_market_movements'
       ].forEach(name => {{
         if (!Array.isArray(tables[name])) tables[name] = [];
       }});
@@ -2036,6 +2220,30 @@ def _page(
         state.signalConfidence = event.target.value;
         render();
       }});
+      document.getElementById('horizon-lane-filter').addEventListener('change', event => {{
+        state.horizonLane = event.target.value;
+        render();
+      }});
+      document.getElementById('horizon-sort-filter').addEventListener('change', event => {{
+        state.horizonSort = event.target.value;
+        render();
+      }});
+      document.querySelectorAll('.horizon-view').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.horizonView = button.dataset.horizonView || 'all';
+          const defaultSort = {{
+            all: 'team_fit',
+            this_week: 'next_game_market_score',
+            rest_of_season: 'rest_of_season_market_score',
+            dynasty: 'dynasty_market_score',
+            fit: 'team_fit',
+            repricing: 'market_disagreement'
+          }}[state.horizonView] || 'team_fit';
+          state.horizonSort = defaultSort;
+          syncControls();
+          render();
+        }});
+      }});
       document.getElementById('analysis-confidence-filter').addEventListener('change', event => {{
         state.analysisConfidence = event.target.value;
         render();
@@ -2056,6 +2264,10 @@ def _page(
         state.signalScope = 'team';
         state.signalLabel = 'ALL';
         state.signalConfidence = 'ALL';
+        state.horizonScope = 'team';
+        state.horizonLane = 'ALL';
+        state.horizonSort = 'team_fit';
+        state.horizonView = 'all';
         state.analysisScope = 'team';
         state.analysisConfidence = 'ALL';
         syncControls();
@@ -2110,6 +2322,13 @@ def _page(
           render();
         }});
       }});
+      document.querySelectorAll('.horizon-scope').forEach(button => {{
+        button.addEventListener('click', () => {{
+          state.horizonScope = button.dataset.horizonScope;
+          setActive('.horizon-scope', button);
+          render();
+        }});
+      }});
       document.querySelectorAll('.analysis-scope').forEach(button => {{
         button.addEventListener('click', () => {{
           state.analysisScope = button.dataset.analysisScope;
@@ -2150,6 +2369,7 @@ def _page(
       document.getElementById('operator-refresh').addEventListener('click', () => runOperatorAction('/api/operator/refresh'));
       document.getElementById('operator-build-packet').addEventListener('click', () => runOperatorAction('/api/operator/build-packet'));
       document.getElementById('operator-generate-insights').addEventListener('click', () => runOperatorAction('/api/operator/generate-insights'));
+      document.getElementById('operator-generation-plan').addEventListener('click', () => previewWriterPlan());
       document.getElementById('operator-import').addEventListener('click', () => runOperatorImport());
       document.getElementById('operator-validate').addEventListener('click', () => runOperatorAction('/api/operator/validate-insights'));
       document.getElementById('operator-rebuild').addEventListener('click', () => runOperatorAction('/api/operator/rebuild-browser'));
@@ -2233,6 +2453,26 @@ def _page(
       }})).join('')}}</div>`;
     }}
 
+    function leagueStandingsMarkup() {{
+      const rows = currentLeagueStandings();
+      if (!rows.length) return '<p class="note">No team rows are available for the current league snapshot.</p>';
+      const recorded = rows.filter(row => ['recorded', 'partial'].includes(String(row.outcome_status || ''))).length;
+      const coverage = `${{recorded}} of ${{rows.length}} teams have scored matchup evidence for ${{escapeHtml(String(app.currentSeason || 'the current season'))}}.`;
+      return `<p class="note"><strong>Outcome coverage:</strong> ${{coverage}} Results come from exact Sleeper matchup rows; teams without scored rows remain <em>not recorded</em>.</p>${{table(rows, leagueStandingsColumns)}}`;
+    }}
+
+    function currentLeagueStandings() {{
+      const rows = scopedCurrentRows(tables.league_standings || []);
+      return rows.slice().sort((a, b) => {{
+        const statusRank = row => String(row.outcome_status || '') === 'not_recorded' ? 1 : 0;
+        return statusRank(a) - statusRank(b)
+          || Number(b.wins || 0) - Number(a.wins || 0)
+          || Number(b.point_diff || -Infinity) - Number(a.point_diff || -Infinity)
+          || Number(b.points_for || -Infinity) - Number(a.points_for || -Infinity)
+          || String(a.team_name || '').localeCompare(String(b.team_name || ''));
+      }});
+    }}
+
     function managerTradeProfileCards() {{
       const profiles = (app.managerTradeProfiles || []).filter(row => row.customized);
       if (!profiles.length) return '<p class="note">No personal trade profiles saved yet. Add them from headquarters when you want a reporter to remember the room.</p>';
@@ -2254,7 +2494,7 @@ def _page(
         rank: index + 1,
         playerId: row.player_id,
         entityHash: `player-${{row.player_id}}`,
-        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg ? `ppg ${{row.projected_ppg}}` : '']
+        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg ? `baseline ppg ${{row.projected_ppg}}` : '', row.injury_status ? `availability ${{row.injury_status}}` : '']
       }})).join('')}}</div>`;
     }}
 
@@ -2291,6 +2531,9 @@ def _page(
       document.getElementById('projection-confidence-filter').value = state.projectionConfidence;
       document.getElementById('signal-label-filter').value = state.signalLabel;
       document.getElementById('signal-confidence-filter').value = state.signalConfidence;
+      document.getElementById('horizon-lane-filter').value = state.horizonLane;
+      document.getElementById('horizon-sort-filter').value = state.horizonSort;
+      document.querySelectorAll('.horizon-view').forEach(button => button.classList.toggle('active', button.dataset.horizonView === state.horizonView));
       document.getElementById('analysis-confidence-filter').value = state.analysisConfidence;
       document.querySelectorAll('.pick-filter').forEach(button => button.classList.toggle('active', button.dataset.pickFilter === state.pickFilter));
       document.querySelectorAll('.scope-filter').forEach(button => button.classList.toggle('active', button.dataset.scope === state.tradeScope));
@@ -2299,6 +2542,7 @@ def _page(
       document.querySelectorAll('.news-scope').forEach(button => button.classList.toggle('active', button.dataset.newsScope === state.newsScope));
       document.querySelectorAll('.projection-scope').forEach(button => button.classList.toggle('active', button.dataset.projectionScope === state.projectionScope));
       document.querySelectorAll('.signal-scope').forEach(button => button.classList.toggle('active', button.dataset.signalScope === state.signalScope));
+      document.querySelectorAll('.horizon-scope').forEach(button => button.classList.toggle('active', button.dataset.horizonScope === state.horizonScope));
       document.querySelectorAll('.analysis-scope').forEach(button => button.classList.toggle('active', button.dataset.analysisScope === state.analysisScope));
       syncLensControls();
     }}
@@ -2354,7 +2598,9 @@ def _page(
       document.getElementById('projection-table').innerHTML = table(filteredProjections(), projectionColumns);
       document.getElementById('signal-breakouts').innerHTML = signalCards(signalBreakoutRows(), 'breakout');
       document.getElementById('signal-sells').innerHTML = signalCards(signalSellRows(), 'sell');
+      renderHorizonMarketBoard();
       document.getElementById('signal-gap-table').innerHTML = table(filteredSignalGaps(), signalGapColumns);
+      document.getElementById('news-market-edge-table').innerHTML = table(filteredNewsMarketEdges(), newsMarketEdgeColumns);
       document.getElementById('team-fit-table').innerHTML = table(filteredTeamFits(), teamFitColumns);
       document.getElementById('daily-gm-brief').innerHTML = articleBody(analysis.dailyGmBrief);
       document.getElementById('daily-gm-brief-mode').textContent = articleModeLabel(analysis.dailyGmBriefMode);
@@ -2366,6 +2612,7 @@ def _page(
       document.getElementById('trade-desk-read-mode').textContent = articleModeLabel(analysis.tradeDeskReadMode);
       document.getElementById('manager-intel').innerHTML = articleBody(analysis.managerIntel);
       document.getElementById('manager-intel-mode').textContent = articleModeLabel(analysis.managerIntelMode);
+      document.getElementById('league-standings').innerHTML = leagueStandingsMarkup();
       document.getElementById('target-theses').innerHTML = thesisCards(filteredTargetTheses(), 'target');
       document.getElementById('sell-theses').innerHTML = thesisCards(filteredSellTheses(), 'sell');
       document.getElementById('trade-theses').innerHTML = thesisCards(filteredTradeTheses(), 'trade');
@@ -2380,6 +2627,9 @@ def _page(
       document.getElementById('edge-owner-overvalues').innerHTML = counterpartyCards(filteredCounterpartyEdges('owner_may_overvalue').slice(0, 5));
       document.getElementById('edge-do-not-chase').innerHTML = counterpartyCards(filteredCounterpartyEdges('do_not_chase').slice(0, 5));
       document.getElementById('edge-mutual-fit').innerHTML = counterpartyCards(filteredCounterpartyEdges('mutual_fit').slice(0, 5));
+      const counterpartyInterest = filteredCounterpartyInterest();
+      document.getElementById('counterparty-asset-interest').innerHTML = counterpartyInterestCards(counterpartyInterest.slice(0, 8));
+      document.getElementById('counterparty-asset-interest-table').innerHTML = table(counterpartyInterest, counterpartyInterestColumns);
       document.getElementById('counterparty-edge-table').innerHTML = table(filteredCounterpartyEdges(), counterpartyColumns);
       const scenarioRows = scenarioRankings();
       document.getElementById('market-lens-status').innerHTML = scenarioStatus(scenarioRows);
@@ -2406,9 +2656,10 @@ def _page(
       document.getElementById('player-dossier-table').innerHTML = table(filteredPlayerDossiers(), playerDossierColumns);
       document.getElementById('player-transaction-history-table').innerHTML = table(filteredPlayerHistory(), playerHistoryColumns);
       document.getElementById('manager-valuation-table').innerHTML = table(applySearch(tables.manager_valuation_profiles), managerValuationColumns);
+      document.getElementById('manager-transaction-preferences-table').innerHTML = table(applySearch(tables.manager_transaction_preferences), managerTransactionPreferenceColumns);
       document.getElementById('manager-signal-table').innerHTML = table(applySearch(tables.manager_behavior_signals), managerSignalColumns);
       document.getElementById('manager-event-table').innerHTML = table(
-        sortRows(applySearch(tables.manager_event_log.filter(row => Number(row.roster_id) === state.teamId)), ['week']).reverse(),
+        sortRows(applySearch(scopedCurrentRows(tables.manager_event_log || []).filter(row => Number(row.roster_id) === state.teamId)), ['week']).reverse(),
         managerEventColumns
       );
       document.getElementById('manager-table').innerHTML = table(applySearch(tables.manager_profiles), managerColumns);
@@ -2416,6 +2667,7 @@ def _page(
       document.getElementById('trade-table').innerHTML = table(filteredTrades(), tradeColumns);
       document.getElementById('waiver-table').innerHTML = table(filteredWaivers(), waiverColumns);
       document.getElementById('operator-status-panel').innerHTML = operatorPanel();
+      document.getElementById('operator-generation-plan-panel').innerHTML = writerPlanPanel();
       renderDataRoomQuestions();
       renderDataQualityReceipt();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
@@ -2434,6 +2686,12 @@ def _page(
       let rows = tables.counterparty_trade_edges.filter(row => Number(row.target_roster_id) !== state.teamId);
       if (edgeType) rows = rows.filter(row => row.edge_type === edgeType);
       return sortRows(applySearch(rows), ['trade_edge_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredCounterpartyInterest() {{
+      const rows = (tables.counterparty_asset_interest || [])
+        .filter(row => Number(row.active_roster_id) === state.teamId);
+      return sortRows(applySearch(rows), ['conversation_fit_score', 'market_value']).reverse().slice(0, 100);
     }}
 
     function scenarioRankings() {{
@@ -2552,6 +2810,26 @@ def _page(
       return `${{escapeHtml(summary)}}<br>${{escapeHtml(warning)}}<br><span class="joke">This is the argument simulator. It changes rankings, not reality.</span>`;
     }}
 
+    function writerPlanPanel() {{
+      const plan = state.writerPlan;
+      if (!plan) return '<p class="note">No writer plan loaded. Preview it before starting a cost-incurring run.</p>';
+      const counts = plan.counts || {{}};
+      const articleEntries = plan.articles && typeof plan.articles === 'object'
+        ? Object.entries(plan.articles)
+        : [];
+      const rows = articleEntries.map(([key, item]) => ({{
+        article: item?.title || key,
+        reporter: item?.reporter?.name || item?.reporter?.persona_id || '',
+        state: item?.state || 'unknown',
+        decision: item?.decision || '',
+        evidence: item?.evidence_count ?? 0,
+        sources: item?.source_count ?? 0,
+        reason: item?.reason || ''
+      }}));
+      const summary = `${{counts.generate || 0}} generation call(s) · ${{counts.reuse || 0}} reuse(s) · ${{counts.skipped || 0}} evidence-limited · ${{counts.blocked || 0}} blocked`;
+      return `<div class="panel article-panel" data-testid="writer-generation-plan"><h3>Writer plan <span class="tag">no provider call</span></h3><p class="note">${{escapeHtml(plan.message || summary)}}</p><p class="note">No provider request was made for this preview. Each desk is checked against its scoped evidence fingerprint, publication receipt, reporter, content hash, and configured model. “Generate” means a new article is eligible; it does not claim that a call has happened.</p>${{rows.length ? table(rows, ['article', 'reporter', 'state', 'decision', 'evidence', 'sources', 'reason']) : '<p class="note">No article plan rows are available.</p>'}}</div>`;
+    }}
+
     function operatorPanel() {{
       const status = state.operatorStatus || {{ state: 'unknown', message: 'Operator status has not loaded yet.' }};
       const articleEntries = status.articles && typeof status.articles === 'object'
@@ -2601,7 +2879,7 @@ def _page(
     }}
 
     function filteredNewsImpact() {{
-      let rows = tables.league_news_impact.slice();
+      let rows = scopedCurrentLeagueNews();
       if (state.newsScope === 'league-impact') rows = rows.filter(row => Number(row.roster_id));
       if (state.newsScope === 'watchlist') rows = rows.filter(row => !Number(row.roster_id));
       if (state.newsScope === 'unmatched') rows = [];
@@ -2673,6 +2951,273 @@ def _page(
       return sortRows(applySearch(rows), ['gap_score']).reverse().slice(0, 80);
     }}
 
+    function filteredNewsMarketEdges() {{
+      let rows = (tables.news_market_edges || []).slice();
+      if (state.signalScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.signalConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.signalConfidence);
+      return sortRows(applySearch(rows), ['news_market_edge_score']).reverse().slice(0, 80);
+    }}
+
+    function filteredHorizonRows() {{
+      let rows = scopedCurrentRows(tables.player_horizon_market_scores || []);
+      if (state.horizonScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
+      if (state.horizonLane !== 'ALL') rows = rows.filter(row => row.value_lane === state.horizonLane);
+      const sortKey = state.horizonSort || 'team_fit';
+      rows = applySearch(rows);
+      // Every horizon score is position-relative. Keep the board grouped and
+      // sorted inside position so a QB percentile can never masquerade as a
+      // universal price or league-wide player ranking.
+      const grouped = new Map();
+      rows.forEach(row => {{
+        const position = String(row.position || 'OTHER');
+        if (!grouped.has(position)) grouped.set(position, []);
+        grouped.get(position).push(row);
+      }});
+      const selected = [];
+      [...grouped.keys()].sort().forEach(position => {{
+        let positionRows = grouped.get(position) || [];
+        if (sortKey === 'team_fit') {{
+          positionRows = positionRows.slice().sort((left, right) => {{
+            const fitDelta = horizonTeamFit(right) - horizonTeamFit(left);
+            return fitDelta || String(left.player_name || '').localeCompare(String(right.player_name || ''));
+          }});
+        }} else if (['market_disagreement', 'market_lead', 'market_lag'].includes(sortKey)) {{
+          const metric = sortKey === 'market_disagreement' ? horizonMarketDisagreement : sortKey === 'market_lead' ? horizonMarketLead : horizonMarketLag;
+          positionRows = positionRows.slice().sort((left, right) => {{
+            const leftValue = metric(left);
+            const rightValue = metric(right);
+            if (leftValue === null && rightValue === null) return String(left.player_name || '').localeCompare(String(right.player_name || ''));
+            if (leftValue === null) return 1;
+            if (rightValue === null) return -1;
+            return (rightValue - leftValue) || String(left.player_name || '').localeCompare(String(right.player_name || ''));
+          }});
+        }} else {{
+          positionRows = sortRows(positionRows, [sortKey, 'player_name']).reverse();
+        }}
+        selected.push(...positionRows.slice(0, 8));
+      }});
+      return selected;
+    }}
+
+    function horizonTeamLens() {{
+      const profile = app.strategyProfile || {{}};
+      const direction = `${{profile.team_direction || ''}} ${{profile.contention_window || ''}}`.toLowerCase();
+      if (/contender|win.?now|compete/.test(direction)) return 'contender';
+      if (/rebuild|asset.?bank|patient|future/.test(direction)) return 'rebuilder';
+      return 'balanced';
+    }}
+
+    function horizonTeamFit(row) {{
+      const lens = horizonTeamLens();
+      const contender = row.contender_fit_score === undefined || row.contender_fit_score === null || row.contender_fit_score === '' ? null : Number(row.contender_fit_score);
+      const rebuilder = row.rebuilder_fit_score === undefined || row.rebuilder_fit_score === null || row.rebuilder_fit_score === '' ? null : Number(row.rebuilder_fit_score);
+      if (lens === 'contender') return Number.isFinite(contender) ? contender : null;
+      if (lens === 'rebuilder') return Number.isFinite(rebuilder) ? rebuilder : null;
+      if (Number.isFinite(contender) && Number.isFinite(rebuilder)) return (contender + rebuilder) / 2;
+      return Number.isFinite(contender) ? contender : Number.isFinite(rebuilder) ? rebuilder : null;
+    }}
+
+    const horizonMarketDeltaFields = [
+      'next_game_minus_market_delta',
+      'rest_of_season_minus_market_delta',
+      'dynasty_minus_market_delta',
+      'career_minus_market_delta'
+    ];
+
+    function horizonMarketDeltas(row) {{
+      return horizonMarketDeltaFields
+        .map(field => Number(row[field]))
+        .filter(value => Number.isFinite(value));
+    }}
+
+    function horizonMarketDisagreement(row) {{
+      const deltas = horizonMarketDeltas(row);
+      return deltas.length ? Math.max(...deltas.map(value => Math.abs(value))) : null;
+    }}
+
+    function horizonMarketLead(row) {{
+      const deltas = horizonMarketDeltas(row);
+      return deltas.length ? Math.max(...deltas) : null;
+    }}
+
+    function horizonMarketLag(row) {{
+      const deltas = horizonMarketDeltas(row);
+      return deltas.length ? Math.min(...deltas) : null;
+    }}
+
+    function horizonScoreValue(value) {{
+      return value === undefined || value === null || value === '' ? 'n/a' : String(value);
+    }}
+
+    function horizonScoreWidth(value) {{
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? Math.min(100, Math.max(0, numeric)) : 0;
+    }}
+
+    function horizonScoreMeter(value, labelText) {{
+      const display = horizonScoreValue(value);
+      const available = display !== 'n/a';
+      const width = horizonScoreWidth(value);
+      const meter = available
+        ? `<div class="horizon-market-meter" role="progressbar" aria-label="${{escapeHtml(labelText)}} position-relative percentile" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${{escapeHtml(String(width))}}"><span class="horizon-market-meter-fill" style="width:${{width}}%"></span></div>`
+        : '<div class="horizon-market-meter horizon-market-meter-na" aria-label="Score unavailable"></div>';
+      return `<div class="horizon-market-score" data-testid="horizon-score-meter">
+        <div class="horizon-market-score-top"><span>${{escapeHtml(labelText)}}</span><strong>${{escapeHtml(display)}}</strong></div>
+        ${{meter}}
+        <span class="horizon-market-scale">position-relative percentile / 100</span>
+      </div>`;
+    }}
+
+    function horizonCardMeter(value, labelText) {{
+      const display = horizonScoreValue(value);
+      if (display === 'n/a') return '<div class="horizon-card-meter horizon-card-meter-na" aria-label="Score unavailable"></div>';
+      const width = horizonScoreWidth(value);
+      return `<div class="horizon-card-meter" role="progressbar" aria-label="${{escapeHtml(labelText)}} position-relative percentile" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${{escapeHtml(String(width))}}"><span class="horizon-card-meter-fill" style="width:${{width}}%"></span></div>`;
+    }}
+
+    function horizonRestSeasonCountLabel(row) {{
+      if (row.rest_of_season_games !== undefined && row.rest_of_season_games !== null && row.rest_of_season_games !== '') {{
+        return `${{horizonScoreValue(row.rest_of_season_games)}} scheduled games`;
+      }}
+      const status = String(row.rest_of_season_status || '');
+      const limitation = status === 'unavailable_missing_projection'
+        ? 'season projection unavailable'
+        : status === 'season_projection_baseline'
+          ? 'season projection baseline'
+          : String(row.schedule_status || 'schedule unavailable');
+      return `scheduled game count unavailable (${{horizonScoreValue(limitation)}})`;
+    }}
+
+    function horizonRestSeasonPpgLabel(row) {{
+      const ppg = horizonScoreValue(row.rest_of_season_ppg);
+      if (String(row.current_availability_status || '').toLowerCase() === 'no_current_nfl_team'
+        || String(row.availability_note || '').toLowerCase().includes('no current nfl team')) {{
+        return `conditional baseline PPG if signed ${{ppg}}`;
+      }}
+      return horizonHasCurrentAvailabilityFlag(row)
+        ? `conditional baseline PPG if active ${{ppg}}`
+        : `season baseline PPG ${{ppg}}`;
+    }}
+
+    function horizonHasCurrentAvailabilityFlag(row) {{
+      if (String(row.current_availability_status || '').toLowerCase() === 'no_current_nfl_team'
+        || String(row.availability_note || '').toLowerCase().includes('no current nfl team')) return true;
+      const status = String(row.injury_status || '').trim().toLowerCase();
+      if (status) return !['none', 'healthy', 'active', 'available', 'no current injury', 'no current sleeper injury flag'].includes(status);
+      const note = String(row.availability_note || '').trim().toLowerCase();
+      if (!note || note.startsWith('no current')) return false;
+      return ['questionable', 'doubtful', 'out', 'injured', 'injury', 'ir', 'pup', 'suspended', 'limited'].some(marker => note === marker || note.startsWith(marker + ' ') || note.includes(' ' + marker + ' ') || note.endsWith(' ' + marker));
+    }}
+
+    function horizonViewDefinition() {{
+      const definitions = {{
+        all: {{
+          label: 'All clocks',
+          note: 'Use the full card to inspect every decision window. Scores remain position-relative percentiles; market value is the cross-position price anchor.'
+        }},
+        this_week: {{
+          label: 'This week',
+          note: 'Who helps this lineup now? This view emphasizes the next-game score, availability, opponent context, and the same-position clock-versus-market lead.'
+        }},
+        rest_of_season: {{
+          label: 'Rest of season',
+          note: 'Who compounds through this season? The baseline PPG and scheduled-game count remain visible, but the production baseline is not recovery-adjusted.'
+        }},
+        dynasty: {{
+          label: 'Dynasty / career',
+          note: 'Who belongs in the long window? Dynasty is a market/timeline lens; career is a bounded five-year scenario, not a lifetime forecast.'
+        }},
+        fit: {{
+          label: 'Contender vs rebuilder',
+          note: 'Where does roster posture change the read? Fit scores are weighted combinations of the clocks, not trade prices or evidence of manager intent.'
+        }},
+        repricing: {{
+          label: 'Repricing leads',
+          note: 'Where does a decision clock differ from the same-position market percentile? Positive and negative deltas are research leads, not proven mispricing.'
+        }}
+      }};
+      return definitions[state.horizonView] || definitions.all;
+    }}
+
+    function horizonMarketViewMarkup(row) {{
+      const view = state.horizonView || 'all';
+      const marketAnchor = `market value ${{horizonScoreValue(row.market_value)}} · market percentile ${{horizonScoreValue(row.market_percentile)}}`;
+      const opponent = row.next_game_opponent ? `vs ${{row.next_game_opponent}} (${{row.next_game_home_away || 'game'}})` : 'opponent unavailable';
+      if (view === 'this_week') {{
+        return `<div class="horizon-market-primary"><div><strong>This week's utility</strong><p>${{escapeHtml(opponent)}} · expected ${{escapeHtml(horizonScoreValue(row.next_game_expected_points))}} points vs baseline ${{escapeHtml(horizonScoreValue(row.next_game_baseline_points))}} · ${{escapeHtml(row.next_game_status || 'availability unavailable')}}</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.next_game_market_score))}}<small>position percentile</small></div></div><p class="brief-card-evidence"><strong>Clock vs market:</strong> ${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}} points of percentile difference · ${{escapeHtml(marketAnchor)}}. Matchup factor ${{escapeHtml(horizonScoreValue(row.next_game_matchup_factor))}} (${{escapeHtml(row.next_game_matchup_adjustment_status || 'unavailable')}}).</p>`;
+      }}
+      if (view === 'rest_of_season') {{
+        return `<div class="horizon-market-primary"><div><strong>Season utility</strong><p>${{escapeHtml(horizonRestSeasonCountLabel(row))}} · ${{escapeHtml(horizonRestSeasonPpgLabel(row))}} · production baseline is not recovery-adjusted</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.rest_of_season_market_score))}}<small>position percentile</small></div></div><p class="brief-card-evidence"><strong>Clock vs market:</strong> ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_market_delta))}} points of percentile difference · ${{escapeHtml(marketAnchor)}}. Transition from this week: ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_next_game_delta))}}.</p>`;
+      }}
+      if (view === 'dynasty') {{
+        return `<div class="horizon-market-primary"><div><strong>Long-window value</strong><p>Dynasty market ${{escapeHtml(horizonScoreValue(row.dynasty_market_score))}} · career window ${{escapeHtml(horizonScoreValue(row.career_projection_score))}} · age ${{escapeHtml(horizonScoreValue(row.age))}} · career is a bounded five-year scenario</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.dynasty_market_score))}}<small>dynasty percentile</small></div></div><p class="brief-card-evidence"><strong>Clock vs market:</strong> dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_minus_market_delta))}} · career ${{escapeHtml(horizonScoreValue(row.career_minus_market_delta))}} points of percentile difference · ${{escapeHtml(marketAnchor)}}. Dynasty-to-career transition: ${{escapeHtml(horizonScoreValue(row.career_minus_dynasty_delta))}}.</p>`;
+      }}
+      if (view === 'fit') {{
+        return `<div class="horizon-market-primary"><div><strong>${{escapeHtml(label(horizonTeamLens()))}} roster fit</strong><p>Contender ${{escapeHtml(horizonScoreValue(row.contender_fit_score))}} · rebuilder ${{escapeHtml(horizonScoreValue(row.rebuilder_fit_score))}} · spread ${{escapeHtml(horizonScoreValue(row.rebuilder_contender_spread))}} · fit coverage ${{escapeHtml(horizonScoreValue(row.fit_coverage))}}</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(horizonTeamFit(row)))}}<small>active lens percentile</small></div></div><p class="brief-card-evidence"><strong>Why it changes:</strong> the active roster lens is a weighted combination of the four clocks. Value lane ${{escapeHtml(label(row.value_lane || 'balanced_window'))}}; this is fit context, not a universal value or a claim about the current owner's intent.</p>`;
+      }}
+      if (view === 'repricing') {{
+        return `<p class="brief-card-evidence"><strong>Same-position repricing leads:</strong> ${{escapeHtml(marketAnchor)}}. A positive delta means the clock is above the market percentile; a negative delta means it is below. These differences are research leads, not dollar gaps or proof of mispricing.</p><div class="horizon-market-score-grid horizon-market-reprice-grid" aria-label="Clock versus position market deltas"><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}}</strong><span>Next week vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_market_delta))}}</strong><span>Season vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.dynasty_minus_market_delta))}}</strong><span>Dynasty vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.career_minus_market_delta))}}</strong><span>Career vs market</span></div></div>`;
+      }}
+      return `<div class="horizon-market-score-grid horizon-market-clock-grid" aria-label="Decision horizon market scores">${{horizonScoreMeter(row.next_game_market_score, 'This week')}}${{horizonScoreMeter(row.rest_of_season_market_score, 'Rest of season')}}${{horizonScoreMeter(row.dynasty_market_score, 'Dynasty')}}${{horizonScoreMeter(row.career_projection_score, 'Career window')}}</div><div class="horizon-market-score-grid horizon-market-fit-grid" aria-label="Strategy fit scores"><div class="horizon-market-score"><strong>${{escapeHtml(horizonScoreValue(row.contender_fit_score))}}</strong><span>Contender fit percentile</span></div><div class="horizon-market-score"><strong>${{escapeHtml(horizonScoreValue(row.rebuilder_fit_score))}}</strong><span>Rebuilder fit percentile</span></div><div class="horizon-market-score"><strong>${{escapeHtml(horizonScoreValue(horizonTeamFit(row)))}}</strong><span>Active ${{escapeHtml(label(horizonTeamLens()))}} fit percentile</span></div></div><div class="horizon-market-score-grid horizon-market-reprice-grid" aria-label="Clock versus position market deltas"><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}}</strong><span>Next vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_market_delta))}}</strong><span>ROS vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.dynasty_minus_market_delta))}}</strong><span>Dynasty vs market</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.career_minus_market_delta))}}</strong><span>Career vs market</span></div></div><div class="horizon-market-score-grid horizon-market-delta-grid" aria-label="Clock transition deltas"><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_next_game_delta))}}</strong><span>ROS minus next</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.dynasty_minus_rest_of_season_delta))}}</strong><span>Dynasty minus ROS</span></div><div class="horizon-market-score horizon-market-delta"><strong>${{escapeHtml(horizonScoreValue(row.career_minus_dynasty_delta))}}</strong><span>Career minus dynasty</span></div></div>`;
+    }}
+
+    function horizonMarketCard(row, index) {{
+      const playerId = String(row.player_id || '');
+      const title = playerId
+        ? `<a class="entity-link" href="#player-${{escapeHtml(playerId)}}">${{escapeHtml(row.player_name || 'Unknown player')}}</a>`
+        : escapeHtml(row.player_name || 'Unknown player');
+      const lane = label(row.value_lane || 'balanced_window');
+      const opponent = row.next_game_opponent ? `vs ${{row.next_game_opponent}} (${{row.next_game_home_away || 'game'}})` : 'opponent unavailable';
+      const evidence = row.evidence || 'Horizon evidence is not recorded.';
+      const risk = row.risk || 'Inspect availability and source freshness before acting.';
+      const trace = row.source_trace || 'player_horizon_market_scores';
+      const rosGamesLabel = horizonRestSeasonCountLabel(row);
+      const marketValueLabel = row.market_value !== undefined && row.market_value !== null && row.market_value !== ''
+        ? `market value ${{horizonScoreValue(row.market_value)}}`
+        : 'market value unavailable';
+      const marketReceiptLabel = `${{horizonScoreValue(row.market_source_count)}} source(s) · ${{horizonScoreValue(row.market_disagreement_score)}} disagreement · ${{row.market_source_confidence || 'confidence unavailable'}}`;
+      const marketRead = state.horizonView === 'all'
+        ? `<p class="brief-card-evidence"><strong>Market read:</strong> ${{escapeHtml(opponent)}} · matchup factor ${{escapeHtml(horizonScoreValue(row.next_game_matchup_factor))}} (${{escapeHtml(row.next_game_matchup_adjustment_status || 'unavailable')}}) · ${{escapeHtml(marketValueLabel)}} is the cross-position price anchor · position-relative percentiles are not dollar values · market evidence ${{escapeHtml(marketReceiptLabel)}} · clock minus position-market deltas: next ${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}}, ROS ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_market_delta))}}, dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_minus_market_delta))}}, career ${{escapeHtml(horizonScoreValue(row.career_minus_market_delta))}} · rest of season ${{escapeHtml(rosGamesLabel)}}, production baseline not recovery-adjusted · clock shifts: ROS minus next ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_next_game_delta))}}, dynasty minus ROS ${{escapeHtml(horizonScoreValue(row.dynasty_minus_rest_of_season_delta))}}, career minus dynasty ${{escapeHtml(horizonScoreValue(row.career_minus_dynasty_delta))}} · ${{escapeHtml(label(horizonTeamLens()))}} lens ${{escapeHtml(horizonScoreValue(horizonTeamFit(row)))}} · spread ${{escapeHtml(horizonScoreValue(row.rebuilder_contender_spread))}}.</p>`
+        : `<p class="brief-card-evidence"><strong>Evidence receipt:</strong> ${{escapeHtml(marketValueLabel)}} · market evidence ${{escapeHtml(marketReceiptLabel)}} · source trace remains in the drawer below.</p>`;
+      const focusedClass = state.horizonView && state.horizonView !== 'all' ? ' is-focused' : '';
+      return `<article class="horizon-market-card${{focusedClass}}" data-testid="horizon-market-row">
+        <div class="brief-card-top"><strong>${{index + 1}}. ${{title}}</strong><span class="tag">${{escapeHtml(lane)}}</span></div>
+         <div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(row.position || 'position unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.confidence || 'confidence unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.current_availability_status || 'availability status unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.next_game_status || 'next game status unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.horizon_model_version || 'model version unavailable')}}</span><span class="brief-chip">fit coverage ${{escapeHtml(row.fit_coverage || 'n/a')}}</span><span class="brief-chip">${{escapeHtml(marketValueLabel)}}</span><span class="brief-chip">${{escapeHtml(marketReceiptLabel)}}</span></div>
+        ${{horizonMarketViewMarkup(row)}}
+         ${{marketRead}}
+        <details class="evidence-drawer"><summary>Horizon evidence receipt</summary><p class="brief-card-evidence">${{escapeHtml(evidence)}}</p><p class="note"><strong>Risk:</strong> ${{escapeHtml(risk)}} · source trace: ${{escapeHtml(trace)}}</p></details>
+      </article>`;
+    }}
+
+    function renderHorizonMarketBoard() {{
+      const rows = filteredHorizonRows();
+      const view = horizonViewDefinition();
+      setText('horizon-view-note', `${{view.label}}: ${{view.note}}`);
+      const rebuilder = rows.filter(row => String(row.value_lane || '') === 'rebuilder_edge').length;
+      const contender = rows.filter(row => String(row.value_lane || '') === 'contender_edge').length;
+      const limited = rows.filter(row => String(row.confidence || '').toLowerCase() !== 'high').length;
+      document.getElementById('horizon-market-summary').innerHTML = [
+        entityTile('Rows shown', rows.length),
+        entityTile('View', view.label),
+        entityTile('Team lens', label(horizonTeamLens())),
+        entityTile('Rebuilder edges', rebuilder),
+        entityTile('Contender edges', contender),
+        entityTile('Needs review', limited)
+      ].join('');
+      const grouped = new Map();
+      rows.forEach(row => {{
+        const position = String(row.position || 'OTHER');
+        if (!grouped.has(position)) grouped.set(position, []);
+        grouped.get(position).push(row);
+      }});
+      const sections = [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0])).map(([position, positionRows]) =>
+        `<section class="horizon-position-section"><h4>${{escapeHtml(position)}} <span class="note">· comparisons within position</span></h4><div class="horizon-market-list">${{positionRows.map((row, index) => horizonMarketCard(row, index)).join('')}}</div></section>`
+      ).join('');
+      document.getElementById('horizon-market-board').innerHTML = rows.length
+        ? sections
+        : '<p class="note">No horizon rows match this scope and lane. Check the refresh receipt before treating the market as empty.</p>';
+    }}
+
     function filteredTeamFits() {{
       let rows = tables.team_fit_scores.slice();
       if (state.signalScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
@@ -2711,15 +3256,45 @@ def _page(
     }}
 
     function currentSeasonTeams() {{
-      const currentSeason = String(app.currentSeason || '');
-      const current = tables.teams.filter(row => String(row.season || '') === currentSeason);
+      const current = scopedCurrentRows(tables.teams || []);
       return current.length ? current : latestRowsByRoster(tables.teams);
     }}
 
     function currentSeasonRoster() {{
-      const currentSeason = String(app.currentSeason || '');
-      const current = tables.roster_players.filter(row => String(row.season || '') === currentSeason);
+      const current = scopedCurrentRows(tables.roster_players || []);
       return current.length ? current : tables.roster_players;
+    }}
+
+    function sameIdentifier(left, right) {{
+      const leftText = String(left ?? '').trim();
+      const rightText = String(right ?? '').trim();
+      if (!leftText || !rightText) return false;
+      if (leftText === rightText) return true;
+      const leftNumber = Number(leftText);
+      const rightNumber = Number(rightText);
+      return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber === rightNumber;
+    }}
+
+    function scopedCurrentRows(rows) {{
+      let scopedRows = (rows || []).slice();
+      const leagueId = String(manifest.leagueId || '').trim();
+      if (leagueId) {{
+        const identified = scopedRows.filter(row => String(row.league_id ?? '').trim());
+        const scoped = identified.filter(row => sameIdentifier(row.league_id, leagueId));
+        // Legacy/global rows have no league identity and are safe to retain when
+        // the current bundle has not produced a league-specific impact row.
+        scopedRows = scoped.length ? scoped : scopedRows.filter(row => !String(row.league_id ?? '').trim());
+      }}
+      const season = String(app.currentSeason || '').trim();
+      if (season) {{
+        const currentSeason = scopedRows.filter(row => sameIdentifier(row.season, season));
+        scopedRows = currentSeason.length ? currentSeason : scopedRows;
+      }}
+      return scopedRows;
+    }}
+
+    function scopedCurrentLeagueNews() {{
+      return scopedCurrentRows(tables.league_news_impact || []);
     }}
 
     function latestRowsByRoster(rows) {{
@@ -2799,6 +3374,7 @@ def _page(
       const profile = app.strategyProfile || {{}};
       const tracked = app.trackedPicks || [];
       const rosterIds = new Set((allTeamRoster || []).map(row => String(row.player_id || '')));
+      const horizonRows = scopedCurrentRows(tables.player_horizon_market_scores || []).filter(row => Number(row.roster_id) === state.teamId && (!rosterIds.size || rosterIds.has(String(row.player_id || ''))));
       const fits = (tables.team_fit_scores || []).filter(row => Number(row.roster_id) === state.teamId && rosterIds.has(String(row.player_id || '')));
       const actions = (tables.action_recommendations || []).filter(row => Number(row.roster_id) === state.teamId && rosterIds.has(String(row.player_id || '')));
       const needs = findRow(tables.team_needs_matrix, 'roster_id', state.teamId);
@@ -2835,14 +3411,19 @@ def _page(
       const profileName = profile.name || 'Generic Sleeper team analysis';
       const direction = profile.team_direction || 'not configured';
       const window = profile.contention_window || 'not configured';
+      const horizonLens = horizonTeamLens();
+      const horizonProfile = horizonRows.map(row => String(row.fit_basis || '').match(/fit weight profile=([^;]+)/)?.[1]).find(Boolean) || 'not recorded';
+      const horizonBasis = horizonRows.map(row => String(row.fit_basis || '')).find(Boolean) || 'No four-window fit receipt is available for this roster.';
       return `<div class="strategy-overlay">
         <h4>Strategy alignment</h4>
-        <div class="tile-row">${{entityTile('Profile', profileName)}}${{entityTile('Team shape', needs.team_shape || 'unknown')}}${{entityTile('Fit rows', fits.length)}}${{entityTile('Tracked picks', tracked.length)}}</div>
+        <div class="tile-row">${{entityTile('Profile', profileName)}}${{entityTile('Team shape', needs.team_shape || 'unknown')}}${{entityTile('Fit rows', fits.length)}}${{entityTile('Horizon lens', horizonLens)}}${{entityTile('Tracked picks', tracked.length)}}</div>
         <p class="brief-card-evidence"><strong>Decision lens:</strong> ${{escapeHtml(label(direction))}} · <strong>Window:</strong> ${{escapeHtml(label(window))}}.</p>
+        <p class="brief-card-evidence"><strong>Four-window fit:</strong> ${{escapeHtml(label(horizonLens))}} · ${{escapeHtml(horizonRows.length)}} roster horizon rows · weighting receipt ${{escapeHtml(horizonProfile)}}.</p>
         <p class="brief-card-evidence"><strong>Roster needs:</strong> ${{escapeHtml(needSummary)}}.</p>
         <p class="brief-card-evidence"><strong>Strategy fit:</strong> ${{escapeHtml(fitSummary)}}.</p>
         <p class="brief-card-evidence"><strong>Current action mix:</strong> ${{escapeHtml(actionSummary)}}.</p>
         ${{topFitText ? `<details class="evidence-drawer"><summary>Top aligned roster evidence</summary><p class="note">${{escapeHtml(topFitText)}}</p></details>` : '<p class="note">No exact roster fit rows are available for this strategy view.</p>'}}
+        <details class="evidence-drawer"><summary>Four-window weighting receipt</summary><p class="note">${{escapeHtml(horizonBasis)}}</p></details>
         <p class="note">These are deterministic fit and action labels for the selected roster. They are decision support, not a prediction of a trade or outcome.</p>
       </div>`;
     }}
@@ -3011,11 +3592,12 @@ def _page(
     function dataRoomQuestionResult(question) {{
       const roster = currentSeasonRoster().filter(row => Number(row.roster_id) === state.teamId);
       const team = currentSeasonTeams().find(row => Number(row.roster_id) === state.teamId) || {{}};
-      const latestNews = sortRows((tables.league_news_impact || []).slice(), ['published_at']).reverse()[0] || {{}};
+      const currentNews = scopedCurrentLeagueNews();
+      const latestNews = sortRows(currentNews, ['published_at']).reverse()[0] || {{}};
       const latestTrade = sortRows((tables.trades || []).slice(), ['created_datetime']).reverse()[0] || {{}};
       const latestWaiver = sortRows((tables.waivers || []).slice(), ['created_datetime', 'week']).reverse()[0] || {{}};
       const recentEvents = [
-        ...sortRows((tables.league_news_impact || []).slice(), ['published_at']).reverse().slice(0, 5).map(row => ({{
+        ...sortRows(currentNews, ['published_at']).reverse().slice(0, 5).map(row => ({{
           sortKey: row.published_at || '',
           text: `News · ${{row.player_name || 'Unknown player'}}: ${{row.evidence || row.impact_type || 'signal recorded'}} · ${{row.published_at || 'time not recorded'}}`
         }})),
@@ -3028,6 +3610,14 @@ def _page(
           text: `Waiver · ${{row.team_name || `Roster ${{row.roster_id || 'unknown'}}`}} added ${{row.player_added || 'an unknown player'}}${{row.player_dropped ? ` and dropped ${{row.player_dropped}}` : ''}} · ${{row.created_datetime || `week ${{row.week || 'unknown'}}`}}`
         }}))
       ].sort((left, right) => String(right.sortKey || '').localeCompare(String(left.sortKey || ''))).slice(0, 8).map(row => row.text);
+      const horizonMovements = (tables.horizon_market_movements || [])
+        .filter(row => !row.league_id || sameIdentifier(row.league_id, manifest.leagueId))
+        .filter(row => String(row.movement_status || '') === 'changed')
+        .sort((left, right) => (Number(right.largest_clock_movement_magnitude) || 0) - (Number(left.largest_clock_movement_magnitude) || 0))
+        .slice(0, 8);
+     const horizonMovementVisual = decisionListVisual('Market clock changes', horizonMovements.length
+        ? horizonMovements.map(row => `${{row.player_name || 'Unknown player'}}: ${{row.largest_clock_movement_window || 'clock'}} ${{row.largest_clock_movement_delta || 'n/a'}} since week ${{row.prior_as_of_week || 'unknown'}} · market value delta ${{row.market_value_delta || 'n/a'}} · lane ${{label(row.value_lane || 'unavailable')}}`)
+       : ['No changed horizon rows have an earlier exact-scope snapshot yet. The first run establishes the baseline.']);
       const delta = app.dataRoomDelta || {{}};
       const deltaEvents = Array.isArray(delta.added_events) ? delta.added_events : [];
       const deltaVisual = delta.status === 'verified'
@@ -3046,16 +3636,34 @@ def _page(
         }};
       }}
       if (question === 'mispriced') {{
-        const rows = filteredSignalGaps().slice(0, 6).map(row => ({{
+        const newsRows = filteredNewsMarketEdges().slice(0, 6).map(row => ({{
+          label: row.player_name || 'Unknown player',
+          value: Number(row.news_market_edge_score) || 0,
+          display: `${{row.edge_type || 'news-market review'}} · ${{row.news_market_edge_score || 0}}`,
+          playerId: row.player_id
+        }}));
+        const signalRows = filteredSignalGaps().slice(0, 6).map(row => ({{
           label: row.player_name || 'Unknown player',
           value: Math.abs(Number(row.gap_score) || 0),
           display: `${{row.gap_score || 0}} gap`,
           playerId: row.player_id
         }}));
+        const horizonRows = scopedCurrentRows(tables.player_horizon_market_scores || [])
+          .filter(row => Number(row.roster_id) === state.teamId)
+          .slice()
+          .sort((left, right) => (horizonMarketDisagreement(right) || 0) - (horizonMarketDisagreement(left) || 0))
+          .slice(0, 6)
+          .map(row => ({{
+            label: row.player_name || 'Unknown player',
+            value: horizonMarketDisagreement(row) || 0,
+            display: `${{row.value_lane || 'clock / market review'}} · ${{horizonMarketDisagreement(row) || 0}}`,
+            playerId: row.player_id
+          }}));
+        const rows = (newsRows.length ? newsRows : signalRows.length ? signalRows : horizonRows);
         return {{
-          title: 'Which players are mispriced?',
-          answer: rows.length ? 'These are the largest current model gaps in the selected scope. A gap is a prompt for price discovery, not proof that the market is wrong.' : 'No scored market gaps are available in the current evidence bundle.',
-          visuals: [decisionVisual('Largest modeled gaps', rows, 'Bars show gap magnitude; inspect projection confidence and risk before acting.')]
+          title: 'Which players deserve a price check?',
+          answer: rows.length ? (newsRows.length ? 'These are current scoped news-market dislocations: a catalyst is present while the deterministic price or sell-pressure lane remains meaningful. They are research leads, not proof that the market is wrong.' : signalRows.length ? 'These are the largest current model gaps in the selected scope. A gap is a prompt for price discovery, not proof that the market is wrong.' : 'These horizon rows have the largest same-position clock-versus-market disagreement in the selected roster. The movement is a research lead, not proof that the market is wrong.') : 'No scored market gaps are available in the current evidence bundle.',
+          visuals: [decisionVisual(newsRows.length ? 'News-market dislocations' : signalRows.length ? 'Largest modeled gaps' : 'Horizon clock / market leads', rows, 'Inspect the source receipt, projection confidence, role, and live market before acting.')]
         }};
       }}
       if (question === 'traders') {{
@@ -3109,10 +3717,10 @@ def _page(
       return {{
         title: 'What changed?',
         answer: delta.status === 'verified'
-          ? `${{deltaEvents.length}} news, trade, or waiver rows were added since the prior reader bundle. The current pulse below is the latest recorded event view; it is separate from the historical delta.`
-          : `${{tables.league_news_impact?.length || 0}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. The pulse below shows the latest recorded events available to this bundle; it is not a historical delta unless a prior receipt says so.`,
-        visuals: [deltaVisual, decisionVisual('Current event volume', [
-          {{ label: 'News signals', value: (tables.league_news_impact || []).length, display: String((tables.league_news_impact || []).length) }},
+          ? `${{deltaEvents.length}} news, trade, or waiver rows were added since the prior reader bundle, with ${{horizonMovements.length}} changed market-clock rows. The current pulse below is the latest recorded event view; it is separate from the historical delta.`
+          : `${{currentNews.length}} league news signals, ${{tables.trades?.length || 0}} trades, and ${{tables.waivers?.length || 0}} waiver rows are in this snapshot. ${{horizonMovements.length}} changed market-clock rows have an earlier exact-scope comparison; the pulse below is not a historical delta unless a prior receipt says so.`,
+        visuals: [deltaVisual, horizonMovementVisual, decisionVisual('Current event volume', [
+          {{ label: 'News signals', value: currentNews.length, display: String(currentNews.length) }},
           {{ label: 'Trades', value: (tables.trades || []).length, display: String((tables.trades || []).length) }},
           {{ label: 'Waivers', value: (tables.waivers || []).length, display: String((tables.waivers || []).length) }}
         ], 'Counts are the current evidence snapshot, not a claim that every row is newly created.'), decisionListVisual('Latest recorded league events', recentEvents.length ? recentEvents : ['No event rows are available in the current evidence bundle.']), decisionListVisual('Latest receipts', [
@@ -3159,9 +3767,14 @@ def _page(
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
         {{ item: 'Projection season rows', value: tables.player_projection_season.length }},
         {{ item: 'Projection weekly rows', value: counts.player_projection_weekly || tables.player_projection_weekly.length }},
+        {{ item: 'Available market horizon rows', value: metadata.available_player_horizon_rows || tables.available_player_horizon_scores.length }},
+       {{ item: 'Horizon outcome observations', value: metadata.horizon_accuracy_rows || tables.horizon_score_accuracy.length }},
+        {{ item: 'Horizon movement rows', value: metadata.horizon_movement_rows || tables.horizon_market_movements.length }},
         {{ item: 'Signal score rows', value: tables.player_signal_scores.length }},
+        {{ item: 'News-market edge rows', value: tables.news_market_edges.length }},
         {{ item: 'Action recommendation rows', value: tables.action_recommendations.length }},
         {{ item: 'Manager valuation profile rows', value: metadata.manager_valuation_profile_rows || tables.manager_valuation_profiles.length }},
+        {{ item: 'Observed transaction lane rows', value: metadata.manager_transaction_preference_rows || tables.manager_transaction_preferences.length }},
         {{ item: 'Counterparty edge rows', value: metadata.counterparty_edge_rows || tables.counterparty_trade_edges.length }},
         {{ item: 'Manager profile tag rows', value: metadata.manager_profile_tag_rows || tables.manager_profile_tags.length }},
         {{ item: 'Manager cycle rows', value: tables.manager_cycle_profiles.length }},
@@ -3176,6 +3789,7 @@ def _page(
         {{ item: 'Target thesis rows', value: metadata.target_thesis_count || (analysis.targetTheses || []).length }},
         {{ item: 'Sell thesis rows', value: metadata.sell_thesis_count || (analysis.sellTheses || []).length }},
         {{ item: 'Trade thesis rows', value: metadata.trade_thesis_count || (analysis.tradeTheses || []).length }},
+        {{ item: 'Counterparty audience rows', value: metadata.counterparty_asset_interest_rows || tables.counterparty_asset_interest.length }},
         {{ item: 'Recommendation packets', value: metadata.recommendation_packets_status || 'planned_contract_only' }}
       ], ['item', 'value']) + '<h3>Market Consensus</h3>' + table(tables.market_consensus_values.slice(0, 40), marketConsensusColumns) + '<h3>Source Freshness</h3>' + table(tables.source_freshness, sourceColumns) + '<h3>News Source Freshness</h3>' + table(tables.news_source_freshness, sourceColumns) + '<h3>Projection Source Freshness</h3>' + table(tables.projection_source_freshness, sourceColumns);
     }}
@@ -3209,9 +3823,14 @@ def _page(
           row.edge_type,
           row.position,
           row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '',
+          row.target_team_lens ? `${{row.target_team_lens}} timeline` : '',
+          row.horizon_fit_edge ? `timeline edge ${{row.horizon_fit_edge}}` : '',
+          row.horizon_fit_read ? label(row.horizon_fit_read) : '',
+          row.horizon_market_disagreement_window ? `${{label(row.horizon_market_disagreement_window)}} clock` : '',
+          row.horizon_market_disagreement_delta ? `clock-market ${{row.horizon_market_disagreement_delta}}` : '',
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
-        evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
+        evidence: `${{row.evidence || 'No evidence provided.'}} Timeline: ${{row.horizon_fit_basis || 'timeline fit unavailable'}} Repricing: ${{row.horizon_market_disagreement_read ? `${{label(row.horizon_market_disagreement_read)}} in ${{label(row.horizon_market_disagreement_window)}} (${{row.horizon_market_disagreement_delta}})` : 'horizon-to-market comparison unavailable'}} Risk: ${{row.risk || ''}}`
       }})).join('')}}</div>`;
     }}
 
@@ -3233,6 +3852,26 @@ def _page(
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         evidence: row.evidence || row.source_trace || 'No evidence provided.'
+      }})).join('')}}</div>`;
+    }}
+
+    function counterpartyInterestCards(rows) {{
+      if (!rows.length) return '<p class="note">No active-roster asset has a supported observed audience lane.</p>';
+      return `<div class="brief-list">${{rows.map((row, index) => briefCard({{
+        title: `${{row.asset_name || 'Unknown asset'}} - ${{row.target_team || 'Unknown manager'}}`,
+        category: categoryFor('conversation_fit_label', row.conversation_fit_label),
+        rank: index + 1,
+        playerId: row.asset_id,
+        entityHash: row.asset_id ? `player-${{row.asset_id}}` : '',
+        chips: [
+          row.position,
+          row.transaction_lane_read,
+          row.conversation_fit_score ? `conversation fit ${{row.conversation_fit_score}}` : '',
+          row.target_team_lens ? `${{row.target_team_lens}} timeline` : '',
+          row.target_need ? `need ${{row.target_need}}` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        evidence: `${{row.evidence || 'No evidence provided.'}} Risk: ${{row.risk || ''}}`
       }})).join('')}}</div>`;
     }}
 
@@ -3269,7 +3908,7 @@ def _page(
       const identityNote = unconfirmed
         ? `${{unconfirmed}} market name${{unconfirmed === 1 ? '' : 's'}} still need Sleeper confirmation before draft use. ${{draftNote}}`
         : `Market-board identities are linked or uniquely matched to Sleeper. ${{draftNote}}`;
-      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
+      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster; ${{escapeHtml(String(summary.available_horizon_count || 0))}} have at least one comparable clock score from the same model used by rostered players. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
     }}
 
     function draftRoomCards(rows, mode) {{
@@ -3287,6 +3926,8 @@ def _page(
           row.need && row.need !== 'unknown' ? `need ${{row.need}}` : '',
           row.market_value ? `market ${{row.market_value}}` : '',
           row.action_label || row.consumer_label || '',
+          row.horizon_status !== 'unavailable' ? `windows ${{row.horizon_fit_coverage || 'n/a'}} · next ${{row.next_game_market_score || 'n/a'}} · ROS ${{row.rest_of_season_market_score || 'n/a'}} · dynasty ${{row.dynasty_market_score || 'n/a'}}` : 'four-window unavailable',
+          row.value_lane ? label(row.value_lane) : '',
           row.identity_status ? `identity ${{row.identity_status.replaceAll('_', ' ')}}` : '',
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
@@ -3313,7 +3954,7 @@ def _page(
       const quality = room.data_quality || {{}};
       const health = (quality.source_health || []).map(row => `${{row.source}}/${{row.dataset}}: ${{row.status}}`).join(' · ');
       const identity = quality.market_player_identity || {{}};
-      return `<p><strong>Market board:</strong> ${{escapeHtml(quality.market_player_source || 'unavailable')}} (${{escapeHtml(String(quality.market_player_rows || 0))}} rows).</p><p><strong>Identity:</strong> ${{escapeHtml(String(identity.sleeper_id || 0))}} Sleeper IDs · ${{escapeHtml(String(identity.sleeper_unique_name_match || 0))}} unique matches · ${{escapeHtml(String(identity.unconfirmed_name_match || 0))}} unconfirmed.</p><p><strong>Pick valuation:</strong> ${{escapeHtml(quality.pick_value_source || 'unavailable')}} (${{escapeHtml(String(quality.pick_value_rows || 0))}} external value rows).</p><p><strong>Freshness:</strong> ${{escapeHtml(health || 'source freshness not recorded')}}</p>`;
+      return `<p><strong>Market board:</strong> ${{escapeHtml(quality.market_player_source || 'unavailable')}} (${{escapeHtml(String(quality.market_player_rows || 0))}} rows).</p><p><strong>Identity:</strong> ${{escapeHtml(String(identity.sleeper_id || 0))}} Sleeper IDs · ${{escapeHtml(String(identity.sleeper_unique_name_match || 0))}} unique matches · ${{escapeHtml(String(identity.unconfirmed_name_match || 0))}} unconfirmed.</p><p><strong>Clock coverage:</strong> ${{escapeHtml(String((draftRoom.summary || {{}}).available_horizon_count || 0))}} available-market names have at least one comparable horizon score. These are research rows, not waiver-eligibility receipts.</p><p><strong>Pick valuation:</strong> ${{escapeHtml(quality.pick_value_source || 'unavailable')}} (${{escapeHtml(String(quality.pick_value_rows || 0))}} external value rows).</p><p><strong>Freshness:</strong> ${{escapeHtml(health || 'source freshness not recorded')}}</p>`;
     }}
 
     function thesisCards(rows, mode) {{
@@ -3359,18 +4000,26 @@ def _page(
       const parts = [];
       let para = [];
       let list = [];
-      const flushPara = () => {{ if (para.length) {{ parts.push(`<p class="article-p">${{escapeHtml(para.join(' '))}}</p>`); para = []; }} }};
-      const flushList = () => {{ if (list.length) {{ parts.push(`<ul class="article-list">${{list.map(item => `<li>${{escapeHtml(item)}}</li>`).join('')}}</ul>`); list = []; }} }};
+      const flushPara = () => {{ if (para.length) {{ parts.push(`<p class="article-p">${{articleInline(para.join(' '))}}</p>`); para = []; }} }};
+      const flushList = () => {{ if (list.length) {{ parts.push(`<ul class="article-list">${{list.map(item => `<li>${{articleInline(item)}}</li>`).join('')}}</ul>`); list = []; }} }};
       for (const raw of body.split('\\n')) {{
         const line = raw.trim();
         if (!line) {{ flushPara(); flushList(); continue; }}
         if (line.startsWith('# ') && !line.startsWith('## ')) {{ continue; }}
-        if (line.startsWith('## ')) {{ flushPara(); flushList(); parts.push(`<h4 class="article-h">${{escapeHtml(line.replace(/^##\\s*/, ''))}}</h4>`); continue; }}
+        if (line.startsWith('## ')) {{ flushPara(); flushList(); parts.push(`<h4 class="article-h">${{articleInline(line.replace(/^##\\s*/, ''))}}</h4>`); continue; }}
         if (line.startsWith('- ')) {{ flushPara(); list.push(line.replace(/^-\\s*/, '')); continue; }}
         flushList(); para.push(line);
       }}
       flushPara(); flushList();
       return `<div class="article-body">${{parts.join('')}}</div>`;
+    }}
+
+    function articleInline(value) {{
+      // Escape evidence first, then permit only the small Markdown subset used
+      // by deterministic fallbacks and the structured writer contract.
+      return escapeHtml(value)
+        .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
     }}
 
     function articleModeLabel(mode) {{
@@ -3391,26 +4040,50 @@ def _page(
         .slice(0, limit);
     }}
 
+    function managerTrajectoryMarkup(trajectory, marker) {{
+      if (!trajectory || !trajectory.status) return '';
+      const recent = trajectory.recent || {{}};
+      const prior = trajectory.prior || {{}};
+      const seasons = windowData => (windowData.seasons || []).join(', ') || 'not recorded';
+      const record = windowData => windowData.record || 'not recorded';
+      const winRate = windowData => windowData.win_rate === null || windowData.win_rate === undefined || windowData.win_rate === ''
+        ? 'n/a win rate'
+        : `${{Math.round(num(windowData.win_rate) * 100)}}% win rate`;
+      const activity = windowData => `${{windowData.trades ?? 0}} trades · ${{windowData.waiver_claims ?? 0}} waivers · ${{windowData.faab_spent ?? 0}} FAAB`;
+      const outcomeCoverage = windowData => `recorded outcomes: ${{(windowData.outcome_seasons || []).join(', ') || 'none'}}${{(windowData.partial_seasons || []).length ? ` · partial: ${{windowData.partial_seasons.join(', ')}}` : ''}}`;
+      return `<section class="manager-trajectory" data-testid="${{escapeHtml(marker)}}"><div class="manager-trajectory-heading"><strong>Manager trajectory</strong><span>${{escapeHtml(trajectory.status === 'comparison' ? 'observed windows' : label(trajectory.status))}}</span></div><div class="manager-trajectory-grid"><div class="manager-trajectory-window"><strong>Recent · ${{escapeHtml(seasons(recent))}}</strong><span>${{escapeHtml(activity(recent))}}<br>${{escapeHtml(record(recent))}} · ${{escapeHtml(winRate(recent))}}<br>${{escapeHtml(outcomeCoverage(recent))}}</span></div><div class="manager-trajectory-window"><strong>Prior · ${{escapeHtml(seasons(prior))}}</strong><span>${{escapeHtml(activity(prior))}}<br>${{escapeHtml(record(prior))}} · ${{escapeHtml(winRate(prior))}}<br>${{escapeHtml(outcomeCoverage(prior))}}</span></div></div><p class="manager-trajectory-read">${{escapeHtml(trajectory.activity_read || 'not comparable')}} activity · ${{escapeHtml(trajectory.outcome_read || 'not comparable')}} · ${{escapeHtml(trajectory.outcome_status || 'outcome coverage unknown')}} · descriptive only</p><details class="evidence-drawer"><summary>Trajectory evidence</summary><p class="brief-card-evidence">${{escapeHtml(trajectory.evidence || '')}} ${{escapeHtml(trajectory.risk || '')}}</p></details></section>`;
+    }}
+
     function activeManagerDossier() {{
       const cycle = tables.manager_cycle_profiles.find(row => Number(row.roster_id) === state.teamId) || {{}};
       const tags = topTags('manager', state.teamId, 5);
       const insight = insightFor('manager', state.teamId);
-      if (!cycle.team_name && !tags.length) return '<p class="note">No manager profile found.</p>';
-      return briefCard({{
-        title: insight.headline || cycle.team_name || activeTeamName(),
-        category: categoryFor('dynasty_cycle', cycle.dynasty_cycle),
-        chips: [
-          cycle.dynasty_cycle,
-          cycle.trade_temperature,
-          cycle.pick_posture,
-          cycle.waiver_posture,
-          ...tags.map(row => row.tag),
-          cycle.confidence ? `confidence ${{cycle.confidence}}` : ''
-        ],
-        summary: insight.one_line_read || `Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`,
-        watchouts: insight.watchouts || 'Treat this as a tendency estimate, not manager intent.',
-        evidence: `${{cycle.evidence || ''}} Tags: ${{tags.map(row => `${{row.tag}} (${{row.score}})`).join(', ') || 'none'}}. Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`
-      }});
+      const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) === state.teamId) || {{}};
+      const sample = dossier.sample_size || {{}};
+      const outcome = dossier.outcome_summary || {{}};
+      const fit = dossier.trade_fit_evaluation || {{}};
+      const history = Array.isArray(dossier.season_history) ? dossier.season_history : [];
+      const repeated = dossier.repeated_behavior || {{}};
+      const trajectory = dossier.trajectory || {{}};
+      const transactionProfile = dossier.transaction_profile || {{}};
+      if (!cycle.team_name && !tags.length && !dossier.dossier_id) return '<p class="note">No manager profile found.</p>';
+      const chips = [
+        cycle.dynasty_cycle,
+        cycle.trade_temperature,
+        cycle.pick_posture,
+        cycle.waiver_posture,
+        ...tags.map(row => row.tag),
+        cycle.confidence ? `confidence ${{cycle.confidence}}` : ''
+      ].filter(Boolean);
+      const historyMarkup = history.length
+        ? `<details class="evidence-drawer"><summary>Season ledger (${{history.length}} seasons)</summary><div class="brief-list">${{history.slice().reverse().map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season || 'season'))}}</strong> · ${{escapeHtml(row.team_name || 'historical name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers${{row.outcome_status === 'recorded' ? ` · record ${{escapeHtml(`${{row.wins || 0}}-${{row.losses || 0}}-${{row.ties || 0}}`)}}` : ' · outcomes not recorded'}}${{row.peak_transaction_week ? ` · peak activity week ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}</p>`).join('')}}</div></details>`
+        : '';
+      const repeatedMarkup = repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length
+        ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired:</strong> ${{escapeHtml(repeated.players_acquired.slice(0, 8).join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold:</strong> ${{escapeHtml(repeated.players_sold.slice(0, 8).join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Partners:</strong> ${{escapeHtml(repeated.trade_partners.slice(0, 5).map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>`
+        : '';
+      const trajectoryMarkup = managerTrajectoryMarkup(trajectory, 'manager-trajectory-snapshot');
+      const transactionProfileMarkup = managerTransactionProfileMarkup(transactionProfile);
+      return `<article class="brief-card manager-dossier-snapshot"><div class="brief-card-top"><strong>${{escapeHtml(insight.headline || dossier.team_name || cycle.team_name || activeTeamName())}}</strong><span class="tag">${{escapeHtml(dossier.dossier_id ? 'Evidence dossier' : 'Deterministic profile')}}</span></div>${{chips.length ? `<div class="brief-card-meta">${{chips.map(value => `<span class="brief-chip">${{escapeHtml(value)}}</span>`).join('')}}</div>` : ''}}<p class="article-p">${{escapeHtml(dossier.analysis_text || insight.one_line_read || `Likely needs: ${{cycle.likely_needs || 'unclear'}}. Likely sells: ${{cycle.likely_sells || 'unclear'}}.`)}}</p><div class="tile-row">${{entityTile('Seasons', sample.seasons ?? '')}}${{entityTile('Trades', sample.trades ?? '')}}${{entityTile('Waivers', sample.waiver_claims ?? '')}}${{entityTile('Observed events', sample.observed_events ?? '')}}${{entityTile('Outcome record', outcome.record || 'not recorded')}}${{entityTile('Aligned fits', fit.aligned_fit_count ?? 0)}}</div><p class="note"><strong>Read carefully:</strong> ${{escapeHtml(insight.watchouts || dossier.risk || 'Observed behavior is not manager intent.')}}</p>${{trajectoryMarkup}}${{transactionProfileMarkup}}${{historyMarkup}}${{repeatedMarkup}}<a class="button-link" href="#team-${{Number(state.teamId)}}">Open full manager dossier →</a></article>`;
     }}
 
     function profileTagCards(rows, isPlayer) {{
@@ -3446,13 +4119,15 @@ def _page(
         chips: [
           row.position,
           row.market_value ? `market ${{row.market_value}}` : '',
-          row.projected_ppg ? `ppg ${{row.projected_ppg}}` : '',
+          row.projected_ppg ? `baseline ppg ${{row.projected_ppg}}` : '',
+          row.availability_note ? row.availability_note : '',
+          row.availability_scope === 'current_season_snapshot' ? 'current Sleeper snapshot' : row.availability_scope === 'historical_unavailable' ? 'historical availability unavailable' : '',
           row.projection_confidence ? `projection ${{row.projection_confidence}}` : '',
           ...(topTags('player', row.player_id, 4).map(tag => tag.tag))
         ],
         summary: insightFor('player', row.player_id).one_line_read || `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}.`,
         watchouts: insightFor('player', row.player_id).watchouts || 'Player tags are prompts for review, not outcome guarantees.',
-        evidence: `Market: ${{row.market_value || 'unknown'}}. PPG: ${{row.projected_ppg || 'unknown'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
+        evidence: `Market: ${{row.market_value || 'unknown'}}. Season baseline PPG: ${{row.projected_ppg || 'unknown'}}. Availability: ${{row.availability_note || 'not recorded'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
       }})).join('')}}</div>`;
     }}
 
@@ -3500,7 +4175,7 @@ def _page(
 
     function newsHeatByPlayer() {{
       const map = new Map();
-      tables.league_news_impact.forEach(row => {{
+      scopedCurrentLeagueNews().forEach(row => {{
         const playerId = String(row.player_id || '');
         if (!playerId) return;
         const current = map.get(playerId) || 0;
@@ -3667,15 +4342,27 @@ def _page(
       const offers = (thesis.offer_candidates || []).slice(0, 5)
         .map(asset => `${{asset.asset_name || 'unnamed asset'}} (${{asset.position_group || asset.position || 'asset'}}; lane ${{asset.manager_preference_label || 'low-signal manager lane'}}; evidence ${{String(asset.manager_preference_evidence_count ?? 0)}})`)
         .join(', ') || (thesis.assets_we_can_offer || []).join(', ') || 'Not established';
+      const audience = (thesis.assets_target_may_value || []).slice(0, 5)
+        .map(asset => `${{asset.asset_name || 'unnamed asset'}} (${{asset.position || 'asset'}}; fit ${{asset.conversation_fit_score ?? 'n/a'}}; ${{asset.transaction_lane_read || 'observed lane'}})`)
+        .join(', ') || 'No active-roster audience lane is supported';
       const alternatives = (thesis.alternative_counterparties || []).filter(Boolean).join(', ');
       const conditions = thesis.do_not_chase_conditions || [];
       const evidence = [thesis.evidence, thesis.source_trace].filter(Boolean).join(' Source: ');
+      const horizonRead = thesis.horizon_fit_read
+        ? `${{label(thesis.horizon_fit_read)}}: target ${{thesis.target_horizon_fit_score ?? 'n/a'}} vs our ${{thesis.active_horizon_fit_score ?? 'n/a'}} (edge ${{thesis.horizon_fit_edge ?? 'n/a'}}).`
+        : 'No target-versus-active timeline fit was joined to this thesis; inspect the refresh receipt before treating that as balance.';
+      const repricingRead = thesis.horizon_market_disagreement_window
+        ? `${{label(thesis.horizon_market_disagreement_read || 'clock-market read')}} in ${{label(thesis.horizon_market_disagreement_window)}} (${{thesis.horizon_market_disagreement_delta ?? 'n/a'}}); research lead only, not a dollar gap.`
+        : 'No horizon-to-market repricing comparison was joined to this thesis.';
       return `<div class="trade-packet" data-trade-packet="${{escapeHtml(String(thesis.thesis_id))}}">
         <h3>${{escapeHtml(heading || 'Trade decision packet')}}</h3>
         <p class="article-p"><strong>Pursue:</strong> ${{escapeHtml(pursue)}}</p>
         <p class="article-p"><strong>Potential assets from our roster to discuss (not a generated offer):</strong> ${{escapeHtml(offers)}}</p>
+        <p class="article-p"><strong>Possible audience for our assets:</strong> ${{escapeHtml(audience)}}</p>
         <p class="article-p"><strong>Alternative counterparties:</strong> ${{escapeHtml(alternatives || 'No alternate counterparty is supported for this target by the current evidence.')}}</p>
         <p class="article-p"><strong>Why this manager might care:</strong> ${{escapeHtml(thesis.why_manager_might_care || 'Not established')}}</p>
+        <p class="article-p"><strong>Timeline fit:</strong> ${{escapeHtml(horizonRead)}} This is separate from market price and position-relative horizon percentiles.</p>
+        <p class="article-p"><strong>Market vs clock:</strong> ${{escapeHtml(repricingRead)}} The canonical market value remains the cross-position price anchor.</p>
         <p class="article-p"><strong>Price guardrails:</strong> offer band ${{escapeHtml(String(thesis.plausible_offer_range?.low ?? 'n/a'))}}–${{escapeHtml(String(thesis.plausible_offer_range?.high ?? 'n/a'))}} estimated market value; minimum return ${{escapeHtml(String(thesis.minimum_acceptable_return?.value ?? 'n/a'))}}.</p>
         <p class="article-p"><strong>Risk of waiting:</strong> ${{escapeHtml(thesis.risk_of_waiting || 'not established')}} <strong>Risk of acting:</strong> ${{escapeHtml(thesis.risk_of_acting || thesis.risk || 'review evidence')}}.</p>
         ${{conditions.length ? `<details class="evidence-drawer"><summary>Do-not-chase conditions</summary><ul class="article-list">${{conditions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}
@@ -3700,13 +4387,52 @@ def _page(
               ? `Historical lane: ${{alignment.lane_label || alignment.position_group || 'observed group'}}`
               : 'No direct historical lane in the observed profile';
             const laneEvidence = alignment.evidence ? `Historical lane evidence: ${{alignment.evidence}}` : alignment.reason || '';
-            return briefCard({{ title: row.player_name || 'Unknown player', category: categoryFor('edge_type', row.edge_type), rank: index + 1, chips: [row.position, row.edge_type, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.confidence ? `confidence ${{row.confidence}}` : ''], summary: [row.risk || 'Conversation hypothesis; verify the price.', laneText].filter(Boolean).join(' · '), evidence: [row.evidence || 'No evidence supplied.', laneEvidence].filter(Boolean).join(' · '), decisionKey: `manager-fit:${{String(dossier.roster_id || 'unknown')}}:${{String(row.player_id || index)}}`, decisionType: 'manager_fit', decisionSubjectId: row.player_id || '', decisionSubjectName: row.player_name || 'manager fit', decisionConfidence: row.confidence || '', decisionRisk: row.risk || '', decisionEvidence: [row.evidence || '', laneEvidence].filter(Boolean).join(' · ') }});
+            return briefCard({{ title: row.player_name || 'Unknown player', category: categoryFor('edge_type', row.edge_type), rank: index + 1, chips: [row.position, row.edge_type, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.target_team_lens ? `${{row.target_team_lens}} timeline` : '', row.horizon_fit_edge ? `timeline edge ${{row.horizon_fit_edge}}` : '', row.confidence ? `confidence ${{row.confidence}}` : ''], summary: [row.risk || 'Conversation hypothesis; verify the price.', row.horizon_fit_read ? `${{label(row.horizon_fit_read)}}: target ${{row.target_horizon_fit_score ?? 'n/a'}} vs active ${{row.active_horizon_fit_score ?? 'n/a'}}` : 'Timeline fit unavailable', laneText].filter(Boolean).join(' · '), evidence: [row.evidence || 'No evidence supplied.', row.horizon_fit_basis || '', laneEvidence].filter(Boolean).join(' · '), decisionKey: `manager-fit:${{String(dossier.roster_id || 'unknown')}}:${{String(row.player_id || index)}}`, decisionType: 'manager_fit', decisionSubjectId: row.player_id || '', decisionSubjectName: row.player_name || 'manager fit', decisionConfidence: row.confidence || '', decisionRisk: row.risk || '', decisionEvidence: [row.evidence || '', row.horizon_fit_basis || '', laneEvidence].filter(Boolean).join(' · ') }});
           }}).join('')}}</div>`
         : '<p class="note">No fit card is shown because the current evidence does not support one.</p>';
       const laneMarkup = lanes.length
         ? `<details class="evidence-drawer"><summary>Cross-season valuation lanes (${{lanes.length}})</summary><p class="brief-card-evidence">These lanes summarize observed activity across ${{escapeHtml(String(evaluation.historical_seasons ?? 0))}} season${{Number(evaluation.historical_seasons || 0) === 1 ? '' : 's'}}. They help prioritize a conversation; they do not establish intent. ${{escapeHtml(String(evaluation.aligned_fit_count ?? 0))}} current fit${{Number(evaluation.aligned_fit_count || 0) === 1 ? '' : 's'}} align directly; ${{escapeHtml(String(evaluation.no_direct_lane_fit_count ?? 0))}} have no direct lane.</p><div class="brief-list">${{lanes.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(row.label || row.position_group || 'Observed lane')}}</strong> · ${{escapeHtml(row.position_group || 'group unavailable')}} · score ${{escapeHtml(String(row.recency_weighted_score ?? row.preference_score ?? 'n/a'))}} · evidence ${{escapeHtml(String(row.evidence_count ?? 0))}} · confidence ${{escapeHtml(row.confidence || 'unknown')}}</p>`).join('')}}</div></details>`
         : '<p class="note">No historical valuation lane is available for this manager.</p>';
       return `<details class="evidence-drawer manager-trade-fit"><summary>Trade-fit status · ${{escapeHtml(status === 'supported' ? 'supported' : 'none supported')}}</summary><p class="brief-card-evidence">${{escapeHtml(summary)}}</p>${{fitCards}}${{laneMarkup}}</details>`;
+    }}
+
+    function managerTransactionProfileMarkup(profile) {{
+      const lanes = Array.isArray(profile?.lanes) ? profile.lanes : [];
+      if (!lanes.length) return '<p class="note">No identity-resolved player transaction lanes are available for this manager.</p>';
+      const shown = value => value === undefined || value === null || value === '' ? 'n/a' : value;
+      const pair = (labelText, acquired, sold, delta) => `${{labelText}}: acquired ${{shown(acquired)}} · sold ${{shown(sold)}}${{delta !== undefined && delta !== null && delta !== '' ? ` · delta ${{delta}}` : ''}}`;
+      const cards = lanes.slice(0, 6).map(row => `<article class="manager-lane-card">
+        <div class="brief-card-top"><strong>${{escapeHtml(row.position_group || 'Unknown position')}}</strong><span class="tag">${{escapeHtml(row.transaction_read || 'observed lane')}}</span></div>
+        <p class="brief-card-evidence"><strong>Observed movement:</strong> acquired ${{escapeHtml(String(shown(row.acquired_count)))}} · sold ${{escapeHtml(String(shown(row.sold_count)))}} · net ${{escapeHtml(String(shown(row.net_acquired_count)))}} · current roster overlap acquired/sold ${{escapeHtml(String(shown(row.current_roster_acquired_count)))}}/${{escapeHtml(String(shown(row.current_roster_sold_count)))}}</p>
+        <p class="brief-card-evidence"><strong>Current horizon context:</strong> ${{escapeHtml(pair('Next game', row.acquired_next_game_market_score, row.sold_next_game_market_score, row.acquired_minus_sold_next_game_delta))}} · ${{escapeHtml(pair('Rest of season', row.acquired_rest_of_season_market_score, row.sold_rest_of_season_market_score, row.acquired_minus_sold_rest_of_season_delta))}} · ${{escapeHtml(pair('Dynasty', row.acquired_dynasty_market_score, row.sold_dynasty_market_score, row.acquired_minus_sold_dynasty_delta))}} · ${{escapeHtml(pair('Career window', row.acquired_career_projection_score, row.sold_career_projection_score, row.acquired_minus_sold_career_delta))}}</p>
+        <p class="brief-card-evidence"><strong>Strategy context:</strong> contender acquired/sold ${{escapeHtml(String(shown(row.acquired_contender_fit_score)))}}/${{escapeHtml(String(shown(row.sold_contender_fit_score)))}} · rebuilder acquired/sold ${{escapeHtml(String(shown(row.acquired_rebuilder_fit_score)))}}/${{escapeHtml(String(shown(row.sold_rebuilder_fit_score)))}}</p>
+        <p class="note">${{escapeHtml(String(row.horizon_coverage_detail || row.horizon_coverage || 'Horizon coverage unavailable'))}} · ${{escapeHtml(String(row.history_status || 'history status unavailable'))}} · confidence ${{escapeHtml(String(row.confidence || 'unknown'))}}</p>
+        <details class="evidence-drawer"><summary>Names and receipt</summary><p class="brief-card-evidence"><strong>Acquired:</strong> ${{escapeHtml(String(row.unique_acquired_players || 'none recorded'))}}</p><p class="brief-card-evidence"><strong>Sold:</strong> ${{escapeHtml(String(row.unique_sold_players || 'none recorded'))}}</p><p class="brief-card-evidence">${{escapeHtml(String(row.evidence || 'manager_transaction_preferences'))}} · source trace: ${{escapeHtml(String(row.source_trace || 'manager_transaction_preferences'))}}</p></details>
+      </article>`).join('');
+      return `<details class="evidence-drawer manager-transaction-profile" data-testid="manager-transaction-profile"><summary>Observed player transaction lanes (${{lanes.length}})</summary><p class="brief-card-evidence">${{escapeHtml(String(profile.summary || 'Observed transaction lanes are descriptive only.'))}}</p><div class="brief-list">${{cards}}</div></details>`;
+    }}
+
+    function managerCounterpartyInterestMarkup(profile) {{
+      const rows = Array.isArray(profile?.rows) ? profile.rows : [];
+      if (!rows.length) return '';
+      const cards = rows.slice(0, 8).map((row, index) => briefCard({{
+        title: `${{row.asset_name || 'Unknown asset'}} · audience question`,
+        category: categoryFor('conversation_fit_label', row.conversation_fit_label),
+        rank: index + 1,
+        playerId: row.asset_id,
+        entityHash: row.asset_id ? `player-${{row.asset_id}}` : '',
+        chips: [
+          row.position,
+          row.transaction_lane_read,
+          row.conversation_fit_score ? `fit ${{row.conversation_fit_score}}` : '',
+          row.target_need ? `need ${{row.target_need}}` : '',
+          row.target_team_lens ? `${{row.target_team_lens}} timeline` : '',
+          row.confidence ? `confidence ${{row.confidence}}` : ''
+        ],
+        summary: `${{row.horizon_fit_read || 'Timeline fit unavailable'}} · observed lane is not proof of intent or acceptance`,
+        evidence: [row.evidence || '', row.risk || '', row.source_trace || ''].filter(Boolean).join(' · ')
+      }})).join('');
+      return `<div class="panel article-panel" data-testid="manager-counterparty-interest"><h3>Possible audiences for our assets</h3><p class="note">${{escapeHtml(String(profile.summary || 'These are conversation priorities grounded in observed history.'))}} They are questions to investigate, not predicted responses.</p><div class="brief-list">${{cards}}</div></div>`;
     }}
 
     function managerTransactionTimelineMarkup(events) {{
@@ -3733,44 +4459,130 @@ def _page(
       return '<a class="back-link" href="javascript:history.back()">&larr; back</a>';
     }}
 
+    function playerHorizonMarkup(horizon) {{
+      if (!horizon || !horizon.player_id) return '';
+      const shown = value => value === undefined || value === null || value === '' ? 'n/a' : value;
+      const availabilitySource = horizon.current_availability_status === 'no_current_nfl_team'
+        ? 'No current NFL team in Sleeper; current role unavailable'
+        : horizon.availability_scope === 'current_season_snapshot'
+        ? 'Current Sleeper player snapshot'
+        : horizon.availability_scope === 'historical_unavailable'
+          ? 'Historical availability unavailable by contract'
+          : 'Availability scope not recorded';
+      const scoreCard = (title, score, detail, status, basis) => `<article class="horizon-card"><div class="brief-card-top"><strong>${{escapeHtml(title)}}</strong><span class="tag">percentile ${{escapeHtml(String(shown(score)))}}</span></div>${{horizonCardMeter(score, title)}}<p class="brief-card-evidence">${{escapeHtml(detail)}}</p><p class="note">${{escapeHtml(String(status || 'status unavailable'))}}</p>${{basis ? `<details class="horizon-basis"><summary>How this is calculated</summary><p class="note">${{escapeHtml(String(basis))}}</p></details>` : ''}}</article>`;
+      const opponentDetail = horizon.next_game_opponent ? `vs ${{horizon.next_game_opponent}} (${{horizon.next_game_home_away || 'game'}})` : 'opponent unavailable';
+      const validationDetail = horizon.next_game_matchup_validation_status && horizon.next_game_matchup_validation_status !== 'unavailable'
+        ? ` · holdout ${{horizon.next_game_matchup_validation_status}} (${{shown(horizon.next_game_matchup_validation_games)}} games; MAE delta ${{shown(horizon.next_game_matchup_validation_mae_delta)}})`
+        : '';
+      const adjustmentDetail = horizon.next_game_matchup_adjustment_status === 'applied' ? 'factor applied' : horizon.next_game_matchup_factor ? 'factor descriptive only' : 'no factor applied';
+      const nextDetail = `week ${{shown(horizon.next_game_week)}} · ${{opponentDetail}} · expected ${{shown(horizon.next_game_expected_points)}} points / baseline ${{shown(horizon.next_game_baseline_points)}} · factor ${{shown(horizon.next_game_matchup_factor)}} (${{adjustmentDetail}})${{validationDetail}}`;
+      const hasRosGames = horizon.rest_of_season_games !== undefined && horizon.rest_of_season_games !== null && horizon.rest_of_season_games !== '';
+      const rosSchedule = hasRosGames
+        ? `${{shown(horizon.rest_of_season_games)}} scheduled games / ${{shown(horizon.rest_of_season_bye_weeks)}} bye weeks`
+        : horizonRestSeasonCountLabel(horizon);
+      const rosDetail = `${{rosSchedule}} · ${{shown(horizon.rest_of_season_baseline_points)}} baseline points · ${{horizonRestSeasonPpgLabel(horizon)}} · rest-of-season baseline is not recovery-adjusted`;
+      const dynastyDetail = `${{shown(horizon.dynasty_status)}} · five-year career-window score ${{shown(horizon.career_projection_score)}} · cross-position price anchor market value ${{shown(horizon.market_value)}} · value lane: ${{shown(horizon.value_lane)}}`;
+      const clockShiftDetail = `ROS minus next ${{shown(horizon.rest_of_season_minus_next_game_delta)}} · dynasty minus ROS ${{shown(horizon.dynasty_minus_rest_of_season_delta)}} · career minus dynasty ${{shown(horizon.career_minus_dynasty_delta)}}`;
+      const dynastyBasis = [horizon.dynasty_basis, horizon.career_projection_basis ? `Career window: ${{horizon.career_projection_basis}}` : ''].filter(Boolean).join(' ');
+      const careerHistoryDetail = horizon.career_history_status === 'matched'
+        ? `history anchor ${{shown(horizon.career_history_ppg)}} PPG across ${{shown(horizon.career_history_games)}} games / ${{shown(horizon.career_history_seasons)}} seasons (source player id ${{shown(horizon.career_history_source_player_id)}})`
+        : horizon.career_history_status === 'ambiguous'
+          ? 'historical anchor withheld because the source-player join is ambiguous'
+          : 'historical production anchor unavailable';
+      const careerDetail = `${{shown(horizon.career_projection_points)}} projected points across ${{shown(horizon.career_projection_years)}} years · ${{shown(horizon.career_projection_ppg)}} blended PPG · ${{careerHistoryDetail}} · internal age-curve scenario${{horizon.career_history_status === 'matched' ? ' (history-anchored)' : ''}}, not a lifetime forecast`;
+      const fitDetail = `contender ${{shown(horizon.contender_fit_score)}} · rebuilder ${{shown(horizon.rebuilder_fit_score)}} · spread ${{shown(horizon.rebuilder_contender_spread)}} · fit coverage ${{shown(horizon.fit_coverage)}}`;
+      const marketDeltaDetail = `next game ${{shown(horizon.next_game_minus_market_delta)}} · rest of season ${{shown(horizon.rest_of_season_minus_market_delta)}} · dynasty ${{shown(horizon.dynasty_minus_market_delta)}} · career window ${{shown(horizon.career_minus_market_delta)}}`;
+      const marketReceiptDetail = `${{shown(horizon.market_source_count)}} source(s) · disagreement ${{shown(horizon.market_disagreement_score)}} · confidence ${{shown(horizon.market_source_confidence)}}`;
+      const calibrationRows = (tables.horizon_score_accuracy || []).filter(row => String(row.position || '') === String(horizon.position || ''));
+      const calibrationDetail = calibrationRows.length
+        ? calibrationRows.map(row => `${{label(row.horizon || 'horizon')}}: ${{row.evaluation_status || 'status unavailable'}} · n=${{shown(row.n_player_snapshots || row.n_snapshots)}} · rank correlation ${{shown(row.spearman_rank_correlation)}}`).join(' · ')
+        : 'No dated realized outcomes have been graded for this position yet. The scores remain structural comparisons, not outcome-calibrated forecasts.';
+      return `<section class="panel article-panel player-horizon-panel" data-testid="player-horizons"><div class="brief-card-top"><h3>Market clocks &amp; career window</h3><span class="tag">as of week ${{escapeHtml(String(shown(horizon.as_of_week)))}}</span></div><p class="note">The same player can grade differently by decision horizon. These are position-relative percentile scores, not dollar market values or cross-position price rankings, and are not yet outcome-calibrated forecasts. Model ${{escapeHtml(String(horizon.horizon_model_version || 'unversioned'))}}. Next game is opponent-neutral until a schedule/bye source is available when schedule evidence is missing; a known opponent may add historical defensive context. Dynasty is a market/timeline lens. The career window is shown separately as an internal five-year scenario, not a career-points forecast.</p><p class="brief-card-evidence"><strong>Availability receipt:</strong> ${{escapeHtml(availabilitySource)}} · injury fields are current-only and do not become historical observations.</p><div class="horizon-grid">${{scoreCard('Next game', horizon.next_game_market_score, nextDetail, horizon.next_game_status, horizon.next_game_basis)}}${{scoreCard('Rest of season', horizon.rest_of_season_market_score, rosDetail, horizon.rest_of_season_status, horizon.rest_of_season_basis)}}${{scoreCard('Dynasty market', horizon.dynasty_market_score, dynastyDetail, horizon.dynasty_status, dynastyBasis)}}${{scoreCard('Career window', horizon.career_projection_score, careerDetail, horizon.career_projection_status, horizon.career_projection_basis)}}</div><p class="brief-card-evidence"><strong>Clock shifts:</strong> ${{escapeHtml(clockShiftDetail)}}. Each is later-clock minus earlier-clock; unavailable means one of the two component scores is unavailable.</p><p class="brief-card-evidence"><strong>Clock vs position-market percentile:</strong> ${{escapeHtml(marketDeltaDetail)}}. These are repricing leads, not dollar gaps or proof of mispricing; market value ${{escapeHtml(shown(horizon.market_value))}} remains the cross-position price anchor. <strong>Market evidence:</strong> ${{escapeHtml(marketReceiptDetail)}}.</p><p class="brief-card-evidence"><strong>Contender vs rebuilder:</strong> ${{escapeHtml(fitDetail)}}</p><details class="evidence-drawer"><summary>Outcome evaluation receipt</summary><p class="brief-card-evidence">${{escapeHtml(calibrationDetail)}}</p><p class="note">Outcome evaluation is descriptive rank evidence, not a calibrated probability. Dynasty and career windows require longer longitudinal labels.</p></details><details class="evidence-drawer"><summary>Horizon evidence receipt</summary><p class="brief-card-evidence">${{escapeHtml(String(horizon.evidence || 'player_horizon_market_scores'))}}</p><p class="note"><strong>Score basis:</strong> ${{escapeHtml(String(horizon.horizon_score_basis || 'position-relative percentiles, not dollar market values'))}}</p><p class="note"><strong>Fit basis:</strong> ${{escapeHtml(String(horizon.fit_basis || 'not recorded'))}}</p><p class="note"><strong>Risk:</strong> ${{escapeHtml(String(horizon.risk || 'Inspect the source trace and availability before acting.'))}} · source trace: ${{escapeHtml(String(horizon.source_trace || 'player_horizon_market_scores'))}}</p></details></section>`;
+    }}
+
     function renderPlayerPage(playerId) {{
       const id = String(playerId ?? '');
-      const dossier = findRow(tables.player_dossiers, 'player_id', id);
+      const dossierRow = findRow(tables.player_dossiers, 'player_id', id);
       const signal = findRow(tables.player_signal_scores, 'player_id', id);
       const opp = findRow(tables.player_opportunity_scores, 'player_id', id);
+      const horizonRows = scopedCurrentRows(tables.player_horizon_market_scores || []).filter(row => String(row.player_id || '') === id);
+      const availableHorizon = scopedCurrentRows(tables.available_player_horizon_scores || [])
+        .find(row => String(row.player_id || '') === id && ['sleeper_id', 'sleeper_unique_name_match'].includes(String(row.identity_status || '')))
+        || {{}};
       const rosterRow = findRow(currentSeasonRoster(), 'player_id', id) || {{}};
       const action = findRow(tables.action_recommendations, 'player_id', id);
-      const name = dossier.player_name || signal.player_name || rosterRow.player_name || 'Unknown player';
-      const position = dossier.position || signal.position || rosterRow.position || '';
-      const ownerName = dossier.team_name || signal.team_name || rosterRow.team_name || '';
-      const ownerId = num(dossier.roster_id || signal.roster_id || rosterRow.roster_id);
+      const isAvailableMarket = Boolean(availableHorizon.player_id) && !rosterRow.player_id && !dossierRow.player_id;
+      const dossier = dossierRow.player_id
+        ? dossierRow
+        : isAvailableMarket
+          ? {{
+              player_id: availableHorizon.player_id,
+              player_name: availableHorizon.player_name,
+              position: availableHorizon.position,
+              age: availableHorizon.age,
+              market_value: availableHorizon.market_value,
+              projected_ppg: availableHorizon.rest_of_season_ppg || '',
+              projection_confidence: availableHorizon.confidence || '',
+              injury_status: availableHorizon.injury_status || '',
+              availability_scope: 'current_season_snapshot',
+              availability_note: availableHorizon.availability_note || '',
+              roster_status: 'available_market_research',
+              source_trace: availableHorizon.source_trace || 'available_player_horizon_scores'
+            }}
+          : dossierRow;
+      const playerMeta = findRow(tables.players, 'player_id', id);
+      const horizon = isAvailableMarket
+        ? availableHorizon
+        : horizonRows.find(row => !num(dossier.roster_id || signal.roster_id || rosterRow.roster_id) || Number(row.roster_id) === num(dossier.roster_id || signal.roster_id || rosterRow.roster_id)) || horizonRows[0] || {{}};
+      const name = dossier.player_name || signal.player_name || rosterRow.player_name || playerMeta.full_name || 'Unknown player';
+      const position = dossier.position || signal.position || rosterRow.position || playerMeta.position || '';
+      const ownerName = isAvailableMarket ? '' : dossier.team_name || signal.team_name || rosterRow.team_name || '';
+      const ownerId = isAvailableMarket ? 0 : num(dossier.roster_id || signal.roster_id || rosterRow.roster_id);
       const inventoryAsset = (tables.team_asset_inventory || []).find(row => Number(row.roster_id) === ownerId && String(row.asset_type || '').toLowerCase() === 'player' && String(row.asset_id || '') === id) || {{}};
       const inventoryMarketAvailable = inventoryAsset.market_value !== undefined && inventoryAsset.market_value !== '';
       const tags = topTags('player', id, 6);
-      const newsRows = (tables.league_news_impact || []).filter(row => String(row.player_id ?? '') === id).slice(0, 6);
+      const newsRows = scopedCurrentLeagueNews().filter(row => String(row.player_id ?? '') === id).slice(0, 6);
       const insight = insightFor('player', id);
       const profileMarketValue = dossier.market_value ?? signal.market_value ?? '';
       const marketValue = inventoryMarketAvailable ? inventoryAsset.market_value : (ownerId ? '' : profileMarketValue);
       const marketTrace = inventoryMarketAvailable ? (inventoryAsset.source_trace || 'team_asset_inventory') : (ownerId ? 'team_asset_inventory' : (dossier.source_trace || signal.source_trace));
       const marketDescriptor = inventoryMarketAvailable
         ? (String(inventoryAsset.source_trace || '') === 'internal_proxy_player_value' ? 'internal proxy value' : 'asset ledger value')
+        : isAvailableMarket
+          ? 'available-market cross-position anchor'
         : (ownerId ? 'asset ledger value unavailable' : 'profile market value');
       const historyName = dossier.player_name || signal.player_name || rosterRow.player_name || '';
       const normalizedHistoryName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const history = (tables.player_transaction_history || []).filter(row => String(row.player_id || '') === id || (!String(row.player_id || '') && normalizedHistoryName(row.player_name) === normalizedHistoryName(historyName))).slice(0, 20);
-      const compactTrace = value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean).map(item => item.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')).filter(Boolean).slice(0, 3).join(' · ');
+      const compactTrace = value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean).map(item => item.replace(/^https?:\\/\\//, '').split('/').slice(0, 2).join('/')).filter(Boolean).slice(0, 3).join(' · ');
       const fullTraces = [...new Set([marketTrace, dossier.source_trace, signal.source_trace, opp.source_trace, ...newsRows.map(row => row.source_trace)].flatMap(value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean)))];
       const ownerScope = ownerId && Number(app.myRosterId) === ownerId ? 'Your roster' : ownerId ? 'Opponent roster' : 'Unrostered';
+      const availabilityScope = String(rosterRow.availability_scope || dossier.availability_scope || '');
+      const availabilitySource = availabilityScope === 'current_season_snapshot'
+        ? 'Current Sleeper player snapshot'
+        : availabilityScope === 'historical_unavailable'
+          ? 'Historical availability unavailable by contract'
+          : isAvailableMarket
+            ? 'Current Sleeper player snapshot'
+            : 'Availability scope not recorded';
       const playerEvidence = [
-        {{ label: 'Roster context', value: `${{ownerScope}}${{ownerName ? ` · ${{ownerName}}` : ''}}`, trace: 'verified_roster_scope' }},
+        {{ label: 'Roster context', value: `${{isAvailableMarket ? 'Available-market research' : ownerScope}}${{ownerName ? ` · ${{ownerName}}` : ''}}`, trace: isAvailableMarket ? 'available_player_horizon_scores' : 'verified_roster_scope' }},
+        {{ label: 'Availability source', value: availabilitySource, trace: 'roster_players.availability_scope' }},
         {{ label: 'Market', value: marketValue !== '' ? `value ${{marketValue}} (${{marketDescriptor}})` : '', trace: compactTrace(marketTrace) }},
         {{ label: 'Market source', value: inventoryMarketAvailable ? marketDescriptor : 'profile market value unavailable', trace: compactTrace(marketTrace) }},
-        {{ label: 'Projection', value: (dossier.projected_ppg ?? signal.projected_ppg) !== undefined && (dossier.projected_ppg ?? signal.projected_ppg) !== '' ? `${{dossier.projected_ppg ?? signal.projected_ppg}} projected PPG (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}})` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
+        {{ label: 'Projection', value: (dossier.projected_ppg ?? signal.projected_ppg) !== undefined && (dossier.projected_ppg ?? signal.projected_ppg) !== '' ? `${{dossier.projected_ppg ?? signal.projected_ppg}} ${{horizonHasCurrentAvailabilityFlag({{ injury_status: dossier.injury_status || signal.injury_status || rosterRow.injury_status || '' }}) ? 'conditional baseline PPG if active' : 'season baseline PPG'}} (${{dossier.projection_confidence || signal.projection_confidence || 'confidence unknown'}}); rest-of-season baseline is not recovery-adjusted; ${{dossier.availability_note || 'availability not recorded'}}` : '', trace: compactTrace(dossier.source_trace || signal.source_trace) }},
+        {{ label: 'Decision horizons', value: horizon.player_id ? `next ${{horizon.next_game_market_score || 'n/a'}} · rest of season ${{horizon.rest_of_season_market_score || 'n/a'}} · dynasty ${{horizon.dynasty_market_score || 'n/a'}} · career window ${{horizon.career_projection_score || 'n/a'}} · contender fit ${{horizon.contender_fit_score || 'n/a'}} · rebuilder fit ${{horizon.rebuilder_fit_score || 'n/a'}} · market evidence ${{horizon.market_source_count || 'n/a'}} source(s) / ${{horizon.market_source_confidence || 'n/a'}} confidence` : '', trace: compactTrace(horizon.source_trace) }},
         {{ label: 'Opportunity', value: opp.opportunity_score !== undefined && opp.opportunity_score !== '' ? `score ${{opp.opportunity_score}} vs production ${{opp.production_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},
         {{ label: 'Role trend', value: opp.role_trend_score !== undefined && opp.role_trend_score !== '' ? `score ${{opp.role_trend_score}}; fragility ${{opp.fragility_score ?? 'n/a'}}` : '', trace: compactTrace(opp.source_trace) }},
         {{ label: 'League history', value: history.length ? `${{history.length}} recorded transaction${{history.length === 1 ? '' : 's'}} in this bundle` : '', trace: 'player_transaction_history' }},
         {{ label: 'News', value: newsRows.length ? `${{newsRows.length}} mapped news signal${{newsRows.length === 1 ? '' : 's'}}` : '', trace: compactTrace(newsRows[0]?.source_trace) }}
       ].filter(row => row.value);
+      if (isAvailableMarket) {{
+        playerEvidence.push(
+          {{ label: 'Availability boundary', value: 'Current roster absence is inferred from this league snapshot; waiver or free-agent eligibility is not verified here.', trace: compactTrace(availableHorizon.source_trace || 'available_player_horizon_scores') }},
+          {{ label: 'Clock coverage', value: `next ${{availableHorizon.next_game_market_score || 'n/a'}} · rest of season ${{availableHorizon.rest_of_season_market_score || 'n/a'}} · dynasty ${{availableHorizon.dynasty_market_score || 'n/a'}} · career window ${{availableHorizon.career_projection_score || 'n/a'}} (${{availableHorizon.fit_coverage || 'n/a'}} available)`, trace: 'available_player_horizon_scores' }}
+        );
+      }}
       const actionText = action.why || action.action_label || action.consumer_label || '';
       const traceDetails = fullTraces.length ? `<details class="evidence-drawer"><summary>Show full source traces</summary><ul class="article-list">${{fullTraces.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : '';
       const playerPacket = `<div class="panel article-panel player-decision-packet"><h3>Player dossier</h3><p class="article-p"><strong>Current read:</strong> ${{escapeHtml(insight.headline || insight.one_line_read || `${{name}} is in the evidence room, not a verdict.`)}}</p>${{insight.why_it_matters ? `<p class="article-p"><strong>Why it matters:</strong> ${{escapeHtml(insight.why_it_matters)}}</p>` : ''}}${{insight.what_changed ? `<p class="article-p"><strong>What changed:</strong> ${{escapeHtml(insight.what_changed)}}</p>` : ''}}${{actionText ? `<p class="article-p"><strong>Decision lens:</strong> ${{escapeHtml(actionText)}}</p>` : ''}}${{action.risk || insight.watchouts ? `<p class="note"><strong>Watch:</strong> ${{escapeHtml(action.risk || insight.watchouts)}}</p>` : ''}}${{playerEvidence.length ? `<details class="evidence-drawer" open><summary>Evidence chain</summary><ul class="article-list">${{playerEvidence.map(row => `<li><strong>${{escapeHtml(row.label)}}:</strong> ${{escapeHtml(String(row.value))}}${{row.trace ? ` <span class="note">(${{escapeHtml(row.trace)}})</span>` : ''}}</li>`).join('')}}</ul></details>` : ''}}${{traceDetails}}<p class="note"><strong>Guardrail:</strong> This is a deterministic evidence synthesis with an analyst lens. Confidence ${{escapeHtml(String(action.confidence || insight.confidence || signal.confidence || 'unknown'))}}; inspect the source trace and freshness before acting. It does not imply a trade, waiver claim, or future outcome.</p></div>`;
@@ -3787,7 +4599,7 @@ def _page(
             <div class="brief-card-meta">
               ${{position ? `<span class="brief-chip">${{escapeHtml(position)}}</span>` : ''}}
               ${{dossier.age ? `<span class="brief-chip">age ${{escapeHtml(String(dossier.age))}}</span>` : ''}}
-              ${{ownerName ? `<a class="brief-chip entity-link" href="#team-${{ownerId}}">${{escapeHtml(ownerName)}}</a>` : '<span class="brief-chip">unrostered</span>'}}
+              ${{ownerName ? `<a class="brief-chip entity-link" href="#team-${{ownerId}}">${{escapeHtml(ownerName)}}</a>` : `<span class="brief-chip">${{isAvailableMarket ? 'available-market research' : 'unrostered'}}</span>`}}
               ${{signal.signal_label ? `<span class="brief-chip">${{escapeHtml(label(signal.signal_label))}}</span>` : ''}}
             </div>
             ${{insight.one_line_read ? `<p class="article-p">${{escapeHtml(insight.one_line_read)}}</p>` : ''}}
@@ -3795,7 +4607,8 @@ def _page(
         </div>
         <div class="tile-row">
           ${{entityTile('Market Value', marketValue)}}
-          ${{entityTile('Projected PPG', dossier.projected_ppg ?? signal.projected_ppg ?? '')}}
+          ${{entityTile('Season baseline PPG', dossier.projected_ppg ?? signal.projected_ppg ?? '')}}
+          ${{entityTile('Availability', dossier.injury_status || (isAvailableMarket ? 'snapshot-unrostered' : 'not flagged'))}}
           ${{entityTile('Opportunity', opp.opportunity_score ?? signal.opportunity_score ?? '', 'score')}}
           ${{entityTile('Production', opp.production_score ?? '', 'score')}}
           ${{entityTile('Usage vs Output', opp.xfp_regression_score ?? signal.xfp_regression_score ?? '', 'score')}}
@@ -3805,6 +4618,8 @@ def _page(
           ${{entityTile('Sell', signal.sell_score ?? '', 'score')}}
         </div>
         ${{playerPacket}}
+        ${{playerHorizonMarkup(horizon)}}
+        ${{isAvailableMarket ? '<p class="note" data-testid="available-player-boundary"><strong>Available-market boundary:</strong> This player is identity-resolved and absent from the selected league roster snapshot. Confirm current waiver/free-agent eligibility and news before acting; this page is research, not a claim receipt.</p>' : ''}}
         ${{tags.length ? `<div class="brief-card-meta">${{tags.map(row => `<span class="brief-chip cat-chip-${{categoryFor('tag', row.tag)}}">${{escapeHtml(row.tag)}}</span>`).join('')}}</div>` : ''}}
         ${{opp.opportunity_evidence ? `<p class="note">Usage: ${{escapeHtml(opp.opportunity_evidence)}} (${{escapeHtml(String(opp.games_sample || 0))}} games sampled)</p>` : ''}}
         ${{newsRows.length ? `<h3>News</h3><div class="brief-list">${{newsRows.map(row => briefCard({{
@@ -3868,10 +4683,13 @@ def _page(
       const edges = (tables.counterparty_trade_edges || []).filter(row => Number(row.target_roster_id) === rid).slice(0, 5);
       const dossier = (analysis.managerDossierItems || []).find(row => Number(row.roster_id) === rid) || {{}};
       const dossierHistory = dossier.season_history || [];
+      const trajectory = dossier.trajectory || {{}};
+      const trajectoryMarkup = managerTrajectoryMarkup(trajectory, 'manager-trajectory-dossier');
       const transactionTimeline = managerTransactionTimelineMarkup(dossier.transaction_timeline || []);
       const dossierQuestions = dossier.questions_to_ask || [];
       const repeated = dossier.repeated_behavior || {{}};
       const tradePacket = tradePacketMarkup(thesis, 'Trade decision packet');
+      const counterpartyInterest = managerCounterpartyInterestMarkup(dossier.counterparty_interest || {{}});
       document.getElementById('team-page-body').innerHTML = `
         ${{backLink()}}
         <div class="entity-header">
@@ -3909,8 +4727,9 @@ def _page(
           ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
           ${{entityTile('Future 1sts Owned', picks.length)}}
         </div>
-          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Waiver Claims', dossier.sample_size?.waiver_claims ?? '')}}${{entityTile('Observed Events', dossier.sample_size?.observed_events ?? '')}}${{entityTile('Active Seasons', dossier.sample_size?.seasons_with_activity ?? '')}}${{entityTile('Recorded Matchups', dossier.outcome_summary?.status === 'not_recorded' ? 'n/a' : (dossier.outcome_summary?.matchups ?? 0))}}${{entityTile('Outcome record', dossier.outcome_summary?.record || 'not recorded')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{dossier.outcome_summary ? `<p class="note" data-testid="manager-outcome-receipt"><strong>Season outcomes:</strong> ${{escapeHtml(dossier.outcome_summary.narrative || 'Not recorded')}} · ${{escapeHtml(dossier.outcome_summary.evidence || 'outcome evidence not recorded')}}</p>` : ''}}${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers · ${{escapeHtml(String(row.roster_player_count || 0))}} roster players${{row.active_weeks ? ` · active weeks: ${{escapeHtml(String(row.active_weeks))}}` : ''}}${{row.peak_transaction_week ? ` · peak week: ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}${{row.outcome_status === 'recorded' ? ` · record ${{escapeHtml(`${{row.wins || 0}}-${{row.losses || 0}}-${{row.ties || 0}}`)}} · ${{escapeHtml(String(row.points_for || 0))}} for / ${{escapeHtml(String(row.points_against || 0))}} against` : row.outcome_status === 'partial' ? ' · matchup outcome partial' : ''}}</p>`).join('')}}</div></details>` : ''}}${{transactionTimeline}}${{managerTradeFitMarkup(dossier)}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
+          ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Waiver Claims', dossier.sample_size?.waiver_claims ?? '')}}${{entityTile('Observed Events', dossier.sample_size?.observed_events ?? '')}}${{entityTile('Active Seasons', dossier.sample_size?.seasons_with_activity ?? '')}}${{entityTile('Scored Matchups', dossier.outcome_summary?.status === 'not_recorded' ? 'n/a' : (dossier.outcome_summary?.scored_matchups ?? dossier.outcome_summary?.played ?? 0))}}${{entityTile('Outcome record', dossier.outcome_summary?.record || 'not recorded')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{dossier.outcome_summary ? `<p class="note" data-testid="manager-outcome-receipt"><strong>Season outcomes:</strong> ${{escapeHtml(dossier.outcome_summary.narrative || 'Not recorded')}} · ${{escapeHtml(dossier.outcome_summary.evidence || 'outcome evidence not recorded')}}</p>` : ''}}${{trajectoryMarkup}}${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers${{row.roster_player_count ? ` · ${{escapeHtml(String(row.roster_player_count))}} roster players` : ''}}${{row.active_weeks ? ` · active weeks: ${{escapeHtml(String(row.active_weeks))}}` : ''}}${{row.peak_transaction_week ? ` · peak week: ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}${{row.outcome_status === 'recorded' ? ` · record ${{escapeHtml(`${{row.wins || 0}}-${{row.losses || 0}}-${{row.ties || 0}}`)}} · ${{escapeHtml(String(row.points_for || 0))}} for / ${{escapeHtml(String(row.points_against || 0))}} against` : row.outcome_status === 'partial' ? ' · matchup outcome partial' : ''}}</p>`).join('')}}</div></details>` : ''}}${{transactionTimeline}}${{managerTradeFitMarkup(dossier)}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
         ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
+        ${{counterpartyInterest}}
         ${{tradePacket}}
         ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{
           title: `${{row.player_name || 'Unknown'}}`,
@@ -3918,8 +4737,8 @@ def _page(
           rank: index + 1,
           playerId: row.player_id,
           entityHash: `player-${{row.player_id}}`,
-          chips: [row.edge_type, row.position, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : ''],
-          evidence: row.evidence || ''
+          chips: [row.edge_type, row.position, row.trade_edge_score ? `edge ${{row.trade_edge_score}}` : '', row.target_team_lens ? `${{row.target_team_lens}} timeline` : '', row.horizon_fit_edge ? `timeline edge ${{row.horizon_fit_edge}}` : '', row.horizon_fit_read ? label(row.horizon_fit_read) : ''],
+          evidence: [row.evidence || '', row.horizon_fit_basis || 'timeline fit unavailable'].filter(Boolean).join(' · ')
         }})).join('')}}</div>` : ''}}
         <h3>Roster (by market value)</h3>
         <div class="brief-list">${{rosterCards.map(({{ row, market }}) => briefCard({{

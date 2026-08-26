@@ -121,6 +121,12 @@ class LiveSmokeContractTests(unittest.TestCase):
                 "tables": {
                     "today_priority_board": [{}],
                     "player_dossiers": [{}],
+                    "player_horizon_market_scores": [{}],
+                    "available_player_horizon_scores": [{}],
+                    "horizon_market_movements": [{}],
+                    "manager_dossiers": [{}],
+                    "manager_season_history": [{}],
+                    "team_asset_inventory": [{}],
                     "source_freshness": [{}],
                     "news_source_freshness": [{}],
                     "projection_source_freshness": [{}],
@@ -135,6 +141,23 @@ class LiveSmokeContractTests(unittest.TestCase):
         errors = validate_edition_bundle({"tables": {}})
         self.assertIn("edition bundle has no source freshness receipt", errors)
         self.assertIn("edition bundle has no Draft Room payload", errors)
+
+        shallow = validate_edition_bundle(
+            {
+                "tables": {
+                    "today_priority_board": [{}],
+                    "player_dossiers": [{}],
+                    "source_freshness": [{}],
+                    "news_source_freshness": [{}],
+                    "projection_source_freshness": [{}],
+                },
+                "analysis": {"dailyGmBrief": "brief"},
+                "draftRoom": {"schema_version": "draft_room_v1"},
+            }
+        )
+        self.assertIn("edition bundle is missing player_horizon_market_scores", shallow)
+        self.assertIn("edition bundle is missing horizon_market_movements", shallow)
+        self.assertIn("edition bundle is missing manager_dossiers", shallow)
 
     def test_authenticated_edition_requires_revision_league_and_verified_roster(self) -> None:
         receipts = {
@@ -151,7 +174,7 @@ class LiveSmokeContractTests(unittest.TestCase):
                     "fallback_schema_version": "deterministic_fallback_v2",
                 },
             }
-            for key in ("daily_brief", "team_report", "market_watch", "trade_desk", "manager_intel")
+            for key in ("daily_brief", "team_report", "market_watch", "horizon_watch", "trade_desk", "manager_intel")
         }
         payload = {
             "leagueId": "alpha",
@@ -160,6 +183,12 @@ class LiveSmokeContractTests(unittest.TestCase):
             "tables": {
                 "today_priority_board": [{}],
                 "player_dossiers": [{}],
+                "player_horizon_market_scores": [{}],
+                "available_player_horizon_scores": [{}],
+                "horizon_market_movements": [{}],
+                "manager_dossiers": [{}],
+                "manager_season_history": [{}],
+                "team_asset_inventory": [{}],
                 "source_freshness": [{}],
                 "news_source_freshness": [{}],
                 "projection_source_freshness": [{}],
@@ -179,6 +208,11 @@ class LiveSmokeContractTests(unittest.TestCase):
 
         stale = {**payload, "analysis": {**payload["analysis"], "articleReceipts": {**receipts, "daily_brief": {**receipts["daily_brief"], "structured": {**receipts["daily_brief"]["structured"], "fallback_schema_version": "old"}}}}}
         self.assertIn("publication receipt daily_brief has stale fallback schema", validate_authenticated_edition(stale, "new", "alpha"))
+
+        reviewed = {**payload, "analysis": {**payload["analysis"], "articleReceipts": {**receipts, "daily_brief": {**receipts["daily_brief"], "editorial_review": {"mode": "llm", "status": "approved", "decision": "modify"}}}}}
+        self.assertEqual(validate_authenticated_edition(reviewed, "new", "alpha"), [])
+        invalid_review = {**reviewed, "analysis": {**reviewed["analysis"], "articleReceipts": {**reviewed["analysis"]["articleReceipts"], "daily_brief": {**reviewed["analysis"]["articleReceipts"]["daily_brief"], "editorial_review": {"mode": "llm", "status": "maybe", "decision": "approve"}}}}}
+        self.assertIn("unknown editorial review status", " ".join(validate_authenticated_edition(invalid_review, "new", "alpha")))
 
     def test_edition_manifest_requires_deployed_revision_and_roster_receipt(self) -> None:
         self.assertEqual(

@@ -70,7 +70,7 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         def job() -> dict:
             from scripts.refresh_all import main as refresh_all
 
-            refresh_all(force=True)
+            refresh_all(force=True, run_mode="maintenance")
             return {"state": "complete", "message": "Data refresh complete."}
 
         return operator.start_job("refresh", job)
@@ -85,7 +85,7 @@ class RailwayHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         def job() -> dict:
             from scripts.refresh_all import main as refresh_all
 
-            refresh_all(force=True)
+            refresh_all(force=True, run_mode="maintenance")
             result = operator.generate_articles_workflow()
             operator.rebuild_browser()
             return result

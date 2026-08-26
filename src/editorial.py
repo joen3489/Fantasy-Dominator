@@ -11,7 +11,54 @@ cannot remove the evidence, source trace, confidence, or risk that came with the
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
+from .availability import baseline_ppg_label
 from .personas import persona_metadata, reporter_lineup
+
+
+PUBLICATION_TEMPLATE_REGISTRY: dict[str, dict[str, Any]] = {
+    "daily_brief": {
+        "template_id": "morning-ledger",
+        "label": "Morning ledger",
+        "layout": "feature",
+        "section": "Front page",
+        "list_preview_items": 3,
+    },
+    "team_report": {
+        "template_id": "team-notebook",
+        "label": "Team notebook",
+        "layout": "wide",
+        "section": "Your team",
+        "list_preview_items": 3,
+    },
+    "market_watch": {
+        "template_id": "market-ticker",
+        "label": "Market ticker",
+        "layout": "rail",
+        "section": "Market",
+        "list_preview_items": 3,
+    },
+    "horizon_watch": {
+        "template_id": "four-window-ledger",
+        "label": "Four-window ledger",
+        "layout": "wide",
+        "section": "Market",
+        "list_preview_items": 4,
+    },
+    "trade_desk": {
+        "template_id": "trade-desk",
+        "label": "Trade desk",
+        "layout": "rail",
+        "section": "Trades",
+        "list_preview_items": 3,
+    },
+    "manager_intel": {
+        "template_id": "manager-dossier",
+        "label": "Manager dossier",
+        "layout": "wide",
+        "section": "League",
+        "list_preview_items": 3,
+    },
+}
 
 
 def build_editorial_issue(
@@ -54,18 +101,29 @@ def build_editorial_issue(
         if _append_unique(stories, seen, story, limit=2):
             continue
 
-    news_rows = _sorted_news(tables, my_roster_id)
+    league_news_rows = _league_news_rows(tables, league_id)
+    news_rows = _sorted_news(tables, my_roster_id, league_id)
     if news_rows:
         _append_unique(stories, seen, _news_story(news_rows[0], writer_preferences), limit=3)
-    league_news_rows = _rows(tables, "league_news_impact")
     latest_news_published_at = max(
         (_text(row.get("published_at")) for row in league_news_rows if _text(row.get("published_at"))),
         default="",
     )
 
     manager_rows = _sorted_rows(tables, "manager_behavior_signals", "trade_activity_score")
-    manager_row = _first_matching(manager_rows, my_roster_id) or (manager_rows[0] if manager_rows else None)
-    if manager_row:
+    # A personalized edition must never turn a missing roster join into the
+    # first manager in the file. The exact roster is the identity boundary;
+    # absence is a quiet/unavailable read, not permission to guess.
+    manager_row = _first_matching(manager_rows, my_roster_id)
+    manager_dossiers = [
+        dict(row)
+        for row in (analysis.get("managerDossierItems") or analysis.get("manager_dossiers") or [])
+        if isinstance(row, Mapping)
+    ]
+    manager_dossier = _first_matching(manager_dossiers, my_roster_id)
+    if manager_dossier:
+        _append_unique(stories, seen, _manager_dossier_story(manager_dossier, writer_preferences), limit=4)
+    elif manager_row:
         _append_unique(stories, seen, _manager_story(manager_row, writer_preferences), limit=4)
     manager_trade_profiles = _manager_trade_profile_rows(config)
     custom_manager_profile = _select_manager_trade_profile(
@@ -81,7 +139,7 @@ def build_editorial_issue(
     signal_summary = {
         "priority_reads": len(priority_rows),
         "market_consensus": len(_rows(tables, "market_consensus_values")),
-        "news_signals": len(_rows(tables, "league_news_impact")),
+        "news_signals": len(league_news_rows),
         "manager_profiles": len(_rows(tables, "manager_behavior_signals")),
         "custom_manager_profiles": len(manager_trade_profiles),
         "source_count": len(source_health),
@@ -90,6 +148,14 @@ def build_editorial_issue(
     publication_articles = _publication_articles(analysis, writer_preferences)
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
+    front_page_panels = _front_page_panels(
+        tables,
+        analysis,
+        league_id=league_id,
+        my_roster_id=my_roster_id,
+        my_team_name=team_label,
+        current_season=current_season,
+    )
     question_prompts = [
         {
             "question": "What changed?",
@@ -130,10 +196,19 @@ def build_editorial_issue(
         "article_modes": article_modes,
         "publication_articles": publication_articles,
         "publication_receipt": {
-            "current_count": sum(1 for article in publication_articles if article.get("mode") == "automatic_llm"),
+            "current_count": sum(1 for article in publication_articles if article.get("mode") == "automatic_llm" and article.get("publication_status") == "approved"),
             "available_count": len(publication_articles),
+            "published_count": sum(1 for article in publication_articles if article.get("publication_status") == "approved"),
+            "held_count": sum(1 for article in publication_articles if article.get("publication_status") == "held"),
             "expected_count": len(article_modes),
         },
+        "editorial_review": {
+            "editor": "The Desk Editor",
+            "status": "held" if any(article.get("publication_status") == "held" for article in publication_articles) else "approved",
+            "approved_count": sum(1 for article in publication_articles if article.get("publication_status") == "approved"),
+            "held_count": sum(1 for article in publication_articles if article.get("publication_status") == "held"),
+        },
+        "front_page_panels": front_page_panels,
         "question_prompts": question_prompts,
         "reporter_persona": reporter,
         "reporter_lineup": reporter_lineup(writer_preferences),
@@ -145,6 +220,471 @@ def build_editorial_issue(
         "signal_summary": signal_summary,
         "source_health": source_health,
         "source_health_summary": source_summary,
+    }
+
+
+def _front_page_panels(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    analysis: Mapping[str, Any],
+    *,
+    league_id: str = "",
+    my_roster_id: int | str | None,
+    my_team_name: str,
+    current_season: str,
+) -> list[dict[str, Any]]:
+    """Build the front-page rails that connect a story to a decision surface.
+
+    These are deterministic editorial teasers, not a second analysis engine.
+    Each rail keeps its underlying entity anchor, source trace, and uncertainty
+    visible so a future Luna article can add interpretation without replacing
+    the data-room path.
+    """
+
+    return [
+        _team_pulse_panel(tables, league_id, my_roster_id, my_team_name, current_season),
+        _news_watch_panel(tables, league_id, my_roster_id),
+        _market_watch_panel(tables, my_roster_id, league_id=league_id, current_season=current_season),
+        _manager_watch_panel(tables, analysis, my_roster_id),
+    ]
+
+
+def _team_pulse_panel(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    league_id: str,
+    my_roster_id: int | str | None,
+    my_team_name: str,
+    current_season: str,
+) -> dict[str, Any]:
+    scoped_roster_rows = _scope_rows(
+        _rows(tables, "roster_players"),
+        league_id=league_id,
+        season=current_season,
+    )
+    roster = [row for row in scoped_roster_rows if _same_id(row.get("roster_id"), my_roster_id)]
+    scoped_dossiers = _scope_rows(
+        _rows(tables, "player_dossiers"),
+        league_id=league_id,
+        season=current_season,
+    )
+    roster_player_ids = {_text(row.get("player_id")) for row in roster if _text(row.get("player_id"))}
+    dossiers = [
+        row for row in scoped_dossiers
+        if _same_id(row.get("roster_id"), my_roster_id)
+        and (not roster_player_ids or _text(row.get("player_id")) in roster_player_ids)
+    ] if roster else []
+    news = [
+        row for row in _league_news_rows(tables, league_id)
+        if _same_id(row.get("roster_id"), my_roster_id)
+        and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
+    ]
+    injury_count = sum(1 for row in roster if _text(row.get("injury_status")))
+    starter_count = sum(1 for row in roster if _text(row.get("roster_status")).lower() == "starter")
+    market_rows = [row for row in dossiers if _text(row.get("market_value"))]
+    projected_rows = [row for row in dossiers if _text(row.get("projected_ppg"))]
+    baseline_ppg = sum(_number(row.get("projected_ppg")) for row in projected_rows)
+    dossier_by_player = {str(row.get("player_id")): row for row in dossiers if _text(row.get("player_id"))}
+    items: list[dict[str, Any]] = []
+    for row in sorted(news, key=lambda item: _text(item.get("published_at")), reverse=True)[:2]:
+        player_name = _text(row.get("player_name")) or "Rostered player"
+        dossier = dossier_by_player.get(str(row.get("player_id")), {})
+        context = _player_market_context(dossier)
+        items.append(
+            _front_page_item(
+                title=f"{player_name} · {_human_label(_text(row.get('impact_type')) or 'league signal')}",
+                summary=f"{_text(row.get('evidence')) or 'A roster-linked news item needs a closer read.'}{context}",
+                meta=_news_meta(row),
+                anchor=_anchor("player", _text(row.get("player_id"))),
+                evidence=_front_page_evidence(row, "league_news_impact"),
+                tone="news",
+            )
+        )
+    if not items:
+        for row in sorted(dossiers, key=lambda item: _number(item.get("market_value")), reverse=True)[:2]:
+            player_name = _text(row.get("player_name")) or "Roster asset"
+            items.append(
+                _front_page_item(
+                    title=player_name,
+                    summary=f"{_human_label(_text(row.get('signal_label')) or 'no active signal')}; {_player_market_context(row).lstrip('; ')}.",
+                    meta=f"{_text(row.get('position')) or 'asset'} · {_text(row.get('roster_status')) or 'roster status unknown'}",
+                    anchor=_anchor("player", _text(row.get("player_id"))),
+                    evidence=_front_page_evidence(row, "player_dossiers"),
+                    tone="hold",
+                )
+            )
+    return {
+        "key": "team_pulse",
+        "eyebrow": "Your team",
+        "title": my_team_name or "Your team",
+        "dek": (
+            f"{len(roster)} current-season roster rows, {injury_count} with a current Sleeper injury flag, "
+            f"and {len(news)} linked news signal{'s' if len(news) != 1 else ''}."
+        ),
+        "facts": [
+            {"label": "Starters", "value": starter_count},
+            {"label": "Market rows", "value": f"{len(market_rows)}/{len(roster)}"},
+            {"label": "Baseline PPG", "value": round(baseline_ppg, 2) if projected_rows else "n/a"},
+            {"label": "Season", "value": current_season or "current"},
+        ],
+        "items": items,
+        "route": "#view-my-team",
+        "route_label": "Open My Team",
+        "uncertainty": "Roster facts are exact; baseline projections do not adjust for availability unless explicitly stated.",
+        "source_trace": "roster_players;player_dossiers;league_news_impact",
+        "tone": "team",
+    }
+
+
+def _news_watch_panel(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    league_id: str,
+    my_roster_id: int | str | None,
+) -> dict[str, Any]:
+    rows = _league_news_rows(tables, league_id)
+    mine = [
+        row for row in rows
+        if _same_id(row.get("roster_id"), my_roster_id)
+        and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
+    ]
+    others = [row for row in rows if row not in mine]
+    ordered = sorted(mine, key=lambda row: _text(row.get("published_at")), reverse=True) + sorted(
+        others, key=lambda row: _text(row.get("published_at")), reverse=True
+    )
+    signal_map = {str(row.get("player_id")): row for row in _rows(tables, "player_signal_scores") if _text(row.get("player_id"))}
+    dossier_map = {str(row.get("player_id")): row for row in _rows(tables, "player_dossiers") if _text(row.get("player_id"))}
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in ordered:
+        event_id = _text(row.get("event_id")) or f"{row.get('player_id')}:{row.get('published_at')}"
+        if event_id in seen:
+            continue
+        seen.add(event_id)
+        signal = signal_map.get(str(row.get("player_id")), {})
+        dossier = dossier_map.get(str(row.get("player_id")), {})
+        context = _player_market_context({**dossier, **signal})
+        if context:
+            context = f" Model context: {context.lstrip('; ')}."
+        items.append(
+            _front_page_item(
+                title=f"{_text(row.get('player_name')) or 'League player'} · {_human_label(_text(row.get('impact_type')) or 'signal')}",
+                summary=f"{_text(row.get('evidence')) or 'News was matched to the league, but the claim still needs review.'}{context}",
+                meta=_news_meta(row),
+                anchor=_anchor("player", _text(row.get("player_id"))),
+                evidence=_front_page_evidence(row, "league_news_impact"),
+                tone="news",
+            )
+        )
+        if len(items) >= 3:
+            break
+    return {
+        "key": "news_watch",
+        "eyebrow": "News desk",
+        "title": "What changed",
+        "dek": f"{len(mine)} news signal{'s' if len(mine) != 1 else ''} link directly to the selected roster; league context follows.",
+        "facts": [
+            {"label": "Linked to you", "value": len(mine)},
+            {"label": "League signals", "value": len(rows)},
+            {"label": "Sources", "value": len({str(row.get('source')) for row in rows if _text(row.get('source'))})},
+        ],
+        "items": items,
+        "route": "#view-news",
+        "route_label": "Open News",
+        "uncertainty": "News is a catalyst for research; it is not a projection, transaction, or conclusion.",
+        "source_trace": "news_events;player_news_matches;league_news_impact",
+        "tone": "news",
+    }
+
+
+def _market_watch_panel(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    my_roster_id: int | str | None,
+    *,
+    league_id: str = "",
+    current_season: str = "",
+) -> dict[str, Any]:
+    horizon_rows = [
+        dict(row)
+        for row in _scope_rows(
+            _rows(tables, "player_horizon_market_scores"),
+            league_id=league_id,
+            season=current_season,
+        )
+        if _text(row.get("player_name")) and _text(row.get("value_lane")) != "insufficient_context"
+    ]
+    horizon_rows.sort(key=lambda row: abs(_number(row.get("rebuilder_contender_spread"))), reverse=True)
+    available_rostered_ids = {
+        _text(row.get("player_id"))
+        for row in _rows(tables, "roster_players")
+        if _text(row.get("player_id"))
+        and (not current_season or not _text(row.get("season")) or _same_id(row.get("season"), current_season))
+        and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
+    }
+    available_rows = [
+        dict(row)
+        for row in _rows(tables, "available_player_horizon_scores")
+        if _text(row.get("player_id"))
+        and _text(row.get("player_name"))
+        and _text(row.get("availability_status")) == "not_rostered_in_selected_league"
+        and _text(row.get("identity_status")) in {"sleeper_id", "sleeper_unique_name_match"}
+        and _text(row.get("player_id")) not in available_rostered_ids
+        and (not current_season or not _text(row.get("season")) or _same_id(row.get("season"), current_season))
+        and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
+        and any(_text(row.get(field)) for field in (
+            "next_game_market_score",
+            "rest_of_season_market_score",
+            "dynasty_market_score",
+            "career_projection_score",
+        ))
+    ]
+    available_rows.sort(
+        key=lambda row: (
+            _market_clock_coverage(row),
+            max(
+                _number(row.get("next_game_market_score")),
+                _number(row.get("rest_of_season_market_score")),
+                _number(row.get("dynasty_market_score")),
+                _number(row.get("career_projection_score")),
+            ),
+            abs(_number(row.get("rebuilder_contender_spread"))),
+            _number(row.get("market_value")),
+        ),
+        reverse=True,
+    )
+    # Make the front page tell the reader that the board includes a real
+    # available-market lane.  One roster clock plus one available clock is a
+    # more useful edit than three nearly identical roster cards.
+    horizon_items = []
+    for row in horizon_rows[: (1 if available_rows else 2)]:
+        lane = _text(row.get("value_lane")) or "balanced_window"
+        owner_marker = " · your roster" if _same_id(row.get("roster_id"), my_roster_id) else ""
+        horizon_items.append(
+            _front_page_item(
+                title=f"{_text(row.get('player_name'))} · {lane.replace('_', ' ')}",
+                summary=(
+                    f"Next-game score {_number_or_text(row.get('next_game_market_score'))} vs {_text(row.get('next_game_opponent')) or 'opponent unavailable'} "
+                    f"(clock-minus-market {_number_or_text(row.get('next_game_minus_market_delta'))}); rest-of-season score "
+                    f"{_number_or_text(row.get('rest_of_season_market_score'))} (clock-minus-market {_number_or_text(row.get('rest_of_season_minus_market_delta'))}; change from next game {_number_or_text(row.get('rest_of_season_minus_next_game_delta'))}); dynasty score "
+                    f"{_number_or_text(row.get('dynasty_market_score'))} (clock-minus-market {_number_or_text(row.get('dynasty_minus_market_delta'))}; change from rest of season {_number_or_text(row.get('dynasty_minus_rest_of_season_delta'))}); five-year career-window score "
+                    f"{_number_or_text(row.get('career_projection_score'))} (clock-minus-market {_number_or_text(row.get('career_minus_market_delta'))}; change from dynasty {_number_or_text(row.get('career_minus_dynasty_delta'))}); career history "
+                    f"{_text(row.get('career_history_status')) or 'unavailable'} ({_number_or_text(row.get('career_history_ppg'))} PPG, "
+                    f"{_text(row.get('career_history_games')) or '0'} games / {_text(row.get('career_history_seasons')) or '0'} seasons). Contender fit is "
+                    f"{_number_or_text(row.get('contender_fit_score'))} versus rebuilder fit "
+                    f"{_number_or_text(row.get('rebuilder_fit_score'))}{owner_marker}. Rest-of-season baseline is not recovery-adjusted."
+                    f" Cross-position price anchor is market value {_number_or_text(row.get('market_value'))}; position market percentile is {_number_or_text(row.get('market_percentile'))}."
+                    " These are position-relative percentiles, not dollar market values or cross-position price rankings."
+                ),
+                meta=f"{_text(row.get('position')) or 'asset'} · {lane.replace('_', ' ')} · {_text(row.get('confidence')) or 'confidence unknown'}",
+                anchor=_anchor("player", _text(row.get("player_id"))),
+                evidence=_front_page_evidence(row, "player_horizon_market_scores"),
+                tone="market",
+            )
+        )
+    available_items: list[dict[str, Any]] = []
+    for row in available_rows[:1]:
+        lane = _text(row.get("value_lane")) or "balanced_window"
+        available_items.append(
+            _front_page_item(
+                title=f"{_text(row.get('player_name'))} · available market",
+                summary=(
+                    f"Available-market research row: this-week score {_number_or_text(row.get('next_game_market_score'))} (clock-minus-market {_number_or_text(row.get('next_game_minus_market_delta'))}); "
+                    f"rest-of-season score {_number_or_text(row.get('rest_of_season_market_score'))} (clock-minus-market {_number_or_text(row.get('rest_of_season_minus_market_delta'))}; change from this week "
+                    f"{_number_or_text(row.get('rest_of_season_minus_next_game_delta'))}); dynasty score "
+                    f"{_number_or_text(row.get('dynasty_market_score'))} (clock-minus-market {_number_or_text(row.get('dynasty_minus_market_delta'))}; change from rest of season "
+                    f"{_number_or_text(row.get('dynasty_minus_rest_of_season_delta'))}); career-window score "
+                    f"{_number_or_text(row.get('career_projection_score'))} (clock-minus-market {_number_or_text(row.get('career_minus_market_delta'))}; change from dynasty "
+                    f"{_number_or_text(row.get('career_minus_dynasty_delta'))}). Lane is {lane.replace('_', ' ')}; "
+                    f"contender fit {_number_or_text(row.get('contender_fit_score'))} versus rebuilder fit "
+                    f"{_number_or_text(row.get('rebuilder_fit_score'))}. Market value {_number_or_text(row.get('market_value'))}; "
+                    "availability is inferred from this league's roster snapshot, not a waiver-eligibility receipt."
+                ),
+                meta=f"{_text(row.get('position')) or 'asset'} · available research · {_text(row.get('fit_coverage')) or 'clock coverage unavailable'}",
+                anchor=_anchor("player", _text(row.get("player_id"))),
+                evidence=_front_page_evidence(row, "available_player_horizon_scores"),
+                tone="market",
+            )
+        )
+    edge_rows = [
+        dict(row)
+        for row in _scope_rows(
+            _rows(tables, "news_market_edges"),
+            league_id=league_id,
+            season=current_season,
+        )
+        if _text(row.get("player_name"))
+    ]
+    if edge_rows:
+        edge_rows.sort(
+            key=lambda row: (
+                _number(row.get("news_market_edge_score")),
+                _number(row.get("market_gap_score")),
+                _number(row.get("sell_score")),
+            ),
+            reverse=True,
+        )
+        edge_items: list[dict[str, Any]] = []
+        for row in edge_rows[: max(0, 3 - len(horizon_items) - len(available_items))]:
+            direction = _text(row.get("news_direction")) or "mixed"
+            edge_label = (_text(row.get("edge_type")) or "news-market review").replace("_", " ")
+            owner_marker = " · your roster" if _same_id(row.get("roster_id"), my_roster_id) else ""
+            edge_items.append(
+                _front_page_item(
+                    title=f"{_text(row.get('player_name'))} · {edge_label}",
+                    summary=(
+                        f"{_text(row.get('news_impact')) or 'News signal'} across {_number_or_text(row.get('news_event_count'))} event(s) "
+                        f"while the market is {_number_or_text(row.get('market_value'))} and {baseline_ppg_label(row)} is "
+                        f"{_number_or_text(row.get('projected_ppg'))}; {_text(row.get('team_name')) or 'team unknown'}{owner_marker}."
+                    ),
+                    meta=f"{_text(row.get('position')) or 'asset'} · {direction} · {_text(row.get('confidence')) or 'confidence unknown'}",
+                    anchor=_anchor("player", _text(row.get("player_id"))),
+                    evidence=_front_page_evidence(row, "news_market_edges"),
+                    tone="market",
+                )
+            )
+        high_confidence = sum(1 for row in edge_rows if _text(row.get("confidence")).lower() == "high")
+        selected_count = sum(1 for row in edge_rows if _same_id(row.get("roster_id"), my_roster_id))
+        return {
+            "key": "market_watch",
+            "eyebrow": "Market desk",
+            "title": "Where news is ahead of price",
+            "dek": "Current league catalysts paired with deterministic price or sell-pressure gaps; every row is a research lead, not a verdict.",
+            "facts": [
+                {"label": "Horizon rows", "value": len(horizon_rows)},
+                {"label": "Available clocks", "value": len(available_rows)},
+                {"label": "News-market edges", "value": len(edge_rows)},
+                {"label": "High confidence", "value": high_confidence},
+                {"label": "On your roster", "value": selected_count},
+            ],
+            "items": horizon_items + available_items + edge_items,
+            "route": "#view-trade-desk",
+            "route_label": "Open Trade Desk",
+            "uncertainty": "A catalyst can be early, transient, duplicated across sources, or already reflected in a live market not captured here; inspect the source receipt before acting.",
+            "source_trace": "player_horizon_market_scores;available_player_horizon_scores;news_market_edges;league_news_impact;player_signal_scores;player_projection_season;market_consensus_values",
+            "tone": "market",
+        }
+
+    rows = []
+    dossier_map = {str(row.get("player_id")): row for row in _rows(tables, "player_dossiers") if _text(row.get("player_id"))}
+    for row in _rows(tables, "player_signal_scores"):
+        if not _text(row.get("player_name")) or _number(row.get("market_value")) <= 0 or _number(row.get("projected_ppg")) <= 0:
+            continue
+        gap = _number(row.get("market_gap_score"))
+        if gap <= 0:
+            continue
+        rows.append(row)
+    rows.sort(key=lambda row: (_number(row.get("market_gap_score")), _number(row.get("projected_ppg"))), reverse=True)
+    items: list[dict[str, Any]] = []
+    for row in rows[: max(0, 3 - len(horizon_items) - len(available_items))]:
+        team_name = _text(row.get("team_name")) or "Unrostered / team unknown"
+        owner_marker = " · your roster" if _same_id(row.get("roster_id"), my_roster_id) else ""
+        dossier = dossier_map.get(str(row.get("player_id")), {})
+        availability = _text(row.get("availability_note")) or _text(dossier.get("availability_note"))
+        items.append(
+            _front_page_item(
+                title=f"{_text(row.get('player_name'))} · model gap {_number_or_text(row.get('market_gap_score'))}",
+                summary=(
+                    f"{_number_or_text(row.get('projected_ppg'))} {baseline_ppg_label({**dossier, **row})} against a "
+                    f"{_number_or_text(row.get('market_value'))} market value; {team_name}{owner_marker}."
+                    f"{f' {availability}.' if availability and not availability.startswith('No current') else ''}"
+                ),
+                meta=f"{_text(row.get('position')) or 'asset'} · {_text(row.get('confidence')) or 'confidence unknown'}",
+                anchor=_anchor("player", _text(row.get("player_id"))),
+                evidence=_front_page_evidence(row, "player_signal_scores"),
+                tone="market",
+            )
+        )
+    high_confidence = sum(1 for row in rows if _text(row.get("confidence")).lower() == "high")
+    selected_count = sum(1 for row in rows if _same_id(row.get("roster_id"), my_roster_id))
+    return {
+        "key": "market_watch",
+        "eyebrow": "Market desk",
+        "title": "Where the model disagrees",
+        "dek": "Projection-to-market gaps are research leads for price discovery, not guaranteed mispricing.",
+        "facts": [
+        {"label": "Horizon rows", "value": len(horizon_rows)},
+        {"label": "Available clocks", "value": len(available_rows)},
+            {"label": "Positive gaps", "value": len(rows)},
+            {"label": "High confidence", "value": high_confidence},
+            {"label": "On your roster", "value": selected_count},
+        ],
+        "items": horizon_items + available_items + items,
+        "route": "#view-trade-desk",
+        "route_label": "Open Trade Desk",
+        "uncertainty": "Market values and baseline projections can be stale or structurally different; inspect the receipt before acting.",
+        "source_trace": "player_horizon_market_scores;available_player_horizon_scores;player_signal_scores;player_projection_season;market_consensus_values",
+        "tone": "market",
+    }
+
+
+def _manager_watch_panel(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    analysis: Mapping[str, Any],
+    my_roster_id: int | str | None,
+) -> dict[str, Any]:
+    dossiers = [
+        dict(row)
+        for row in (analysis.get("managerDossierItems") or analysis.get("manager_dossiers") or [])
+        if isinstance(row, Mapping) and not _same_id(row.get("roster_id"), my_roster_id)
+    ]
+    dossiers.sort(
+        key=lambda row: (
+            _number((row.get("trade_fit_evaluation") or {}).get("aligned_fit_count")),
+            _number((row.get("sample_size") or {}).get("observed_events")),
+            _number((row.get("sample_size") or {}).get("trades")),
+        ),
+        reverse=True,
+    )
+    items: list[dict[str, Any]] = []
+    for dossier in dossiers[:2]:
+        sample = dossier.get("sample_size") if isinstance(dossier.get("sample_size"), Mapping) else {}
+        outcome = dossier.get("outcome_summary") if isinstance(dossier.get("outcome_summary"), Mapping) else {}
+        fit = dossier.get("trade_fit_evaluation") if isinstance(dossier.get("trade_fit_evaluation"), Mapping) else {}
+        summary = _excerpt(dossier.get("analysis_text")) or "Observed behavior is available in the full manager dossier."
+        items.append(
+            _front_page_item(
+                title=_text(dossier.get("team_name")) or f"Roster {_text(dossier.get('roster_id'))}",
+                summary=summary,
+                meta=(
+                    f"{_text(dossier.get('dynasty_cycle')) or 'cycle unclear'} · "
+                    f"{sample.get('seasons', 0)} seasons · {sample.get('trades', 0)} trades · "
+                    f"{fit.get('aligned_fit_count', 0)} aligned fits"
+                ),
+                anchor=_anchor("manager", _text(dossier.get("roster_id"))),
+                evidence=(
+                    f"{_text(dossier.get('source_trace')) or 'manager_dossiers'}; "
+                    f"sample_events={sample.get('observed_events', 0)}; outcome={outcome.get('status', 'not recorded')}"
+                ),
+                tone="manager",
+            )
+        )
+    if not items:
+        behaviors = [row for row in _rows(tables, "manager_behavior_signals") if not _same_id(row.get("roster_id"), my_roster_id)]
+        behaviors.sort(key=lambda row: _number(row.get("trade_activity_score")), reverse=True)
+        for row in behaviors[:2]:
+            items.append(
+                _front_page_item(
+                    title=_text(row.get("team_name")) or f"Roster {_text(row.get('roster_id'))}",
+                    summary=_text(row.get("evidence")) or "Observed manager behavior is sparse.",
+                    meta=f"{_text(row.get('plain_language_label')) or 'observed behavior'} · confidence {_text(row.get('confidence')) or 'unknown'}",
+                    anchor=_anchor("manager", _text(row.get("roster_id"))),
+                    evidence=_front_page_evidence(row, "manager_behavior_signals"),
+                    tone="manager",
+                )
+            )
+    return {
+        "key": "manager_watch",
+        "eyebrow": "Dossier desk",
+        "title": "Who is worth studying",
+        "dek": "Manager profiles turn years of transactions into conversation hypotheses; intent remains unknown.",
+        "facts": [
+            {"label": "Profiles", "value": len(dossiers) or len(_rows(tables, "manager_behavior_signals"))},
+            {"label": "With history", "value": sum(1 for row in dossiers if (row.get("sample_size") or {}).get("seasons"))},
+            {"label": "Decision path", "value": "dossier → trade desk"},
+        ],
+        "items": items,
+        "route": "#view-league",
+        "route_label": "Open Manager Room",
+        "uncertainty": "Observed behavior is not motive; sample size and recency should travel with every read.",
+        "source_trace": "manager_dossiers;manager_season_history;manager_event_log",
+        "tone": "manager",
     }
 
 
@@ -309,13 +849,36 @@ def _sorted_rows(tables: Mapping[str, Sequence[Mapping[str, Any]]], name: str, s
     return sorted(rows, key=lambda row: _number(row.get(score_field)), reverse=True)
 
 
-def _sorted_news(tables: Mapping[str, Sequence[Mapping[str, Any]]], my_roster_id: int | str | None) -> list[dict[str, Any]]:
-    rows = _rows(tables, "league_news_impact")
+def _sorted_news(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    my_roster_id: int | str | None,
+    league_id: str = "",
+) -> list[dict[str, Any]]:
+    rows = _league_news_rows(tables, league_id)
     if my_roster_id is not None:
-        scoped = [row for row in rows if str(row.get("roster_id", "")) == str(my_roster_id)]
+        scoped = [
+            row for row in rows
+            if _same_id(row.get("roster_id"), my_roster_id)
+            and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
+        ]
         if scoped:
             rows = scoped
     return sorted(rows, key=lambda row: _text(row.get("published_at")), reverse=True)
+
+
+def _league_news_rows(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    league_id: str = "",
+) -> list[dict[str, Any]]:
+    rows = _rows(tables, "league_news_impact")
+    if not league_id:
+        return rows
+    scoped = [row for row in rows if _same_id(row.get("league_id"), league_id)]
+    if scoped:
+        return scoped
+    # Keep older bundles readable while refusing to mix an unscoped legacy bundle with a
+    # scoped league when the new artifact already provides a boundary.
+    return [row for row in rows if not _text(row.get("league_id"))]
 
 
 def _prioritize_team(rows: list[dict[str, Any]], my_roster_id: int | str | None) -> list[dict[str, Any]]:
@@ -440,7 +1003,7 @@ def _action_line(kind: str, persona_id: str = "front_office") -> str:
 def _claims_from_row(row: Mapping[str, Any]) -> list[dict[str, str]]:
     claims: list[dict[str, str]] = []
     labels = {
-        "ppg": "Projected PPG",
+        "ppg": "Baseline PPG",
         "points": "Projected points",
         "projection": "Projection confidence",
         "market": "Market value",
@@ -584,6 +1147,53 @@ def _manager_profile_story(
     }
 
 
+def _manager_dossier_story(dossier: Mapping[str, Any], writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Turn the durable manager dossier into a homepage story without flattening it.
+
+    The homepage should invite the reader into the dossier, not replace the
+    dossier with a generic behavior label. Structured claims keep the richer
+    history visible while the dossier route remains the source of detail.
+    """
+
+    team_name = _text(dossier.get("team_name")) or "A league manager"
+    construction = dossier.get("roster_construction") if isinstance(dossier.get("roster_construction"), Mapping) else {}
+    sample = dossier.get("sample_size") if isinstance(dossier.get("sample_size"), Mapping) else {}
+    outcome = dossier.get("outcome_summary") if isinstance(dossier.get("outcome_summary"), Mapping) else {}
+    cycle = _text(dossier.get("dynasty_cycle")) or "unclear cycle"
+    evidence = _text(dossier.get("evidence")) or "The deterministic manager dossier is available for inspection."
+    reporter = _reporter_for_story("manager", writer_preferences)
+    claims = [
+        {"label": "Cycle", "value": cycle},
+        {"label": "Observed seasons", "value": _number_or_text(sample.get("seasons"))},
+        {"label": "Observed trades", "value": _number_or_text(sample.get("trades"))},
+        {"label": "Outcome record", "value": _text(outcome.get("record")) or "not recorded"},
+        {"label": "Roster market", "value": _number_or_text(construction.get("market_value_total"))},
+    ]
+    return {
+        "story_id": f"manager:{_text(dossier.get('roster_id')) or team_name}",
+        "story_type": "manager",
+        "eyebrow": "Manager dossier",
+        "headline": f"{team_name}: the history behind the next conversation",
+        "dek": _text(dossier.get("analysis_text")) or "Observed history, roster construction, and current trade fits are available in the dossier.",
+        "action": "Move: open the dossier, then compare the current trade fit with the manager's observed valuation lanes.",
+        "watchout": "Observed behavior is not intent, and a trade fit is not a predicted response.",
+        "confidence": _confidence(dossier.get("confidence")),
+        "priority_score": "",
+        "entity_type": "manager",
+        "entity_id": _text(dossier.get("roster_id")),
+        "entity_name": team_name,
+        "team_name": team_name,
+        "anchor": _anchor("manager", _text(dossier.get("roster_id"))),
+        "claims": claims,
+        "evidence": evidence,
+        "sources": _source_links(dossier.get("source_trace")),
+        "is_lead": False,
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
+        "reporter_persona": reporter,
+    }
+
+
 def _reporter_for_story(story_type: str, writer_preferences: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Assign a visible desk identity to deterministic cards as well as LLM articles."""
 
@@ -638,6 +1248,7 @@ def _article_modes(analysis: Mapping[str, Any]) -> dict[str, str]:
         "daily_brief": "dailyGmBriefMode",
         "team_report": "teamReportMode",
         "market_watch": "marketWatchMode",
+        "horizon_watch": "horizonWatchMode",
         "trade_desk": "tradeDeskReadMode",
         "manager_intel": "managerIntelMode",
     }
@@ -645,6 +1256,142 @@ def _article_modes(analysis: Mapping[str, Any]) -> dict[str, str]:
         key: _text(analysis.get(field)) or "deterministic_template"
         for key, field in fields.items()
     }
+
+
+def _front_page_item(
+    *,
+    title: str,
+    summary: str,
+    meta: str,
+    anchor: str,
+    evidence: str,
+    tone: str,
+) -> dict[str, str]:
+    return {
+        "title": _text(title) or "Untitled read",
+        "summary": _text(summary) or "No summary recorded.",
+        "meta": _text(meta) or "Evidence context unavailable",
+        "anchor": _text(anchor),
+        "evidence": _text(evidence) or "Evidence trace not recorded.",
+        "tone": _text(tone) or "info",
+    }
+
+
+def _front_page_evidence(row: Mapping[str, Any], table_name: str) -> str:
+    identifiers = [
+        f"{key}={_text(row.get(key))}"
+        for key in ("event_id", "player_id", "roster_id", "source", "source_trace")
+        if _text(row.get(key))
+    ]
+    if table_name in {"player_horizon_market_scores", "available_player_horizon_scores"}:
+        identifiers.extend(
+            f"{key}={_text(row.get(key))}"
+            for key in (
+                "horizon_model_version",
+                "horizon_score_basis",
+                "market_value",
+                "market_percentile",
+                "next_game_minus_market_delta",
+                "rest_of_season_minus_market_delta",
+                "dynasty_minus_market_delta",
+                "career_minus_market_delta",
+                "fit_basis",
+                "career_history_join_method",
+                "career_history_source_player_id",
+                "career_history_status",
+                "career_history_seasons",
+                "career_history_games",
+                "career_history_ppg",
+                "career_history_latest_season",
+            )
+            if _text(row.get(key))
+        )
+    return f"{table_name}; " + "; ".join(identifiers) if identifiers else table_name
+
+
+def _player_market_context(row: Mapping[str, Any]) -> str:
+    if not row:
+        return ""
+    market = _text(row.get("market_value"))
+    ppg = _text(row.get("projected_ppg"))
+    signal = _text(row.get("signal_label"))
+    bits: list[str] = []
+    if market:
+        bits.append(f"market {market}")
+    if ppg:
+        bits.append(f"{baseline_ppg_label(row)} {ppg}")
+    if signal:
+        bits.append(_human_label(signal))
+    availability = _text(row.get("availability_note"))
+    if availability and not availability.startswith("No current Sleeper injury flag"):
+        bits.append(availability)
+    return f"; {' · '.join(bits)}" if bits else ""
+
+
+def _news_meta(row: Mapping[str, Any]) -> str:
+    source = _text(row.get("source")) or "source unknown"
+    published = _short_date(row.get("published_at"))
+    confidence = _text(row.get("confidence")) or "confidence unknown"
+    risk = _text(row.get("risk"))
+    return " · ".join(part for part in (source, published, confidence, risk) if part)
+
+
+def _same_id(left: Any, right: Any) -> bool:
+    if left in (None, "") or right in (None, ""):
+        return False
+    left_text = str(left).strip()
+    right_text = str(right).strip()
+    if left_text == right_text:
+        return True
+    try:
+        return float(left_text) == float(right_text)
+    except (TypeError, ValueError):
+        return False
+
+
+def _scope_rows(
+    rows: list[dict[str, Any]],
+    *,
+    league_id: str = "",
+    season: str = "",
+) -> list[dict[str, Any]]:
+    """Scope presentation rows without falling through to another league or season.
+
+    Legacy rows with no identity field remain readable when no identified rows
+    exist. Once a table contains identified rows, a requested scope with no
+    exact match is unavailable rather than a reason to display a neighboring
+    league's facts.
+    """
+
+    scoped = list(rows)
+    for field, requested in (("league_id", league_id), ("season", season)):
+        if not requested:
+            continue
+        identified = [row for row in scoped if _text(row.get(field))]
+        if identified:
+            scoped = [row for row in identified if _same_id(row.get(field), requested)]
+        else:
+            scoped = [row for row in scoped if not _text(row.get(field))]
+    return scoped
+
+
+def _season_rows(rows: list[dict[str, Any]], season: str) -> list[dict[str, Any]]:
+    if not season:
+        return rows
+    matching = [row for row in rows if _text(row.get("season")) == str(season)]
+    if matching:
+        return matching
+    # An identified non-matching season is evidence that the requested slice
+    # is absent. Returning another season here would make a historical label
+    # look current in a reader-facing panel.
+    return [] if any(_text(row.get("season")) for row in rows) else rows
+
+
+def _excerpt(value: Any, limit: int = 250) -> str:
+    text = " ".join(_text(value).split())
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 1)].rstrip() + "…"
 
 
 def _publication_articles(
@@ -660,6 +1407,7 @@ def _publication_articles(
         ("daily_brief", "Daily GM Brief", "dailyGmBrief", "dailyGmBriefMode"),
         ("team_report", "Your Team Report", "teamReport", "teamReportMode"),
         ("market_watch", "Market Watch", "marketWatch", "marketWatchMode"),
+        ("horizon_watch", "Four-Window Market Read", "horizonWatch", "horizonWatchMode"),
         ("trade_desk", "Trade Desk", "tradeDeskRead", "tradeDeskReadMode"),
         ("manager_intel", "Manager Intel", "managerIntel", "managerIntelMode"),
     )
@@ -673,11 +1421,18 @@ def _publication_articles(
         default_reporter = persona_metadata(dict(writer_preferences or {}), key)
         mode = _text(receipt.get("mode") or analysis.get(mode_field)) or "deterministic_template"
         reporter = _publication_reporter(dict(writer_preferences or {}), key, receipt, mode, default_reporter)
+        template = publication_template(key)
+        review = review_publication_article(key, body, receipt, mode)
+        published_body = body if review["status"] == "approved" else ""
         output.append(
             {
                 "key": key,
                 "title": title,
-                "body": body,
+                "body": published_body,
+                "content_block_schema": "publication_blocks_v1",
+                "content_blocks": publication_content_blocks(published_body, key),
+                "template": template,
+                "template_id": template["template_id"],
                 "mode": mode,
                 "reporter_id": reporter["persona_id"],
                 "reporter_name": reporter["name"],
@@ -689,9 +1444,174 @@ def _publication_articles(
                 "content_hash": _text(receipt.get("content_hash")),
                 "model": _text(receipt.get("model")),
                 "structured": dict(receipt.get("structured") or {}) if isinstance(receipt.get("structured"), Mapping) else {},
+                "publication_status": review["status"],
+                "editorial_review": review,
             }
         )
     return output
+
+
+def review_publication_article(
+    article_key: str,
+    body: str,
+    receipt: Mapping[str, Any] | None,
+    mode: str,
+) -> dict[str, Any]:
+    """Run the deterministic desk-editor gate before content reaches the reader.
+
+    This is intentionally a review, not a second scoring model. It verifies
+    that the writer supplied the structured story spine and a real evidence
+    receipt, then honors an optional persisted Luna desk decision. The
+    deterministic checks remain authoritative at the seam: a stored approval
+    cannot revive an article whose current receipt or story spine is invalid.
+    """
+
+    receipt = receipt if isinstance(receipt, Mapping) else {}
+    structured = receipt.get("structured") if isinstance(receipt.get("structured"), Mapping) else {}
+    evidence_ids = structured.get("evidence_ids") if isinstance(structured.get("evidence_ids"), list) else []
+    source_ids = structured.get("source_ids") if isinstance(structured.get("source_ids"), list) else []
+    errors: list[str] = []
+    checks = {
+        "body_present": bool(str(body or "").strip()),
+        "structured_story_spine": True,
+        "evidence_receipt": bool([item for item in evidence_ids if str(item).strip()]),
+        "source_receipt": bool([item for item in source_ids if str(item).strip()]),
+        "mode_contract": mode in {"deterministic_template", "automatic_llm"},
+    }
+    if not checks["body_present"]:
+        errors.append("article body is empty")
+    required_fields = ("headline", "thesis", "what_changed", "action")
+    missing_fields = [field for field in required_fields if not str(structured.get(field) or "").strip()]
+    if missing_fields:
+        checks["structured_story_spine"] = False
+        errors.append("structured story spine is missing " + ", ".join(missing_fields))
+    if not checks["evidence_receipt"]:
+        errors.append("no article-level evidence IDs are recorded")
+    if not checks["source_receipt"]:
+        errors.append("no source receipt is recorded")
+    if not checks["mode_contract"]:
+        errors.append(f"unknown publication mode {mode!r}")
+    stored_editorial_review = receipt.get("editorial_review")
+    stored_review = stored_editorial_review if isinstance(stored_editorial_review, Mapping) else {}
+    editor_mode = _text(stored_review.get("mode"))
+    stored_status = _text(stored_review.get("status"))
+    if not errors and stored_review:
+        if editor_mode == "llm" and stored_status in {"approved", "held"}:
+            if stored_status == "held":
+                errors.extend(
+                    str(item).strip()
+                    for item in (stored_review.get("errors") or [])
+                    if str(item).strip()
+                )
+                if not errors:
+                    errors.append("the persisted desk review held this article")
+            status = stored_status
+        elif editor_mode or stored_status:
+            errors.append("editorial review receipt is incomplete or uses an unknown mode")
+            status = "held"
+        else:
+            status = "approved"
+    else:
+        status = "approved" if not errors else "held"
+    decision = _text(stored_review.get("decision")) if stored_review else ""
+    if decision not in {"approve", "modify", "hold"}:
+        decision = "approve" if status == "approved" else "hold"
+    note = _text(stored_review.get("note")) if stored_review else ""
+    if not note:
+        note = (
+            "Approved after deterministic evidence, source, and story-spine checks."
+            if status == "approved"
+            else "Held from the printed facade until the missing receipt or story field is repaired."
+        )
+    return {
+        "editor": "The Desk Editor",
+        "article_key": article_key,
+        "mode": editor_mode or "deterministic",
+        "model": _text(stored_review.get("model")),
+        "status": status,
+        "decision": decision,
+        "checks": checks,
+        "errors": list(dict.fromkeys(errors)),
+        "changes": [str(item) for item in (stored_review.get("changes") or []) if str(item).strip()],
+        "editor_notes": _text(stored_review.get("editor_notes")),
+        "note": note,
+    }
+
+
+def publication_template(article_key: str) -> dict[str, Any]:
+    """Return the reader layout contract for one newsroom desk."""
+
+    template = PUBLICATION_TEMPLATE_REGISTRY.get(str(article_key or ""))
+    if template is None:
+        return {
+            "template_id": "evidence-note",
+            "label": "Evidence note",
+            "layout": "rail",
+            "section": "The Front Office",
+            "list_preview_items": 3,
+        }
+    return dict(template)
+
+
+def publication_content_blocks(body: str, article_key: str = "") -> list[dict[str, Any]]:
+    """Convert stored markdown into safe, reusable reader blocks.
+
+    Markdown remains the durable interchange format for operators and writers.
+    The browser receives this small semantic projection so each template can
+    render paragraphs, section headers, and lists without reparsing prose or
+    inventing a second article model.
+    """
+
+    del article_key  # The layout contract is carried separately.
+    text = _strip_front_matter(str(body or ""))
+    blocks: list[dict[str, Any]] = []
+    paragraph: list[str] = []
+    bullets: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            value = " ".join(part.strip() for part in paragraph if part.strip()).strip()
+            if value:
+                blocks.append({"type": "paragraph", "text": value})
+            paragraph.clear()
+
+    def flush_bullets() -> None:
+        if bullets:
+            blocks.append({"type": "list", "items": list(bullets)})
+            bullets.clear()
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush_paragraph()
+            flush_bullets()
+            continue
+        if line.startswith("# "):
+            flush_paragraph()
+            flush_bullets()
+            continue
+        if line.startswith("## "):
+            flush_paragraph()
+            flush_bullets()
+            blocks.append({"type": "heading", "text": line[3:].strip()})
+            continue
+        if line.startswith("- "):
+            flush_paragraph()
+            bullets.append(line[2:].strip())
+            continue
+        flush_bullets()
+        paragraph.append(line)
+    flush_paragraph()
+    flush_bullets()
+    return [{"block_id": f"block-{index}", **block} for index, block in enumerate(blocks, start=1)]
+
+
+def _strip_front_matter(text: str) -> str:
+    value = str(text or "")
+    if not value.startswith("---"):
+        return value
+    parts = value.split("---", 2)
+    return parts[2].lstrip("\r\n") if len(parts) == 3 else value
 
 
 def _publication_reporter(
@@ -823,6 +1743,24 @@ def _number(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _market_clock_coverage(row: Mapping[str, Any]) -> int:
+    """Count comparable clocks for available-market preview ranking."""
+
+    try:
+        return int(float(_text(row.get("fit_coverage")).split("/", 1)[0]))
+    except (TypeError, ValueError):
+        return sum(
+            1
+            for field in (
+                "next_game_market_score",
+                "rest_of_season_market_score",
+                "dynasty_market_score",
+                "career_projection_score",
+            )
+            if _text(row.get(field))
+        )
 
 
 def _number_or_text(value: Any) -> str | float:

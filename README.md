@@ -196,9 +196,14 @@ The first deliverable exports:
 - `pick_ownership.csv`
 - `player_usage_weekly.csv`
 - `player_market_values.csv`
+- `market_consensus_values.csv`
 - `pick_market_values.csv`
 - `team_asset_inventory.csv`
-- `manager_event_log.csv` planned as a fuller event feed; manager behavior signals are exported now
+- `manager_event_log.csv`
+- `manager_season_history.csv`
+- `manager_cycle_profiles.csv`
+- `manager_valuation_profiles.csv`
+- `manager_transaction_preferences.csv`
 - `manager_behavior_signals.csv`
 - `team_needs_matrix.csv`
 - `liquidity_scores.csv`
@@ -211,13 +216,25 @@ The first deliverable exports:
 - `news_source_freshness.csv`
 - `player_projection_season.csv`
 - `player_projection_weekly.csv`
+- `projection_source_components.csv`
+- `source_accuracy_scores.csv`
 - `projection_source_freshness.csv`
+- `nfl_schedule.csv`
+- `nfl_team_defense_factors.csv`
 - `player_signal_scores.csv`
 - `breakout_candidates.csv`
 - `sell_candidates.csv`
 - `projection_market_gaps.csv`
 - `team_fit_scores.csv`
 - `action_recommendations.csv`
+- `news_market_edges.csv`
+- `player_horizon_market_scores.csv`
+- `available_player_horizon_scores.csv`
+- `horizon_snapshot_history.csv`
+- `horizon_score_accuracy.csv`
+- `horizon_market_movements.csv`
+- `counterparty_trade_edges.csv`
+- `counterparty_asset_interest.csv`
 - `refresh_metadata.csv`
 
 Analysis artifacts are generated separately under `data/analysis/`:
@@ -226,7 +243,14 @@ Analysis artifacts are generated separately under `data/analysis/`:
 - `target_theses.json`
 - `sell_theses.json`
 - `trade_theses.json`
+- `player_dossiers.json`
+- `manager_dossiers.json`
 - `daily_gm_brief.md`
+- `team_report.md`
+- `market_watch.md`
+- `horizon_watch.md`
+- `trade_desk.md`
+- `manager_intel.md`
 - `manager_dossiers.md`
 - `news_impact_brief.md`
 - `analysis_validation.json`

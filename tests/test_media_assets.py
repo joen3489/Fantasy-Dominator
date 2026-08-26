@@ -133,6 +133,7 @@ class MediaAssetContractTests(unittest.TestCase):
             scripts = [body for body in re.findall(r"<script(?:[^>]*)>([\s\S]*?)</script>", html) if "function render" in body]
             self.assertTrue(scripts, "The generated browser bundle must contain the app script")
             self.assertIn("Question-led data room", html)
+            self.assertIn("comparisons within position", html)
             self.assertIn('data-data-question="mispriced"', html)
             self.assertIn("renderDataRoomQuestions", html)
             self.assertIn("renderEditorialMedia", html)
@@ -220,6 +221,7 @@ class MediaAssetContractTests(unittest.TestCase):
                 "daily_brief": ("dailyGmBrief", "daily_gm_brief.md"),
                 "team_report": ("teamReport", "team_report.md"),
                 "market_watch": ("marketWatch", "market_watch.md"),
+                "horizon_watch": ("horizonWatch", "horizon_watch.md"),
                 "trade_desk": ("tradeDeskRead", "trade_desk.md"),
                 "manager_intel": ("managerIntel", "manager_intel.md"),
             }
@@ -230,6 +232,7 @@ class MediaAssetContractTests(unittest.TestCase):
                     for line in body.splitlines()
                     if not any(line.startswith(f"{field}:") for field in (
                         "reporter_name",
+                        "model_mode",
                         "evidence_fingerprint",
                         "fallback_reason",
                         "article_payload_json",
@@ -264,7 +267,7 @@ class MediaAssetContractTests(unittest.TestCase):
                 self.assertTrue(receipt["structured"]["visual_brief"])
                 self.assertIn("fallback_schema_version: deterministic_fallback_v2", rebuilt_app["analysis"][body_field])
             self.assertEqual(rebuilt_manifest["sourceRevision"], "new-release")
-            self.assertEqual(len(rebuilt_editorial["publication_articles"]), 5)
+            self.assertEqual(len(rebuilt_editorial["publication_articles"]), 6)
             self.assertTrue(all(article["fallback_reason"] for article in rebuilt_editorial["publication_articles"]))
             first_bundle_revision = rebuilt_manifest["bundleRevision"]
             with patch.dict(os.environ, {"RAILWAY_GIT_COMMIT_SHA": "new-release"}, clear=False):

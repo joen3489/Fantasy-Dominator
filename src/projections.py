@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from .availability import availability_note, current_availability_status
 from .utils import RAW_EXTERNAL_DIR
 
 
@@ -115,6 +116,15 @@ def _build_projection_source_rows(
                 player_stats = team_rows
 
         nflverse_projection = _project_player(player_stats, scoring, position)
+        current_availability = current_availability_status(player)
+        projection_note = str(nflverse_projection.get("projection_note") or "")
+        if current_availability == "no_current_nfl_team":
+            projection_note = (
+                f"{projection_note} Sleeper currently lists no NFL team; this is historical production evidence, "
+                "not a current-role or next-game forecast."
+            ).strip()
+        elif current_availability not in {"available", "unknown", "historical_unavailable"}:
+            projection_note = f"{projection_note} {availability_note(player)}".strip()
         rows.append(
             {
                 **identity,
@@ -135,7 +145,7 @@ def _build_projection_source_rows(
                         "projected_receptions": nflverse_projection["projected_receptions"],
                         "projected_receiving_yards": nflverse_projection["projected_receiving_yards"],
                         "projected_receiving_tds": nflverse_projection["projected_receiving_tds"],
-                        "projection_note": nflverse_projection["projection_note"],
+                        "projection_note": projection_note,
                     }
                 ),
                 "checked_at": now,

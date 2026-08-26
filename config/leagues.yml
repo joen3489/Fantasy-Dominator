@@ -6,6 +6,11 @@ external_sources:
     - nflverse
     - dynastyprocess
     - fantasy_nerds
+# Optional user-supplied canonical market exports. Relative paths are under
+# the configured data root; use {season} in a path when the file is seasonal.
+# Each CSV needs player_name, position, and market_value (0-100 canonical
+# scale). These rows are labeled user_provided and included in consensus.
+  market_value_files: []
 # Fantasy Nerds is a paid, explicitly user-configured source (Source Policy: allowed
 # independent of source_policy above, which only governs the open/legal free-source
 # set). Gated on the FANTASY_NERDS_API_KEY env var -- without it, this source is

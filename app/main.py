@@ -491,7 +491,21 @@ def create_app() -> FastAPI:
         if league_id:
             league = _owned_enabled_league(user, league_id)
             return _operator_status_for_user(user_id, league)
-        return _operator_status_for_user(user_id)
+            return _operator_status_for_user(user_id)
+
+    @app.get("/api/operator/generation-plan")
+    def operator_generation_plan(
+        request: Request,
+        league_id: str,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Preview article reuse and generation decisions without spending tokens."""
+
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, league_id)
+        paths = _private_paths(int(user["id"]), str(league["league_id"]))
+        context = _context_for_league(int(user["id"]), league)
+        return front_operator.plan_articles_workflow(paths, context)
 
     @app.post("/api/operator/build-packet")
     def operator_build_packet(
@@ -1228,13 +1242,15 @@ def _refresh_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
         front_scheduler.run_cycle(user_id=user_id)
         return {"state": "complete", "message": "All leagues refreshed and attention queue rebuilt."}
     context = _context_for_league(user_id, league)
+    paths = _private_paths(user_id, str(league["league_id"]))
     refresh_all(
         force=True,
         league_id=str(league["league_id"]),
         roster_id=league.get("roster_id"),
-        paths=_private_paths(user_id, str(league["league_id"])),
+        paths=paths,
         league_type=str(league.get("league_type") or "dynasty"),
         context=context,
+        run_mode="maintenance" if (paths.processed_dir / "teams.csv").is_file() else "bootstrap",
     )
     return {"state": "complete", "message": "Data refresh complete."}
 

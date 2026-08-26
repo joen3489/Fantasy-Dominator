@@ -39,6 +39,8 @@ def player_row(players: dict[str, dict[str, Any]], player_id: str | int | None) 
         "years_exp": player.get("years_exp", ""),
         "fantasy_positions": ";".join(player.get("fantasy_positions") or []),
         "status": player.get("status", ""),
+        "injury_status": player.get("injury_status", ""),
+        "injury_body_part": player.get("injury_body_part", ""),
     }
 
 

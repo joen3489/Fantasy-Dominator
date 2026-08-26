@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from src import articles, operator
 from src.llm import call_structured_tool, configured_llm
 from src.personas import persona_prompt_block, reporter_lineup
+from src.editorial import review_publication_article
 
 
 class FrontOfficeContractsTests(unittest.TestCase):
@@ -99,6 +100,7 @@ class FrontOfficeContractsTests(unittest.TestCase):
             result = call_structured_tool(
                 system_prompt="system",
                 evidence=[{"evidence_id": "p:1"}],
+                editorial_context=[{"kind": "peer_edition", "reporter": "Other desk", "excerpt": "A different read."}],
                 api_key="secret",
                 model="gpt-5.6-luna",
                 tool={
@@ -115,16 +117,116 @@ class FrontOfficeContractsTests(unittest.TestCase):
         self.assertEqual(request["json"]["reasoning"], {"effort": "high"})
         self.assertEqual(request["json"]["tool_choice"], {"type": "function", "name": "emit_article"})
         self.assertFalse(request["json"]["store"])
+        payload = json.loads(request["json"]["input"][1]["content"])
+        self.assertEqual(payload["editorial_context"][0]["kind"], "peer_edition")
+
+    def test_desk_editor_holds_an_article_without_a_source_receipt(self) -> None:
+        """Design source: AGENTS.md; publication must fail closed at the writer-to-reader seam."""
+
+        review = review_publication_article(
+            "market_watch",
+            "## Buy-Low Targets\nA read.",
+            {
+                "structured": {
+                    "headline": "A read",
+                    "thesis": "The price is worth checking.",
+                    "what_changed": "The packet changed.",
+                    "action": "Open the evidence.",
+                    "evidence_ids": ["player:1:1"],
+                    "source_ids": [],
+                }
+            },
+            "automatic_llm",
+        )
+
+        self.assertEqual(review["status"], "held")
+        self.assertIn("no source receipt", " ".join(review["errors"]))
+
+    def test_persisted_llm_editor_decision_is_visible_but_cannot_bypass_deterministic_gate(self) -> None:
+        """Design source: AGENTS.md; editorial approval is subordinate to validated evidence."""
+        receipt = {
+            "structured": {
+                "headline": "A supported read",
+                "thesis": "The packet supports a measured action.",
+                "what_changed": "The evidence packet changed.",
+                "action": "Open the receipt before acting.",
+                "evidence_ids": ["player:1:1"],
+                "source_ids": ["source:values"],
+            },
+            "editorial_review": {
+                "mode": "llm",
+                "model": "gpt-5.6-luna",
+                "status": "approved",
+                "decision": "modify",
+                "editor_notes": "Added a supported limitation.",
+                "changes": ["Clarified the evidence boundary."],
+            },
+        }
+        approved = review_publication_article("market_watch", "## Buy-Low Targets\nA read.", receipt, "automatic_llm")
+        self.assertEqual(approved["status"], "approved")
+        self.assertEqual(approved["decision"], "modify")
+        self.assertEqual(approved["mode"], "llm")
+
+        receipt["structured"]["source_ids"] = []
+        held = review_publication_article("market_watch", "## Buy-Low Targets\nA read.", receipt, "automatic_llm")
+        self.assertEqual(held["status"], "held")
+        self.assertIn("no source receipt", " ".join(held["errors"]))
+
+    def test_editor_candidate_must_be_complete_and_cited_before_modify_can_publish(self) -> None:
+        """Design source: docs/front_office_realization_epic.md; repair is a full replacement under the same evidence contract."""
+        article = articles.ARTICLES[0]
+        evidence = [{"evidence_id": "player:p1:1", "source_ids": ["source:stats"]}]
+        writer = {
+            "headline": "Writer read",
+            "thesis": "The writer sees a supported signal.",
+            "what_changed": "The packet changed.",
+            "action": "Compare the options.",
+            "confidence": "medium",
+            "narrative_markdown": "## Cornerstones\nWriter read.\n\n## Shop Candidates\nNames.",
+            "cited_evidence_ids": ["player:p1:1"],
+        }
+        editor = {
+            **writer,
+            "decision": "modify",
+            "editor_notes": "Tightened the claim.",
+            "changes": ["Added a limitation."],
+            "narrative_markdown": "## Cornerstones\nEditor read with a limitation.\n\n## Shop Candidates\nNames.",
+        }
+        writer_validation = operator.validate_article_output(writer, {"player:p1:1"}, article.headers, evidence)
+        candidate, review = operator._editor_review_result(
+            article,
+            writer,
+            writer_validation,
+            editor,
+            evidence,
+            "gpt-5.6-luna",
+        )
+        self.assertEqual(review["status"], "approved")
+        self.assertEqual(review["decision"], "modify")
+        self.assertIn("Editor read", candidate["narrative_markdown"])
+
+        invalid_editor = {**editor, "cited_evidence_ids": ["player:missing:9"]}
+        _, held_review = operator._editor_review_result(
+            article,
+            writer,
+            writer_validation,
+            invalid_editor,
+            evidence,
+            "gpt-5.6-luna",
+        )
+        self.assertEqual(held_review["status"], "held")
+        self.assertEqual(held_review["decision"], "hold")
 
     def test_reporter_lineup_has_distinct_default_lenses(self) -> None:
         lineup = reporter_lineup({})
 
         self.assertEqual(
             [item["persona_id"] for item in lineup],
-            ["topline_tony", "waiver_wire_waverly", "trade_desk_talia", "dossier_dana", "look_ahead_lonnie"],
+            ["topline_tony", "waiver_wire_waverly", "market_clock_morgan", "trade_desk_talia", "dossier_dana", "look_ahead_lonnie"],
         )
         self.assertIn("Trade Desk Talia", persona_prompt_block({}, "trade_desk"))
         self.assertIn("Waiver Wire Waverly", persona_prompt_block({}, "market_watch"))
+        self.assertIn("Market Clock Morgan", persona_prompt_block({}, "horizon_watch"))
 
 
 if __name__ == "__main__":

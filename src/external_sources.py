@@ -9,12 +9,13 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .utils import RAW_EXTERNAL_DIR, cache_is_fresh, dump_json, load_json
+from .utils import DATA_DIR, RAW_EXTERNAL_DIR, cache_is_fresh, dump_json, load_json
 
 
 DYNASTYPROCESS_VALUES_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values.csv"
 DYNASTYPROCESS_PICKS_URL = "https://raw.githubusercontent.com/DynastyProcess/data/master/files/values-picks.csv"
 NFLVERSE_USAGE_URL = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv"
+NFLVERSE_SCHEDULE_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
 FANTASY_NERDS_BASE_URL = "https://api.fantasynerds.com/v1/nfl"
 DEFAULT_EXTERNAL_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60
 
@@ -29,10 +30,16 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
         "player_market_values": pd.DataFrame(columns=_player_market_columns()),
         "pick_market_values": pd.DataFrame(columns=_pick_market_columns()),
         "player_usage_weekly": pd.DataFrame(columns=_usage_columns()),
+        "nfl_schedule": pd.DataFrame(columns=_schedule_columns()),
         "fantasy_nerds_projection_source": pd.DataFrame(columns=_fantasy_nerds_projection_source_columns()),
         "source_freshness": pd.DataFrame(columns=_freshness_columns()),
     }
     freshness_rows: list[dict[str, Any]] = []
+
+    manual_market_sources, manual_market_freshness = _load_user_market_files(config, season)
+    if not manual_market_sources.empty:
+        frames["market_value_sources"] = manual_market_sources
+    freshness_rows.extend(manual_market_freshness)
 
     # Fantasy Nerds is a paid, explicitly user-configured source (Source Policy: "Paid/API-key
     # sources explicitly configured by the user" are allowed independent of source_policy, which
@@ -55,6 +62,9 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
 
     if source_policy != "open_legal_only":
         freshness_rows.append(_freshness("external_sources", "disabled", "source_policy_not_open_legal_only", ""))
+        if not frames["market_value_sources"].empty:
+            frames["market_consensus_values"] = build_market_consensus_values(frames["market_value_sources"])
+            frames["player_market_values"] = _legacy_player_values_from_consensus(frames["market_consensus_values"])
         frames["source_freshness"] = pd.DataFrame(freshness_rows, columns=_freshness_columns())
         return frames
 
@@ -67,7 +77,15 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
             force,
             _external_cache_max_age_seconds(),
         )
-        frames["market_value_sources"] = _normalize_dynastyprocess_market_sources(values)
+        dynastyprocess_sources = _normalize_dynastyprocess_market_sources(values)
+        if frames["market_value_sources"].empty:
+            frames["market_value_sources"] = dynastyprocess_sources
+        else:
+            frames["market_value_sources"] = pd.concat(
+                [frames["market_value_sources"], dynastyprocess_sources],
+                ignore_index=True,
+                sort=False,
+            )
         frames["market_consensus_values"] = build_market_consensus_values(frames["market_value_sources"])
         frames["player_market_values"] = _legacy_player_values_from_consensus(frames["market_consensus_values"])
         freshness_rows.append(row | {"row_count": len(frames["market_value_sources"])})
@@ -94,6 +112,16 @@ def refresh_external_sources(config: dict[str, Any], force: bool = False) -> dic
         )
         frames["player_usage_weekly"] = _normalize_nflverse_usage(usage)
         freshness_rows.append(row | {"row_count": len(frames["player_usage_weekly"])})
+        schedule, row = _load_csv_source(
+            "nflverse",
+            "nfl_schedule",
+            NFLVERSE_SCHEDULE_URL,
+            RAW_EXTERNAL_DIR / "nflverse" / season / "games.csv",
+            force,
+            _external_cache_max_age_seconds(),
+        )
+        frames["nfl_schedule"] = _normalize_nflverse_schedule(schedule)
+        freshness_rows.append(row | {"row_count": len(frames["nfl_schedule"])})
 
     if not freshness_rows:
         freshness_rows.append(_freshness("external_sources", "disabled", "no_external_sources_enabled", ""))
@@ -136,6 +164,130 @@ def _load_csv_source(
             except Exception:
                 pass
         return pd.DataFrame(), _freshness(source, dataset, f"unavailable:{type(exc).__name__}", url, cache_path)
+
+
+def _load_user_market_files(
+    config: dict[str, Any], season: str
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    """Load optional user-provided canonical market exports.
+
+    User files are an explicit input seam, not a scraped provider. Relative
+    paths are resolved under the durable data root and values must already be
+    in the canonical market scale; no magnitude-based rescaling is attempted.
+    """
+
+    external = config.get("external_sources") or {}
+    configured = external.get("market_value_files") or []
+    if isinstance(configured, (str, Path)):
+        configured = [configured]
+    if not isinstance(configured, list):
+        configured = []
+
+    frames: list[pd.DataFrame] = []
+    freshness: list[dict[str, Any]] = []
+    for entry in configured:
+        spec = entry if isinstance(entry, dict) else {"path": entry}
+        raw_path = str(spec.get("path") or "").strip()
+        if not raw_path:
+            freshness.append(
+                _freshness(
+                    "user_market_file",
+                    "player_values",
+                    "disabled:user_file_path_missing",
+                    "manual_file:unconfigured",
+                )
+            )
+            continue
+        try:
+            rendered_path = raw_path.format(season=season)
+        except (KeyError, ValueError):
+            rendered_path = raw_path
+        path = Path(rendered_path).expanduser()
+        if not path.is_absolute():
+            path = DATA_DIR / path
+        trace = _manual_file_trace(path)
+        source = _manual_market_source_name(spec.get("source"), path)
+        source_url = f"manual_file:{trace}"
+        if not path.is_file():
+            freshness.append(
+                _freshness(source, "player_values", "disabled:user_file_missing", source_url, path)
+            )
+            continue
+        try:
+            raw = pd.read_csv(path)
+        except Exception as exc:
+            freshness.append(
+                _freshness(source, "player_values", f"unavailable:{type(exc).__name__}", source_url, path)
+            )
+            continue
+        normalized = _normalize_user_market_sources(raw, path, spec)
+        frames.append(normalized)
+        freshness.append(
+            _freshness(source, "player_values", "cached", source_url, path)
+            | {"row_count": len(normalized)}
+        )
+
+    if not frames:
+        return pd.DataFrame(columns=_market_source_columns()), freshness
+    return pd.concat(frames, ignore_index=True, sort=False)[_market_source_columns()], freshness
+
+
+def _normalize_user_market_sources(
+    frame: pd.DataFrame, path: Path, spec: dict[str, Any]
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    source = _manual_market_source_name(spec.get("source"), path)
+    file_trace = f"manual_file:{_manual_file_trace(path)}"
+    default_confidence = str(spec.get("confidence") or "medium").strip().lower()
+    if default_confidence not in {"high", "medium", "low"}:
+        default_confidence = "low"
+    default_format = str(spec.get("value_format") or "user_provided_canonical_0_100").strip()
+    for _, row in frame.fillna("").iterrows():
+        name = str(_first(row, ["player_name", "player", "name"])).strip()
+        position = str(_first(row, ["position", "pos"])).strip().upper()
+        value = _first(row, ["market_value", "consensus_value", "normalized_value"])
+        normalized_value = _number(value)
+        if not name or position not in {"QB", "RB", "WR", "TE"} or normalized_value <= 0:
+            continue
+        source_id = str(_first(row, ["sleeper_id", "player_id", "source_player_id"])).strip()
+        confidence = str(_first(row, ["source_confidence", "confidence"])).strip().lower() or default_confidence
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "low"
+        row_trace = str(row.get("source_trace") or "").strip()
+        trace = "; ".join(value for value in (file_trace, row_trace) if value)
+        rows.append(
+            {
+                "source": source,
+                "source_access_type": "user_provided",
+                "source_player_id": source_id,
+                "player_id": source_id,
+                "player_name": name,
+                "position": position,
+                "raw_value": normalized_value,
+                "normalized_value": normalized_value,
+                "market_rank": _number(_first(row, ["market_rank", "rank"])),
+                "value_format": str(row.get("value_format") or default_format),
+                "source_confidence": confidence,
+                "source_trace": trace,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    return pd.DataFrame(rows, columns=_market_source_columns())
+
+
+def _manual_market_source_name(value: Any, path: Path) -> str:
+    candidate = str(value or "").strip().lower()
+    if not candidate:
+        candidate = path.stem.lower()
+    candidate = re.sub(r"[^a-z0-9]+", "_", candidate).strip("_")
+    return f"user_provided_{candidate or 'market_file'}"
+
+
+def _manual_file_trace(path: Path) -> str:
+    try:
+        return path.relative_to(DATA_DIR).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _load_json_source(
@@ -262,9 +414,9 @@ def _normalize_dynastyprocess_market_sources(frame: pd.DataFrame) -> pd.DataFram
                 "raw_value": raw_value,
                 "normalized_value": _normalize_market_value(raw_value),
                 "market_rank": _number(_first(row, ["overall_rank", "rank", "ecr_2qb"])),
-                "value_format": "superflex_preferred",
+                "value_format": "superflex_preferred_value_2qb_x100",
                 "source_confidence": "high" if player_id not in ("", None) else "medium",
-                "source_trace": DYNASTYPROCESS_VALUES_URL,
+                "source_trace": f"{DYNASTYPROCESS_VALUES_URL};value_2qb/100",
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -361,15 +513,24 @@ def _normalize_nflverse_usage(frame: pd.DataFrame) -> pd.DataFrame:
 
     for _, row in frame.iterrows():
         player_id = _first(row, ["player_id", "gsis_id", "pfr_id"])
+        season = _first(row, ["season"])
+        week = _first(row, ["week"])
+        team = _first(row, ["recent_team", "team"])
+        opponent_team = _first(row, ["opponent_team"])
+        game_id = _first(row, ["game_id"])
+        if game_id in ("", None) and season not in ("", None) and week not in ("", None) and team and opponent_team:
+            game_id = f"{season}_{week}_{team}_{opponent_team}"
         rows.append(
             {
                 "source": "nflverse",
-                "season": _first(row, ["season"]),
-                "week": _first(row, ["week"]),
+                "season": season,
+                "week": week,
                 "player_id": str(player_id) if player_id not in ("", None) else "",
                 "player_name": _first(row, ["player_display_name", "player_name", "recent_team"]),
                 "position": _first(row, ["position"]),
-                "team": _first(row, ["recent_team", "team"]),
+                "team": team,
+                "opponent_team": opponent_team,
+                "game_id": game_id,
                 "targets": _number(_first(row, ["targets"])),
                 "carries": _number(_first(row, ["carries"])),
                 "receptions": _number(_first(row, ["receptions"])),
@@ -379,6 +540,46 @@ def _normalize_nflverse_usage(frame: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=_usage_columns())
+
+
+def _normalize_nflverse_schedule(frame: pd.DataFrame) -> pd.DataFrame:
+    """Keep the schedule seam small and explicit.
+
+    The raw games file is preserved by ``_load_csv_source``.  This normalized
+    table carries only regular-season identity and the fields needed to join a
+    player/team to the next opponent and to count future bye weeks.
+    """
+
+    rows: list[dict[str, Any]] = []
+    if frame.empty:
+        return pd.DataFrame(rows, columns=_schedule_columns())
+    for _, row in frame.iterrows():
+        game_type = str(_first(row, ["game_type"])).upper()
+        if game_type and game_type != "REG":
+            continue
+        season = _first(row, ["season"])
+        week = _first(row, ["week"])
+        away_team = str(_first(row, ["away_team"])).upper()
+        home_team = str(_first(row, ["home_team"])).upper()
+        if season in ("", None) or week in ("", None) or not away_team or not home_team:
+            continue
+        away_score = _first(row, ["away_score"])
+        home_score = _first(row, ["home_score"])
+        played = away_score not in ("", None) and home_score not in ("", None)
+        rows.append(
+            {
+                "season": season,
+                "week": week,
+                "game_id": _first(row, ["game_id"]),
+                "game_type": game_type or "REG",
+                "gameday": _first(row, ["gameday"]),
+                "away_team": away_team,
+                "home_team": home_team,
+                "schedule_status": "played" if played else "scheduled",
+                "source_trace": NFLVERSE_SCHEDULE_URL,
+            }
+        )
+    return pd.DataFrame(rows, columns=_schedule_columns())
 
 
 def _freshness(source: str, dataset: str, status: str, url: str, cache_path: Path | None = None) -> dict[str, Any]:
@@ -425,9 +626,11 @@ def _number(value: Any) -> float:
 
 
 def _normalize_market_value(value: float) -> float:
-    if value > 100:
-        return round(value / 100, 2)
-    return round(value, 2)
+    # DynastyProcess values.csv stores value_2qb in centipoints/x100 units.
+    # Dividing only values above 100 made a raw 93 look more valuable than a
+    # raw 7592 player after normalization. Keep the source scale explicit and
+    # normalize every non-negative source value consistently.
+    return round(value / 100, 2)
 
 
 def _consensus_confidence(source_count: int, disagreement: float, access_types: set[str], confidences: set[str]) -> str:
@@ -524,11 +727,27 @@ def _usage_columns() -> list[str]:
         "player_name",
         "position",
         "team",
+        "opponent_team",
+        "game_id",
         "targets",
         "carries",
         "receptions",
         "passing_attempts",
         "fantasy_points_ppr",
+        "source_trace",
+    ]
+
+
+def _schedule_columns() -> list[str]:
+    return [
+        "season",
+        "week",
+        "game_id",
+        "game_type",
+        "gameday",
+        "away_team",
+        "home_team",
+        "schedule_status",
         "source_trace",
     ]
 

@@ -214,6 +214,25 @@ class MultiLeagueLayerTests(unittest.TestCase):
         self.assertNotIn("skip", statuses)
         self.assertEqual(mocked_main.call_count, 2)
 
+    def test_refresh_user_passes_private_manager_profiles_into_scoped_context(self) -> None:
+        entries = [{"league_id": "league-a", "league_type": "dynasty", "roster_id": 2, "season": "2026"}]
+        manager_profile = {"roster_id": 8, "manager_name": "Observed Rival", "trade_style": "pick buyer"}
+        with patch.multiple(
+            refresh_all,
+            discover_leagues=MagicMock(return_value=entries),
+            save_registry=MagicMock(),
+        ):
+            with patch.object(refresh_all, "main", MagicMock()) as mocked_main:
+                with patch.object(db, "init_db"), patch.object(db, "set_sleeper_account"), patch.object(db, "start_refresh_run", return_value=None):
+                    with patch.object(db, "get_team_profile", return_value={"strategy_profile": {"team_direction": "rebuild"}}):
+                        with patch.object(db, "list_manager_trade_profiles", return_value=[manager_profile]):
+                            statuses = refresh_all.refresh_user("joe", "2026", user_id=17)
+
+        self.assertEqual(statuses["league-a"]["state"], "complete")
+        context = mocked_main.call_args.kwargs["context"]
+        self.assertEqual(context.manager_trade_profiles, [manager_profile])
+        self.assertEqual(context.strategy_profile["team_direction"], "rebuild")
+
     def test_refresh_all_main_keeps_legacy_defaults(self) -> None:
         signature = inspect.signature(refresh_all.main)
         self.assertEqual(signature.parameters["force"].default, False)
@@ -635,7 +654,13 @@ class FastAPIClerkAppTests(unittest.TestCase):
             "strategy_name": "Build through 2027",
             "team_direction": "rebuild",
             "contention_window": "2027-2029",
-            "strategy_profile": {"name": "Build through 2027", "team_direction": "rebuild"},
+            "strategy_profile": {
+                "name": "Build through 2027",
+                "team_direction": "rebuild",
+                "horizon_fit_weights": {
+                    "rebuilder": {"next_game": 5, "rest_of_season": 20, "dynasty": 45, "career_window": 30},
+                },
+            },
             "writer_preferences": {"persona_id": "scout", "custom_instructions": "Lead with role evidence."},
         }
         beta_profile = {
@@ -674,6 +699,10 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(
             self.client.get("/api/leagues/alpha/profile", cookies={"__session": clerk_token}).json()["strategy_profile"]["team_direction"],
             "rebuild",
+        )
+        self.assertEqual(
+            self.client.get("/api/leagues/alpha/profile", cookies={"__session": clerk_token}).json()["strategy_profile"]["horizon_fit_weights"]["rebuilder"]["dynasty"],
+            45,
         )
         self.assertEqual(
             self.client.get("/api/leagues/beta/profile", cookies={"__session": clerk_token}).json()["strategy_profile"]["team_direction"],
@@ -893,6 +922,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-profile-league', html)
         self.assertIn('Save league profile', html)
         self.assertIn('data-profile-field="persona_id"', html)
+        self.assertIn('data-profile-field="horizon_fit_weights"', html)
+        self.assertIn("Personal horizon weights", html)
+        self.assertIn("edition refresh queued", html)
         self.assertIn("Build manager trade profiles", html)
         self.assertIn('data-manager-trade-form', html)
         self.assertIn('data-manager-trade-field="trade_style"', html)
@@ -925,6 +957,9 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="article-shelf"', html)
         self.assertIn("Daily GM Brief", html)
         self.assertIn("Manager Intel", html)
+        self.assertIn("Market Clock Read", html)
+        self.assertIn("How value changes with time", html)
+        self.assertIn(f"/league/alpha/#view-trade-desk", html)
         self.assertIn("Edition:", html)
         self.assertIn("#view-draft-room", html)
         self.assertIn('data-testid="front-page"', html)
@@ -1525,7 +1560,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
     def test_identity_refresh_uses_stored_sleeper_account_and_repairs_stale_profile(self) -> None:
         token = self._token("user_identity_refresh")
-        self.client.get("/", cookies={"__session": token})
+        home = self.client.get("/", cookies={"__session": token})
+        self.assertIn("AbortController", home.text)
         user_id = self._user_id("user_identity_refresh")
         db.set_sleeper_account(user_id, "joe3489", "old-sleeper-id")
         db.upsert_user_league(
@@ -1686,6 +1722,34 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertNotIn("traceback", payload)
         status.assert_called_once_with(LeaguePaths.for_user_league(str(user_id), "status-league"))
 
+    def test_generation_plan_is_operator_gated_and_league_scoped(self) -> None:
+        token = self._token("user_generation_plan")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_generation_plan")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "plan-league", "season": "2026", "league_type": "dynasty", "name": "Plan League", "roster_id": 2},
+        )
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            denied = self.client.get("/api/operator/generation-plan?league_id=plan-league", cookies={"__session": token})
+            with patch(
+                "app.main.front_operator.plan_articles_workflow",
+                return_value={"state": "ready", "message": "No provider request was made.", "articles": {}},
+            ) as plan:
+                response = self.client.get(
+                    "/api/operator/generation-plan?league_id=plan-league",
+                    cookies={"__session": token},
+                    headers={"x-front-office-token": "operator-secret"},
+                )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["state"], "ready")
+        plan.assert_called_once()
+        self.assertEqual(plan.call_args.args[0], LeaguePaths.for_user_league(str(user_id), "plan-league"))
+        self.assertEqual(plan.call_args.args[1].league_id, "plan-league")
+
     def test_operator_status_reports_safe_selected_reader_contract(self) -> None:
         """Encodes AGENTS.md's deployment-proof rule without exposing bundle paths."""
         token = self._token("user_reader_receipt")
@@ -1837,7 +1901,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         user_id = int(user["id"])
         fallback = db.content_artifact_status(user_id, "content-league", "2026")
         self.assertEqual(fallback["state"], "fallback")
-        self.assertEqual(fallback["label"], "0/5 reporter articles · evidence-led fallback")
+        self.assertEqual(fallback["label"], "0/6 reporter articles · evidence-led fallback")
 
         db.record_content_artifact(
             user_id,
@@ -1862,7 +1926,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
             expected_model="gpt-5.6-luna",
         )
         self.assertEqual(partial["state"], "partial")
-        self.assertEqual(partial["label"], "1/5 reporter articles")
+        self.assertEqual(partial["label"], "1/6 reporter articles")
         self.assertEqual(partial["generated_keys"], ["team_report"])
         self.assertTrue(partial["last_generated_at"])
         self.assertEqual(partial["last_generated_model"], "gpt-5.6-luna")

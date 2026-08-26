@@ -19,6 +19,7 @@ class ReporterPersona:
     description: str
     voice_contract: str
     role: str = "analyst"
+    decision_lens: str = "multi_window"
 
 
 DEFAULT_PERSONA_ID = "front_office"
@@ -29,6 +30,7 @@ REPORTER_PERSONAS: dict[str, ReporterPersona] = {
         name="Topline Tony",
         description="The league's fast-moving news editor: stakes, matchups, and what changed this week.",
         role="league topline reporter",
+        decision_lens="next_game",
         voice_contract=(
             "Write like Topline Tony, a crisp beat reporter who starts with the week-defining development. "
             "Connect last week's moves to this week's matchups, name the stakes, and keep the reader moving. "
@@ -40,6 +42,7 @@ REPORTER_PERSONAS: dict[str, ReporterPersona] = {
         name="Waiver Wire Waverly",
         description="A patient market watcher who finds risers, fallers, and roster-specific fits.",
         role="waiver and player-market reporter",
+        decision_lens="rest_of_season",
         voice_contract=(
             "Write like Waiver Wire Waverly: curious, practical, and alert to the player behind the headline. "
             "Separate a real role change from a noisy box-score spike, explain fit for this roster, and label "
@@ -62,10 +65,25 @@ REPORTER_PERSONAS: dict[str, ReporterPersona] = {
         name="Look-Ahead Lonnie",
         description="A long-horizon strategist focused on schedules, windows, stashes, and deadlines.",
         role="long-horizon strategy reporter",
+        decision_lens="dynasty_career",
         voice_contract=(
             "Write like Look-Ahead Lonnie: calm, patient, and slightly early to the important thing. "
             "Favor timelines, playoff paths, schedule pressure, roster windows, and conditional stashes. "
             "Make the future actionable without pretending a projection is a promise."
+        ),
+    ),
+    "market_clock_morgan": ReporterPersona(
+        persona_id="market_clock_morgan",
+        name="Market Clock Morgan",
+        description="A horizon specialist who separates this week, the season, dynasty value, and the career window.",
+        role="horizon-market reporter",
+        decision_lens="multi_window",
+        voice_contract=(
+            "Write like Market Clock Morgan: keep the four decision windows on separate dials. Explain what is useful "
+            "this week, what compounds through the rest of the season, what belongs in a dynasty window, and what "
+            "the bounded career scenario adds. "
+            "Make contender-versus-rebuilder disagreement feel actionable without turning a percentile into a "
+            "cross-position ranking, dollar quote, or certainty."
         ),
     ),
     "dossier_dana": ReporterPersona(
@@ -118,12 +136,13 @@ REPORTER_PERSONAS: dict[str, ReporterPersona] = {
 }
 
 
-# The edition is a newsroom, not one voice repeated five times. League
+# The edition is a newsroom, not one voice repeated across every desk. League
 # preferences may override an assignment through ``article_reporters`` while
 # keeping these defaults useful for every newly linked league.
 DEFAULT_ARTICLE_REPORTERS: dict[str, str] = {
     "team_report": "topline_tony",
     "market_watch": "waiver_wire_waverly",
+    "horizon_watch": "market_clock_morgan",
     "trade_desk": "trade_desk_talia",
     "manager_intel": "dossier_dana",
     "daily_brief": "look_ahead_lonnie",
@@ -170,6 +189,7 @@ def persona_prompt_block(value: Any = None, article_key: str | None = None) -> s
     custom = preferences.get("custom_instructions", "")
     lines = [
         f"Reporter persona: {persona.name} ({persona.role}).",
+        f"Assigned decision lens: {persona.decision_lens}. Use this lens to prioritize the relevant clock; do not silently substitute another horizon.",
         f"Persona contract: {persona.voice_contract}",
         "The persona controls tone and emphasis only; it never overrides evidence, citations, or safety rules.",
     ]
@@ -193,6 +213,7 @@ def public_reporter_personas(include_newsroom: bool = False) -> list[dict[str, s
             "name": persona.name,
             "description": persona.description,
             "role": persona.role,
+            "decision_lens": persona.decision_lens,
         }
         for persona in personas
     ]
@@ -205,6 +226,7 @@ def persona_metadata(value: Any = None, article_key: str | None = None) -> dict[
         "name": persona.name,
         "description": persona.description,
         "role": persona.role,
+        "decision_lens": persona.decision_lens,
         "article_key": str(article_key or ""),
     }
 

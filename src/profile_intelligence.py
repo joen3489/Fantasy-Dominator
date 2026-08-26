@@ -7,6 +7,9 @@ from typing import Any
 
 import pandas as pd
 
+from .availability import availability_note as shared_availability_note
+from .manager_preferences import build_manager_transaction_preferences
+
 
 TAG_COLUMNS = ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"]
 CYCLE_COLUMNS = [
@@ -30,6 +33,11 @@ PLAYER_DOSSIER_COLUMNS = [
     "roster_id",
     "team_name",
     "roster_status",
+    "availability_scope",
+    "current_availability_status",
+    "injury_status",
+    "injury_body_part",
+    "availability_note",
     "market_value",
     "projected_fantasy_points",
     "projected_ppg",
@@ -76,6 +84,8 @@ def build_profile_intelligence_tables(
     player_signal_scores_df: pd.DataFrame,
     config: dict[str, Any] | None = None,
     team_asset_inventory_df: pd.DataFrame | None = None,
+    players_df: pd.DataFrame | None = None,
+    horizon_df: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     generated_at = datetime.now(timezone.utc).isoformat()
     current_season = _int((config or {}).get("current_season")) or None
@@ -103,12 +113,20 @@ def build_profile_intelligence_tables(
     )
     manager_tags = build_manager_profile_tags(manager_cycles, manager_profiles_df, generated_at)
     player_tags = build_player_profile_tags(player_dossiers, player_signal_scores_df, news_impact_df, generated_at)
+    manager_transaction_preferences = build_manager_transaction_preferences(
+        manager_profiles_df,
+        player_history,
+        roster_players_df,
+        players_df,
+        horizon_df,
+    )
     return {
         "manager_profile_tags": manager_tags,
         "manager_cycle_profiles": manager_cycles,
         "player_dossiers": player_dossiers,
         "player_transaction_history": player_history,
         "player_profile_tags": player_tags,
+        "manager_transaction_preferences": manager_transaction_preferences,
     }
 
 
@@ -322,6 +340,12 @@ def build_player_dossiers(
         asset = inventory.get((str(player.get("roster_id", "")), player_id), {})
         player_history = history.get(player_id) or history.get(str(player.get("player_name", "")).lower(), [])
         last_transaction = player_history[0].get("event_type", "") if player_history else ""
+        availability_status = str(
+            signal.get("current_availability_status")
+            or player.get("current_availability_status")
+            or ""
+        ).strip()
+        availability_note = str(signal.get("availability_note") or "").strip() or shared_availability_note(player)
         rows.append(
             {
                 "player_id": player_id,
@@ -331,6 +355,11 @@ def build_player_dossiers(
                 "roster_id": player.get("roster_id", ""),
                 "team_name": player.get("team_name", ""),
                 "roster_status": player.get("roster_status", ""),
+                "availability_scope": player.get("availability_scope", ""),
+                "current_availability_status": availability_status,
+                "injury_status": player.get("injury_status", ""),
+                "injury_body_part": player.get("injury_body_part", ""),
+                "availability_note": availability_note,
                 "market_value": round(_num(consensus.get("consensus_value") or signal.get("market_value") or asset.get("market_value")), 2),
                 "projected_fantasy_points": round(_num(projection.get("projected_fantasy_points")), 2),
                 "projected_ppg": round(_num(projection.get("projected_ppg")), 2),
@@ -353,6 +382,14 @@ def build_player_dossiers(
             }
         )
     return pd.DataFrame(rows, columns=PLAYER_DOSSIER_COLUMNS).sort_values(["team_name", "market_value", "projected_ppg"], ascending=[True, False, False])
+
+
+def _availability_note(status: Any, body_part: Any) -> str:
+    injury_status = str(status or "").strip()
+    body = str(body_part or "").strip()
+    if injury_status:
+        return f"{injury_status}{f' ({body})' if body else ''}; baseline projection does not adjust for availability"
+    return "No current Sleeper injury flag; baseline projection"
 
 
 def build_player_profile_tags(

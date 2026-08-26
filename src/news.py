@@ -54,7 +54,13 @@ def build_news_tables(
     events = _dedupe_events(events)
     news_events = pd.DataFrame(events, columns=_news_event_columns())
     matches = _match_news_events(news_events, players)
-    impact = _build_league_news_impact(news_events, matches, teams, roster_players)
+    impact = _build_league_news_impact(
+        news_events,
+        matches,
+        teams,
+        roster_players,
+        current_season=season,
+    )
 
     return {
         "news_events": news_events,
@@ -252,24 +258,42 @@ def _build_league_news_impact(
     matches: pd.DataFrame,
     teams: pd.DataFrame,
     roster_players: pd.DataFrame,
+    *,
+    current_season: str = "",
 ) -> pd.DataFrame:
     if news_events.empty or matches.empty:
         return pd.DataFrame([], columns=_impact_columns())
 
     team_names = {
-        str(row.get("roster_id")): row.get("team_name") or row.get("display_name") or ""
+        (str(row.get("league_id") or ""), str(row.get("roster_id"))): row.get("team_name") or row.get("display_name") or ""
         for _, row in teams.fillna("").iterrows()
     }
-    ownership: dict[str, dict[str, Any]] = {}
+    # Roster IDs are only unique inside a league. A current news event must not
+    # be projected into a completed season just because that player appeared
+    # there historically. Keep only the configured current-season ownership
+    # rows (with blank-season legacy rows allowed as explicitly unscoped).
+    # Within that scope, keep one owner receipt per league/player so a repeated
+    # roster snapshot cannot duplicate the same news event.
+    ownership: dict[tuple[str, str], dict[str, Any]] = {}
     for _, row in roster_players.fillna("").iterrows():
         player_id = str(row.get("player_id") or "")
         if player_id:
-            ownership[player_id] = {
+            row_season = str(row.get("season") or "").strip()
+            if current_season and row_season and row_season != str(current_season).strip():
+                continue
+            league_id = str(row.get("league_id") or "")
+            key = (league_id, player_id)
+            candidate = {
+                "league_id": league_id,
+                "season": row.get("season", ""),
                 "roster_id": row.get("roster_id", ""),
-                "team_name": row.get("team_name", "") or team_names.get(str(row.get("roster_id")), ""),
+                "team_name": row.get("team_name", "") or team_names.get((league_id, str(row.get("roster_id"))), ""),
                 "player_name": row.get("player_name", ""),
                 "position": row.get("position", ""),
             }
+            existing = ownership.get(key)
+            if existing is None or _season_number(candidate.get("season")) >= _season_number(existing.get("season")):
+                ownership[key] = candidate
 
     event_lookup = {str(row.get("event_id")): row for _, row in news_events.fillna("").iterrows()}
     rows: list[dict[str, Any]] = []
@@ -278,25 +302,30 @@ def _build_league_news_impact(
             continue
         event = event_lookup.get(str(match.get("event_id")), {})
         player_id = str(match.get("player_id") or "")
-        owner = ownership.get(player_id, {})
+        player_owners = [owner for (league_id, owned_player_id), owner in ownership.items() if owned_player_id == player_id]
+        if not player_owners:
+            player_owners = [{}]
         event_type = str(event.get("event_type") or "")
-        impact_type = _impact_type(event_type, event.get("title", ""), event.get("summary", ""), bool(owner))
-        rows.append(
-            {
-                "event_id": event.get("event_id", ""),
-                "source": event.get("source", ""),
-                "published_at": event.get("published_at", ""),
-                "player_id": player_id,
-                "player_name": match.get("matched_player_name") or event.get("player_name", ""),
-                "roster_id": owner.get("roster_id", ""),
-                "team_name": owner.get("team_name", ""),
-                "impact_type": impact_type,
-                "evidence": event.get("title", "") or event.get("summary", ""),
-                "risk": _impact_risk(impact_type),
-                "confidence": match.get("match_confidence", "low"),
-                "source_trace": event.get("source_trace", ""),
-            }
-        )
+        for owner in player_owners:
+            impact_type = _impact_type(event_type, event.get("title", ""), event.get("summary", ""), bool(owner))
+            rows.append(
+                {
+                    "event_id": event.get("event_id", ""),
+                    "source": event.get("source", ""),
+                    "published_at": event.get("published_at", ""),
+                    "player_id": player_id,
+                    "player_name": match.get("matched_player_name") or event.get("player_name", ""),
+                    "league_id": owner.get("league_id", ""),
+                    "season": owner.get("season", ""),
+                    "roster_id": owner.get("roster_id", ""),
+                    "team_name": owner.get("team_name", ""),
+                    "impact_type": impact_type,
+                    "evidence": event.get("title", "") or event.get("summary", ""),
+                    "risk": _impact_risk(impact_type),
+                    "confidence": match.get("match_confidence", "low"),
+                    "source_trace": event.get("source_trace", ""),
+                }
+            )
     return pd.DataFrame(rows, columns=_impact_columns())
 
 
@@ -319,6 +348,13 @@ def _impact_risk(impact_type: str) -> str:
     if impact_type in {"waiver_watch", "market_cooling"}:
         return "low"
     return "medium"
+
+
+def _season_number(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _infer_player_name(title: str, summary: str) -> str:
@@ -397,7 +433,7 @@ def _match_columns() -> list[str]:
 
 
 def _impact_columns() -> list[str]:
-    return ["event_id", "source", "published_at", "player_id", "player_name", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"]
+    return ["event_id", "source", "published_at", "player_id", "player_name", "league_id", "season", "roster_id", "team_name", "impact_type", "evidence", "risk", "confidence", "source_trace"]
 
 
 def _freshness_columns() -> list[str]:
