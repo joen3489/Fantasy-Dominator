@@ -1423,7 +1423,7 @@ def _publication_articles(
         reporter = _publication_reporter(dict(writer_preferences or {}), key, receipt, mode, default_reporter)
         template = publication_template(key)
         review = review_publication_article(key, body, receipt, mode)
-        published_body = body if review["status"] == "approved" else ""
+        published_body = body if review["status"] in {"approved", "fallback"} else ""
         output.append(
             {
                 "key": key,
@@ -1512,15 +1512,22 @@ def review_publication_article(
         else:
             status = "approved"
     else:
-        status = "approved" if not errors else "held"
+        if errors:
+            status = "held"
+        elif mode == "deterministic_template":
+            status = "fallback"
+        else:
+            status = "approved"
     decision = _text(stored_review.get("decision")) if stored_review else ""
     if decision not in {"approve", "modify", "hold"}:
-        decision = "approve" if status == "approved" else "hold"
+        decision = "approve" if status == "approved" else "keep_fallback" if status == "fallback" else "hold"
     note = _text(stored_review.get("note")) if stored_review else ""
     if not note:
         note = (
             "Approved after deterministic evidence, source, and story-spine checks."
             if status == "approved"
+            else "Published as the deterministic evidence-led fallback; no reporter draft is currently accepted."
+            if status == "fallback"
             else "Held from the printed facade until the missing receipt or story field is repaired."
         )
     return {

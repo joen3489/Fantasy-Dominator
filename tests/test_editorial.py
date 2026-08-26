@@ -503,6 +503,37 @@ class EditorialIssueTests(unittest.TestCase):
             self.assertEqual(article["reporter_persona"]["persona_id"], reporter_id)
             self.assertEqual(article["reporter_name"], article["reporter_persona"]["name"])
 
+    def test_deterministic_publication_is_labeled_fallback_not_editor_approved(self) -> None:
+        """Design source: AGENTS.md; fallback content must not imply a paid editor review."""
+        receipt = {
+            "mode": "deterministic_template",
+            "structured": {
+                "headline": "Evidence-led read",
+                "thesis": "The packet supports a bounded read.",
+                "what_changed": "The current refresh updated the packet.",
+                "action": "Open the source receipt before acting.",
+                "evidence_ids": ["player:11:1"],
+                "source_ids": ["source:stats"],
+            },
+        }
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "teamReport": "# Your Team Report\n\nA deterministic evidence-led report.",
+                "teamReportMode": "deterministic_template",
+                "articleReceipts": {"team_report": receipt},
+            },
+            league_id="fallback-review-league",
+            my_roster_id=2,
+            my_team_name="Fallback Team",
+        )
+
+        publication = issue["publication_articles"][0]
+        self.assertEqual(publication["publication_status"], "fallback")
+        self.assertEqual(publication["editorial_review"]["decision"], "keep_fallback")
+        self.assertIn("deterministic evidence-led fallback", publication["editorial_review"]["note"])
+        self.assertTrue(publication["body"])
+
     def test_private_manager_profile_changes_evidence_led_edition(self) -> None:
         issue = build_editorial_issue(
             {

@@ -462,6 +462,10 @@ validator and the deterministic gate. A persisted LLM hold suppresses the
 article body on the reader facade, while the review note, errors, and provider
 receipt remain inspectable. The editor is an evidence-bound repair layer, not a
 new source of player facts, projections, scores, manager motives, or actions.
+When a deterministic article passes the evidence checks without a reporter
+artifact, its publication status is `fallback` with decision `keep_fallback`:
+the content remains readable and linked to evidence, but the reader must not
+label it editor-approved or count it as a current reporter article.
 
 The writer validator also runs an evidence-aware claim-boundary check. A
 generated article is held if it uses unqualified projection or PPG language

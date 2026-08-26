@@ -20,6 +20,17 @@ worked. The route now returns the aggregate summary and includes the operator
 enabled flag in the empty-workspace case; the regression test protects this
 user-facing seam.
 
+## 2026-08-26 - Do not call deterministic fallback editor-approved
+
+The first production writer attempt refreshed the selected league and rebuilt
+the bundle, but its six visible articles remained deterministic because no
+current LLM artifacts were accepted. The publication reader previously
+defaulted any valid deterministic receipt to `Editor approved`, which blurred
+the difference between evidence-led continuity content and a paid reporter
+draft reviewed by the desk editor. Deterministic receipts now publish as
+`fallback` / `keep_fallback`: they remain readable and evidence-linked, but
+they do not receive editor-approved feedback or outcome controls.
+
 ## 2026-08-25 - Separate bootstrap from maintenance refreshes
 
 The refresh pipeline now has two lifecycle modes. Bootstrap is the first-time

@@ -262,6 +262,7 @@ EDITORIAL_STYLE = r"""
     .publication-media figcaption { padding: 6px 9px; color: var(--muted); background: #f1f3ed; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .publication-card .publication-receipt { margin-top: 14px; color: var(--muted); font-size: 12px; }
     .publication-review-approved { color: var(--buy); border-color: rgba(31, 111, 82, .35); }
+    .publication-review-fallback { color: var(--watch); border-color: rgba(176, 132, 43, .40); }
     .publication-review-held-label { color: var(--sell); border-color: rgba(154, 63, 45, .35); }
     .publication-review-held { margin: 12px 0; padding: 13px; border: 1px solid rgba(154, 63, 45, .28); border-radius: 10px; background: #fff2ed; color: var(--sell); }
     .publication-review-held p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; }
@@ -527,7 +528,8 @@ EDITORIAL_JS = r"""
     function publicationArticleMarkup(article) {
       const mode = String(article.mode || 'deterministic_template');
       const review = article.editorial_review || {};
-      const reviewStatus = String(article.publication_status || review.status || 'approved');
+      const reviewStatus = String(article.publication_status || review.status || (mode === 'deterministic_template' ? 'fallback' : 'approved'));
+      const isPrintable = reviewStatus === 'approved' || reviewStatus === 'fallback';
       const reporter = article.reporter_name || article.reporter_id || 'The Front Office';
       const structured = article.structured || {};
       const template = article.template || {};
@@ -575,11 +577,15 @@ EDITORIAL_JS = r"""
       const bodyMarkup = blocks.length ? publicationContentBlocksMarkup(blocks, template) : articleBody(article.body || '');
       const reviewMarkup = reviewStatus === 'approved'
         ? `<span class="tag publication-review-approved">${review.decision === 'modify' ? 'Editor revised' : 'Editor approved'}</span>`
+        : reviewStatus === 'fallback'
+          ? `<span class="tag publication-review-fallback">Evidence-led fallback</span>`
         : `<div class="publication-review-held"><strong>Held by The Desk Editor</strong><p>${escapeHtml(review.note || 'This report is not printed until its evidence receipt is repaired.')}</p>${Array.isArray(review.errors) && review.errors.length ? `<p>${escapeHtml(review.errors.join('; '))}</p>` : ''}</div>`;
       const reviewBadge = reviewStatus === 'approved'
         ? `<span class="tag publication-review-approved">${review.decision === 'modify' ? 'Editor revised' : 'Editor approved'}</span>`
+        : reviewStatus === 'fallback'
+          ? '<span class="tag publication-review-fallback">Evidence-led fallback</span>'
         : '<span class="tag publication-review-held-label">Held</span>';
-      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(reporter)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${reviewStatus === 'approved' ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
+      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(reporter)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${isPrintable ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
     }
 
     function publicationListItemMarkup(item) {
