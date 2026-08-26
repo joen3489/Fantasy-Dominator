@@ -2203,7 +2203,10 @@ def _page(
       // Luna plus an explicit editor pass can legitimately take several
       // minutes. Keep the receipt visible long enough to observe completion;
       // the durable status endpoint remains the authority if this tab sleeps.
-      for (let index = 0; index < 150; index += 1) {{
+      // Six Luna calls at the configured timeout can outlive the old five
+      // minute window. Keep polling for a bounded 30 minutes; the durable
+      // receipt remains authoritative if this tab sleeps.
+      for (let index = 0; index < 900; index += 1) {{
         await sleep(2000);
         await refreshOperatorStatus();
         render();
@@ -2903,6 +2906,7 @@ def _page(
       const rows = [
         {{ item: 'State', value: status.state || 'unknown' }},
         {{ item: 'Job', value: status.job || 'none' }},
+        {{ item: 'Stage', value: status.stage || 'unknown' }},
         {{ item: 'Message', value: displayedMessage }},
         {{ item: 'Updated at', value: status.updated_at || status.generated_at || '' }},
         {{ item: 'Operator enabled', value: status.operator_enabled ? 'yes' : 'no token configured' }},
@@ -2912,6 +2916,7 @@ def _page(
         {{ item: 'Writer provider', value: status.writer_provider || status.provider || '' }},
         {{ item: 'Writer model', value: status.writer_model || status.model || '' }},
         {{ item: 'Reasoning effort', value: status.writer_reasoning_effort || status.reasoning_effort || '' }},
+        {{ item: 'Writer timeout', value: status.writer_timeout_seconds || status.timeout_seconds ? `${{status.writer_timeout_seconds || status.timeout_seconds}}s per request` : '' }},
         {{ item: 'Publication', value: (status.content_status || {{}}).label || 'No publication receipt' }},
         {{ item: 'Bundle revision', value: (status.reader_bundle || {{}}).served_revision || (status.publication_receipt || {{}}).bundle_revision || manifest.bundleRevision || 'unbound' }},
         {{ item: 'Reader contract', value: (() => {{

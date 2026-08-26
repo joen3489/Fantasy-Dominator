@@ -143,6 +143,7 @@ def create_app() -> FastAPI:
             "writer_api_configured": writer_config["configured"],
             "writer_provider": writer_config["provider"],
             "writer_model": writer_config["model"],
+            "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
             "writer_api_key_env": writer_config["api_key_env"],
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
             "scheduler_enabled": scheduler_enabled,
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
                 "writer_provider": writer_config["provider"],
                 "writer_model": writer_config["model"],
                 "writer_reasoning_effort": writer_config["reasoning_effort"],
+                "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
                 "writer_api_key_env": writer_config["api_key_env"],
                 "continuity": _continuity_view(user_id),
                 "deployment_gate": _production_gate(),
@@ -1348,14 +1350,30 @@ def _refresh_and_rebuild_league(league: dict[str, Any], user_id: int) -> dict[st
 
 def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     if league is None:
+        front_operator.write_job_progress(
+            stage="refreshing",
+            message="Refreshing the linked league workspaces before the newsroom starts.",
+        )
         _refresh_job(None, user_id)
         results: dict[str, Any] = {}
         for row in db.list_user_leagues(user_id):
             if not int(row.get("enabled")):
                 continue
+            front_operator.write_job_progress(
+                stage="writing",
+                message=f"Writing the newsroom for {row.get('name') or row.get('league_id') or 'the selected league'}.",
+                league_id=str(row.get("league_id") or ""),
+                league_name=str(row.get("name") or ""),
+            )
             paths = _private_paths(user_id, str(row["league_id"]))
             context = _context_for_league(user_id, row)
             article_result = front_operator.generate_articles_workflow(paths, context)
+            front_operator.write_job_progress(
+                stage="publishing",
+                message=f"Publishing the refreshed reader bundle for {row.get('name') or row.get('league_id') or 'the selected league'}.",
+                league_id=str(row.get("league_id") or ""),
+                league_name=str(row.get("name") or ""),
+            )
             _rebuild_browser_job(row, user_id)
             results[str(row["league_id"])] = article_result
         states = [str(result.get("state") or "").lower() for result in results.values()]
@@ -1374,10 +1392,28 @@ def _generate_insights_job(league: dict[str, Any] | None, user_id: int) -> dict[
             ),
             "leagues": results,
         }
+    front_operator.write_job_progress(
+        stage="refreshing",
+        message=f"Refreshing {league.get('name') or league.get('league_id') or 'the selected league'} before the newsroom starts.",
+        league_id=str(league.get("league_id") or ""),
+        league_name=str(league.get("name") or ""),
+    )
     _refresh_job(league, user_id)
     paths = _private_paths(user_id, str(league["league_id"]))
     context = _context_for_league(user_id, league)
+    front_operator.write_job_progress(
+        stage="writing",
+        message=f"Writing the six reporter desks for {league.get('name') or league.get('league_id') or 'the selected league'}.",
+        league_id=str(league.get("league_id") or ""),
+        league_name=str(league.get("name") or ""),
+    )
     result = front_operator.generate_articles_workflow(paths, context)
+    front_operator.write_job_progress(
+        stage="publishing",
+        message=f"Publishing the reader bundle for {league.get('name') or league.get('league_id') or 'the selected league'}.",
+        league_id=str(league.get("league_id") or ""),
+        league_name=str(league.get("name") or ""),
+    )
     _rebuild_browser_job(league, user_id)
     # Keep the workflow's diagnostic message and per-article results. A generic
     # success-sounding message used to hide missing-key, provider, and
@@ -2032,6 +2068,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "writer_provider": writer_config["provider"],
             "writer_model": writer_config["model"],
             "writer_reasoning_effort": writer_config["reasoning_effort"],
+            "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
             "writer_api_key_env": writer_config["api_key_env"],
             "publication_receipt": publication_receipt,
             "content_status": content_status,

@@ -32,6 +32,18 @@ when Railway or a local secret store does not provide an override; operators
 can still choose a lower setting explicitly for a deliberate cost or latency
 tradeoff. The model slug and reasoning setting remain separate receipts.
 
+## 2026-08-26 - Long writer runs need a recoverable stage receipt
+
+The authenticated production data room exposed a real operational gap: the
+last recorded newsroom run was a recovered interruption with no per-desk
+receipts, while the reader correctly stayed at deterministic fallback. The
+writer now records queued, refreshing, writing, publishing, and terminal
+stages; the configured provider timeout is visible and bounded; and an outer
+refresh or bundle failure carries forward the last safe per-desk checkpoint.
+The browser watch window is long enough for six Luna/max calls plus refresh
+and publication. This improves operational truth without treating partial or
+database-only artifacts as printed content.
+
 ## 2026-08-26 - Keep the aggregate operator receipt total
 
 The authenticated aggregate `/api/operator/status` route must always return

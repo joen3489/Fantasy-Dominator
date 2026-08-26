@@ -12,6 +12,17 @@ Current publication note (2026-08-26): six desks are in the local contract.
 Older five-desk and `0/5` receipts in this historical log predate the
 Four-Window Market Read and are not current status claims.
 
+## 2026-08-26 - A running writer needs more than a spinner
+
+The durable operator receipt is part of the product contract, not merely a
+debug aid. Refresh, six provider calls, optional editor calls, and browser
+rebuild can exceed a short browser watch window or be interrupted by a daemon
+restart. Preserve the run ID, stage, model, timeout, active desk, and safe
+per-desk states. If a wrapper fails, carry that checkpoint into the terminal
+failure so the reader can distinguish no progress, partial work, and a
+published issue. The reader must remain deterministic fallback until the
+manifest and article receipts prove that copy is current.
+
 ## Product model
 
 Fantasy Dominator is a private personal headquarters with a media facade over

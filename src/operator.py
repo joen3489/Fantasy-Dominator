@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import traceback
+import uuid
 from copy import deepcopy
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from . import articles
 from .browser_site import build_browser_site
 from .context import FantasyContext
 from .league_paths import LeaguePaths
-from .llm import call_structured_tool, configured_llm, writer_api_configuration
+from .llm import call_structured_tool, configured_llm, llm_timeout_seconds, writer_api_configuration
 from .personas import persona_metadata, persona_prompt_block
 from .utils import (
     ANALYSIS_DIR,
@@ -150,6 +151,29 @@ DAILY_GM_BRIEF_TOOL = {
 _LOCK = threading.Lock()
 _ACTIVE_JOB = False
 
+# These fields are safe operational metadata. They let a failed or restarted
+# daemon retain the useful part of a long newsroom checkpoint without copying
+# prose, evidence packets, secrets, tracebacks, or host filesystem paths into
+# the reader-facing status response.
+_STATUS_CONTEXT_FIELDS = (
+    "run_id",
+    "started_at",
+    "stage",
+    "last_stage",
+    "league_id",
+    "league_name",
+    "provider",
+    "model",
+    "reasoning_effort",
+    "editor_mode",
+    "timeout_seconds",
+    "completed_count",
+    "total_count",
+    "current_article",
+    "current_reporter",
+    "articles",
+)
+
 
 @contextmanager
 def operator_scope(paths: LeaguePaths | None):
@@ -237,11 +261,53 @@ def start_job(
             current = status()
             if _ACTIVE_JOB or current.get("state") == "running":
                 return current | {"accepted": False, "message": "Another operator job is already running."}
-            _write_status(_base_status("running", f"{name} started.", job=name))
+            _write_status(
+                _base_status("running", f"{name} started.", job=name)
+                | {
+                    "run_id": uuid.uuid4().hex,
+                    "started_at": _now(),
+                    "stage": "queued",
+                }
+            )
             _ACTIVE_JOB = True
     thread = threading.Thread(target=_run_job, args=(name, job, paths), daemon=True)
     thread.start()
     return status(paths) | {"accepted": True}
+
+
+def write_job_progress(
+    *,
+    stage: str,
+    message: str,
+    league_id: str = "",
+    league_name: str = "",
+) -> dict[str, Any]:
+    """Persist a safe stage checkpoint for the currently running job.
+
+    The helper is intentionally a no-op unless the durable receipt already
+    says that a job is running. This keeps direct/unit-test calls from
+    creating a phantom run while ensuring refresh, writing, and publication
+    stages survive a slow provider call or a process restart.
+    """
+
+    current = _safe_json(STATUS_PATH)
+    if not current or current.get("state") != "running":
+        return current
+    payload = dict(current)
+    payload.update(
+        {
+            "state": "running",
+            "stage": str(stage or "working"),
+            "message": str(message or "Operator work is in progress."),
+            "updated_at": _now(),
+        }
+    )
+    if league_id:
+        payload["league_id"] = str(league_id)
+    if league_name:
+        payload["league_name"] = str(league_name)
+    _write_status(payload)
+    return payload
 
 
 def build_insight_packet(paths: LeaguePaths | None = None) -> dict[str, Any]:
@@ -1877,14 +1943,37 @@ def _run_job(
         with operator_scope(paths):
             try:
                 result = job()
-                _write_status(_base_status("complete", result.get("message", f"{name} complete."), job=name) | result)
-            except Exception as exc:  # pragma: no cover - status path is the behavior under test.
-                _write_status(
-                    _base_status("failed", f"{name} failed: {exc}", job=name)
-                    | {"traceback": traceback.format_exc()}
+                final_status = (
+                    _base_status("complete", result.get("message", f"{name} complete."), job=name)
+                    | result
+                    | {"stage": "complete", "completed_at": _now()}
                 )
+                _write_status(_carry_forward_status_context(final_status))
+            except Exception as exc:  # pragma: no cover - status path is the behavior under test.
+                prior_status = _safe_json(STATUS_PATH)
+                failure_status = _base_status("failed", f"{name} failed: {exc}", job=name) | {
+                    "stage": "failed",
+                    "last_stage": str(prior_status.get("stage") or "unknown"),
+                    "failed_at": _now(),
+                    "error_type": type(exc).__name__,
+                    "traceback": traceback.format_exc(),
+                }
+                _write_status(_carry_forward_status_context(failure_status, prior_status))
             finally:
                 _ACTIVE_JOB = False
+
+
+def _carry_forward_status_context(
+    payload: dict[str, Any],
+    prior: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Keep safe progress fields when a wrapper changes the terminal state."""
+
+    previous = prior if isinstance(prior, dict) else _safe_json(STATUS_PATH)
+    for field in _STATUS_CONTEXT_FIELDS:
+        if field not in payload and field in previous:
+            payload[field] = previous[field]
+    return payload
 
 
 def _evidence_items(generated_at: str) -> list[dict[str, Any]]:
@@ -1949,16 +2038,18 @@ def _write_writer_progress(
     current_label = current_article.title if current_article is not None else "Preparing the newsroom"
     if current_article is not None:
         current_label = f"{current_article.title} ({completed_count}/{total_count})"
-    _write_status(
+    progress = (
         _base_status(
             "running",
             f"{current_label} is in progress.",
             job="generate-insights",
         )
         | {
+            "stage": "writing",
             "provider": writer_api_configuration().get("provider", ""),
             "model": model,
             "reasoning_effort": reasoning_effort,
+            "timeout_seconds": llm_timeout_seconds(),
             "editor_mode": editor_mode,
             "completed_count": completed_count,
             "total_count": total_count,
@@ -1969,8 +2060,9 @@ def _write_writer_progress(
                 else {}
             ),
             "articles": article_receipts,
-        },
+        }
     )
+    _write_status(_carry_forward_status_context(progress))
 
 
 def _base_status(
@@ -2006,6 +2098,8 @@ def _reconcile_interrupted_status(status_path: Path, payload: dict[str, Any]) ->
             "state": "failed",
             "message": "The previous operator job was interrupted before completion; retry the run.",
             "updated_at": _now(),
+            "stage": "interrupted",
+            "last_stage": str(payload.get("stage") or "unknown"),
             "recovered_from_restart": True,
         }
     )

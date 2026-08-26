@@ -1752,3 +1752,17 @@ for a multi-call Luna run plus optional editor pass to finish. This improves
 operational truthfulness without changing evidence, scores, article reuse, or
 publication authority; the durable final article/editor receipts remain the
 only proof that copy was printed.
+
+## 2026-08-26 durable writer-run checkpoint repair
+
+Authenticated production verification found that a prior writer action could
+remain represented only by a recovered interruption after the process died,
+with no per-desk checkpoint for the manager to diagnose. The writer seam now
+records a run ID and explicit queued, refreshing, writing, publishing, and
+terminal stages; refresh and bundle wrappers emit their own safe checkpoints;
+and terminal failures carry forward the last model, timeout, active desk, and
+per-desk states. The provider timeout is configurable but bounded, and both
+browser writer controls watch long enough for the complete six-desk workflow.
+This is an operational prerequisite for the protected Luna publication, not
+proof that a paid run has completed; publication still requires the matching
+reader manifest and article receipts.

@@ -22,6 +22,7 @@ ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_API_VERSION = "2023-06-01"
 DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_LLM_TIMEOUT_SECONDS = 120
 _RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 
 
@@ -72,9 +73,27 @@ def writer_api_configuration() -> dict[str, Any]:
         "provider": config.provider,
         "model": config.model,
         "reasoning_effort": config.reasoning_effort,
+        "timeout_seconds": llm_timeout_seconds(),
         "api_key_env": config.api_key_env,
         "configured": bool(os.environ.get(config.api_key_env, "").strip()),
     }
+
+
+def llm_timeout_seconds() -> int:
+    """Return the bounded per-request timeout for a structured writer call.
+
+    Luna with maximum reasoning can legitimately take longer than the old
+    one-minute default. Keep the setting visible and bounded so a deployment
+    cannot accidentally turn a single desk into an unbounded background job.
+    """
+
+    raw = os.environ.get("FRONT_OFFICE_LLM_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_LLM_TIMEOUT_SECONDS
+    try:
+        return min(300, max(30, int(raw)))
+    except ValueError:
+        return DEFAULT_LLM_TIMEOUT_SECONDS
 
 
 def call_structured_tool(
@@ -85,17 +104,18 @@ def call_structured_tool(
     model: str,
     tool: dict[str, Any],
     editorial_context: list[dict[str, Any]] | None = None,
-    timeout: int = 60,
+    timeout: int | None = None,
     request_post: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Call one provider and return the forced structured tool payload."""
 
     post = request_post or requests.post
     config = configured_llm(model)
+    request_timeout = llm_timeout_seconds() if timeout is None else timeout
     context = editorial_context or []
     if config.provider == "openai":
-        return _call_openai(post, config, system_prompt, evidence, context, api_key, tool, timeout)
-    return _call_anthropic(post, config, system_prompt, evidence, context, api_key, tool, timeout)
+        return _call_openai(post, config, system_prompt, evidence, context, api_key, tool, request_timeout)
+    return _call_anthropic(post, config, system_prompt, evidence, context, api_key, tool, request_timeout)
 
 
 def _call_anthropic(

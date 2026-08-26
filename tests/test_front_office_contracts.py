@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src import articles, operator
-from src.llm import call_structured_tool, configured_llm
+from src.llm import call_structured_tool, configured_llm, llm_timeout_seconds
 from src.personas import persona_prompt_block, reporter_lineup
 from src.editorial import review_publication_article
 
@@ -68,6 +68,40 @@ class FrontOfficeContractsTests(unittest.TestCase):
             self.assertIn("interrupted", recovered["message"])
             saved = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["state"], "failed")
+
+    def test_outer_job_failure_preserves_the_last_writer_checkpoint(self) -> None:
+        """Design source: AGENTS.md; a wrapper failure must not erase per-desk progress."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status_dir = Path(tmp) / "operator" / "status"
+            status_path = status_dir / "operator_status.json"
+
+            with patch.object(operator, "STATUS_PATH", status_path), patch.object(
+                operator, "OPERATOR_STATUS_DIR", status_dir
+            ), patch.object(operator, "_ACTIVE_JOB", True):
+                operator._write_writer_progress(
+                    {"team_report": {"state": "complete", "message": "Team Report written."}},
+                    current_article=articles.ARTICLES[1],
+                    completed_count=1,
+                    total_count=6,
+                    model="gpt-5.6-luna",
+                    reasoning_effort="max",
+                    editor_mode="deterministic",
+                )
+
+                def fail_after_checkpoint() -> dict[str, object]:
+                    raise RuntimeError("bundle rebuild unavailable")
+
+                operator._run_job("generate-insights", fail_after_checkpoint)
+                receipt = json.loads(status_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(receipt["state"], "failed")
+            self.assertEqual(receipt["stage"], "failed")
+            self.assertEqual(receipt["last_stage"], "writing")
+            self.assertEqual(receipt["completed_count"], 1)
+            self.assertEqual(receipt["total_count"], 6)
+            self.assertIn("team_report", receipt["articles"])
+            self.assertEqual(receipt["error_type"], "RuntimeError")
 
     def test_evidence_packet_labels_source_quality_and_interpretation_boundary(self) -> None:
         """Encodes docs/front_office_realization_epic.md Workstream 2 and AGENTS.md evidence rules."""
@@ -176,6 +210,18 @@ class FrontOfficeContractsTests(unittest.TestCase):
         self.assertEqual(config.model, "gpt-5.6-luna")
         self.assertEqual(config.reasoning_effort, "max")
         self.assertEqual(config.api_key_env, "OPENAI_API_KEY")
+
+    def test_writer_timeout_is_visible_and_bounded(self) -> None:
+        """Design source: production_runbook.md; slow Luna calls need a bounded explicit timeout."""
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(llm_timeout_seconds(), 120)
+        with patch.dict(os.environ, {"FRONT_OFFICE_LLM_TIMEOUT_SECONDS": "15"}, clear=True):
+            self.assertEqual(llm_timeout_seconds(), 30)
+        with patch.dict(os.environ, {"FRONT_OFFICE_LLM_TIMEOUT_SECONDS": "999"}, clear=True):
+            self.assertEqual(llm_timeout_seconds(), 300)
+        with patch.dict(os.environ, {"FRONT_OFFICE_LLM_TIMEOUT_SECONDS": "not-a-number"}, clear=True):
+            self.assertEqual(llm_timeout_seconds(), 120)
 
     def test_luna_configuration_is_explicit_and_uses_openai_key(self) -> None:
         with patch.dict(

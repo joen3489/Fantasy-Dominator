@@ -92,7 +92,7 @@ Railway runs the authenticated app with:
 python -m app.main
 ```
 
-railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and the configured writer provider only for explicit writer actions. Luna uses `FRONT_OFFICE_LLM_PROVIDER=openai`, `FRONT_OFFICE_LLM_MODEL=gpt-5.6-luna`, `FRONT_OFFICE_LLM_REASONING_EFFORT=medium|high|xhigh|max`, and `OPENAI_API_KEY`. Anthropic remains available with `FRONT_OFFICE_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` during migration.
+railway.json health-checks /healthz. Configure Clerk issuer/JWKS/publishable-key settings required by app/auth.py, FRONT_OFFICE_OPERATOR_TOKEN for refresh/writer/browser-rebuild mutations, FRONT_OFFICE_SCHEDULER=on for the per-user scheduler, FRONT_OFFICE_REFRESH_INTERVAL for its interval, and the configured writer provider only for explicit writer actions. Luna uses `FRONT_OFFICE_LLM_PROVIDER=openai`, `FRONT_OFFICE_LLM_MODEL=gpt-5.6-luna`, `FRONT_OFFICE_LLM_REASONING_EFFORT=medium|high|xhigh|max`, `FRONT_OFFICE_LLM_TIMEOUT_SECONDS=30..300` (default 120), and `OPENAI_API_KEY`. Anthropic remains available with `FRONT_OFFICE_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` during migration.
 
 For a real production Clerk deployment, use a `pk_live_` publishable key and
 set `FRONT_OFFICE_PUBLIC_URL=https://your-public-domain/` (the app also falls

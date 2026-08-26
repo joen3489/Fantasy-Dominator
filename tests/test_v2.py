@@ -612,6 +612,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "writer_api_configured": False,
                 "writer_provider": "openai",
                 "writer_model": "gpt-5.6-luna",
+                "writer_timeout_seconds": 120,
                 "writer_api_key_env": "OPENAI_API_KEY",
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
@@ -805,6 +806,37 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(result["state"], "failed")
         self.assertEqual(result["message"], workflow["message"])
         self.assertEqual(result["model"], "gpt-5.6-luna")
+
+    def test_generate_insights_records_refresh_write_and_publish_stages(self) -> None:
+        """Design source: AGENTS.md; the real writer entry path must expose durable stage truth."""
+
+        league = {
+            "league_id": "stage-league",
+            "season": "2026",
+            "league_type": "dynasty",
+            "name": "Stage League",
+            "roster_id": 2,
+        }
+        workflow = {
+            "state": "partial",
+            "message": "Articles published: 5 current, 0 held by the desk editor, 1 failed, 0 skipped.",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+            "articles": {"team_report": {"state": "failed"}},
+        }
+        with patch("app.main.front_operator.write_job_progress") as progress, \
+             patch("app.main._refresh_job"), \
+             patch("app.main._context_for_league", return_value=object()), \
+             patch("app.main._private_paths", return_value=MagicMock()), \
+             patch("app.main.front_operator.generate_articles_workflow", return_value=workflow), \
+             patch("app.main._rebuild_browser_job", return_value={"state": "complete"}):
+            result = app_main._generate_insights_job(league, 42)
+
+        self.assertEqual(result["state"], "partial")
+        self.assertEqual(
+            [call.kwargs["stage"] for call in progress.call_args_list],
+            ["refreshing", "writing", "publishing"],
+        )
 
     def test_blank_profile_has_same_scalar_contract_as_saved_profile(self) -> None:
         token = self._token("user_blank_profile")

@@ -990,6 +990,7 @@
             <span>Provider: <strong>{{ writer_provider }}</strong></span>
             <span>Model: <strong>{{ writer_model }}</strong></span>
             <span>Reasoning: <strong>{{ writer_reasoning_effort }}</strong></span>
+            <span>Timeout: <strong>{{ writer_timeout_seconds }}s</strong></span>
             <span>API key: <strong>{{ "ready" if writer_api_configured else "missing" }}</strong></span>
             <span>Operator gate: <strong>{{ "configured; browser key required" if operator_status and operator_status.operator_enabled else "not configured" }}</strong></span>
           </div>
@@ -1426,7 +1427,10 @@
             button.textContent = allEditions ? 'Generate all editions' : 'Generate this edition';
           };
           const watchWriter = async (leagueId, button, allEditions = false) => {
-            for (let attempt = 0; attempt < 80; attempt += 1) {
+            // Luna/max plus the refresh and bundle rebuild can legitimately
+            // exceed the old two-minute watch window. Keep the browser watch
+            // bounded but long enough to observe a complete newsroom run.
+            for (let attempt = 0; attempt < 1200; attempt += 1) {
               await writerSleep(1500);
               try {
                 const statusUrl = allEditions
