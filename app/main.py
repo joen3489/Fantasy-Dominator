@@ -132,6 +132,7 @@ def create_app() -> FastAPI:
         }
         deployment_gate = _production_gate()
         writer_config = writer_api_configuration()
+        writer_editor_mode = front_operator.editorial_review_mode()
         return {
             "ok": True,
             "revision": _deployment_revision(),
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
             "writer_model": writer_config["model"],
             "writer_reasoning_effort": writer_config["reasoning_effort"],
             "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
+            "writer_editor_mode": writer_editor_mode,
             "writer_api_key_env": writer_config["api_key_env"],
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
             "scheduler_enabled": scheduler_enabled,
@@ -207,6 +209,7 @@ def create_app() -> FastAPI:
         )
         attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
         writer_config = writer_api_configuration()
+        writer_editor_mode = front_operator.editorial_review_mode()
         user_operator_status = _operator_status_for_user(user_id)
         selected_operator_status = next(
             (
@@ -254,6 +257,7 @@ def create_app() -> FastAPI:
                 "writer_model": writer_config["model"],
                 "writer_reasoning_effort": writer_config["reasoning_effort"],
                 "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
+                "writer_editor_mode": writer_editor_mode,
                 "writer_api_key_env": writer_config["api_key_env"],
                 "writer_retry_keys": writer_retry_keys,
                 "source_revision": _deployment_revision(),
@@ -2186,6 +2190,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "writer_model": writer_config["model"],
             "writer_reasoning_effort": writer_config["reasoning_effort"],
             "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
+            "writer_editor_mode": front_operator.editorial_review_mode(),
             "writer_api_key_env": writer_config["api_key_env"],
             "publication_receipt": publication_receipt,
             "content_status": content_status,

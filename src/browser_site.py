@@ -653,6 +653,7 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
                 "source_ids": source_ids,
             }
         mode = _front_matter_field(path, "model_mode") or "deterministic_template"
+        editorial_review = _front_matter_json(path, "editorial_review_json")
         raw_reporter_id = _front_matter_field(path, "reporter_persona")
         raw_reporter_name = _front_matter_field(path, "reporter_name")
         assigned_reporter_id = _front_matter_field(path, "assigned_reporter_persona") or raw_reporter_id
@@ -660,6 +661,9 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
         receipts[key] = {
             "mode": mode,
             "model": _front_matter_field(path, "model"),
+            "editor_mode": _front_matter_field(path, "editor_mode") or (
+                "llm" if editorial_review.get("mode") == "llm" else "deterministic"
+            ),
             # The raw byline remains available as the assigned newsroom lens,
             # but only automatic_llm artifacts can claim the persona wrote it.
             "reporter_id": "front_office" if mode == "deterministic_template" else raw_reporter_id,
@@ -672,7 +676,7 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             "source_receipt": source_receipt,
             "content_hash": content_hash,
             "structured": structured,
-            "editorial_review": _front_matter_json(path, "editorial_review_json"),
+            "editorial_review": editorial_review,
             "path": filename,
         }
     return receipts

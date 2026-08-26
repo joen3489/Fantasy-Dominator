@@ -998,6 +998,7 @@
             <span>Model: <strong>{{ writer_model }}</strong></span>
             <span>Reasoning: <strong>{{ writer_reasoning_effort }}</strong></span>
             <span>Timeout: <strong>{{ writer_timeout_seconds }}s</strong></span>
+            <span>Desk review: <strong>{{ writer_editor_mode }}</strong></span>
             <span>API key: <strong>{{ "ready" if writer_api_configured else "missing" }}</strong></span>
             <span>Operator gate: <strong>{{ "configured; browser key required" if operator_status and operator_status.operator_enabled else "not configured" }}</strong></span>
           </div>

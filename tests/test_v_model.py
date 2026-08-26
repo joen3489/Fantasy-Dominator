@@ -1163,6 +1163,7 @@ class VModelTests(unittest.TestCase):
             self.assertFalse((analysis / "team_report.md").exists())
             market_watch_text = (analysis / "market_watch.md").read_text(encoding="utf-8")
             self.assertIn("model_mode: automatic_llm", market_watch_text)
+            self.assertIn("editor_mode: deterministic", market_watch_text)
             self.assertIn("source_receipt_json:", market_watch_text)
 
     def test_targeted_writer_retry_skips_unselected_desks(self) -> None:
@@ -1395,6 +1396,7 @@ class VModelTests(unittest.TestCase):
             self.assertEqual(len(writer_calls), len(editor_calls))
             self.assertGreaterEqual(len(editor_calls), 5)
             report = (analysis / "team_report.md").read_text(encoding="utf-8")
+            self.assertIn("editor_mode: llm", report)
             self.assertIn("editorial_review_json:", report)
             front_matter = report.split("editorial_review_json: ", 1)[1].split("\n---", 1)[0]
             review = json.loads(front_matter)
@@ -2547,6 +2549,8 @@ class VModelTests(unittest.TestCase):
         self.assertEqual(manifest["editorialPath"], "data/editorial_issue.json")
         self.assertEqual(manifest["draftRoomPath"], "data/draft_room.json")
         self.assertEqual(manifest["mediaPath"], "data/media_manifest.json")
+        self.assertTrue(manifest["articleReceipts"])
+        self.assertTrue(all(receipt.get("editor_mode") == "deterministic" for receipt in manifest["articleReceipts"].values()))
         self.assertEqual(media_manifest["schema_version"], "media_manifest_v1")
         self.assertEqual(editorial["schema_version"], "issue_v1")
         self.assertEqual(manifest["payloadPolicy"], "initial_shell_plus_fact_bundle; audit_only_tables_lazy_loaded")

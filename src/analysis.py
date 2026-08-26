@@ -660,6 +660,9 @@ def _article_receipt_from_text(
 ) -> dict[str, Any]:
     receipt = dict(previous or {})
     mode = _front_matter_text_field(text, "model_mode") or receipt.get("mode") or GENERATION_MODE
+    editorial_review = _front_matter_json_text(text, "editorial_review_json") or receipt.get("editorial_review") or {}
+    if not isinstance(editorial_review, Mapping):
+        editorial_review = {}
     raw_reporter_id = _front_matter_text_field(text, "reporter_persona") or receipt.get("reporter_id") or ""
     raw_reporter_name = _front_matter_text_field(text, "reporter_name") or receipt.get("reporter_name") or ""
     assigned_reporter_id = (
@@ -682,6 +685,9 @@ def _article_receipt_from_text(
         {
             "mode": mode,
             "model": _front_matter_text_field(text, "model") or receipt.get("model") or "",
+            "editor_mode": _front_matter_text_field(text, "editor_mode") or receipt.get("editor_mode") or (
+                "llm" if editorial_review.get("mode") == "llm" else "deterministic"
+            ),
             "reporter_id": reporter_id,
             "reporter_name": reporter_name,
             "assigned_reporter_id": assigned_reporter_id,
@@ -692,7 +698,7 @@ def _article_receipt_from_text(
             "source_receipt": _front_matter_json_text(text, "source_receipt_json") or receipt.get("source_receipt") or {},
             "content_hash": hashlib.sha256(str(text).encode("utf-8")).hexdigest(),
             "structured": _front_matter_json_text(text, "article_payload_json") or receipt.get("structured") or {},
-            "editorial_review": _front_matter_json_text(text, "editorial_review_json") or receipt.get("editorial_review") or {},
+            "editorial_review": editorial_review,
             "path": filename,
         }
     )

@@ -239,6 +239,7 @@ def validate_paid_publication(payload: dict) -> list[str]:
     analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
     receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), dict) else {}
     expected_model = os.environ.get("FRONT_OFFICE_EXPECTED_WRITER_MODEL", "").strip().lower()
+    expected_editor_mode = os.environ.get("FRONT_OFFICE_EXPECTED_EDITOR_MODE", "").strip().lower()
     for article_key in EXPECTED_ARTICLE_KEYS:
         receipt = receipts.get(article_key)
         if not isinstance(receipt, dict):
@@ -252,6 +253,10 @@ def validate_paid_publication(payload: dict) -> list[str]:
         if expected_model and str(receipt.get("model") or "").strip().lower() != expected_model:
             errors.append(
                 f"paid publication receipt {article_key} model does not match {expected_model!r}"
+            )
+        if expected_editor_mode and str(receipt.get("editor_mode") or "").strip().lower() != expected_editor_mode:
+            errors.append(
+                f"paid publication receipt {article_key} editor mode does not match {expected_editor_mode!r}"
             )
         reporter_id = str(receipt.get("reporter_id") or "").strip().lower()
         assigned_reporter_id = str(receipt.get("assigned_reporter_id") or "").strip().lower()

@@ -1217,6 +1217,7 @@ def _render_article_markdown(
     structured: dict[str, Any] | None = None,
     source_receipt: dict[str, Any] | None = None,
     editorial_review: dict[str, Any] | None = None,
+    editor_mode: str = "deterministic",
 ) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
@@ -1225,6 +1226,7 @@ def _render_article_markdown(
         f"generated_at: {generated_at}",
         "model_mode: automatic_llm",
         f"model: {model}",
+        f"editor_mode: {str(editor_mode or 'deterministic').strip().lower()}",
         f"evidence_fingerprint: {evidence_fingerprint}",
         f"reporter_persona: {persona_metadata(writer_preferences, article_key)['persona_id']}",
         f"reporter_name: {persona_metadata(writer_preferences, article_key)['name']}",
@@ -1435,6 +1437,7 @@ def generate_articles_workflow(
                             "source_ids": final_validation.get("source_ids") or [],
                         },
                         editorial_review=editorial_review,
+                        editor_mode=editor_mode,
                     ),
                     encoding="utf-8",
                 )

@@ -32,6 +32,10 @@ Keep values in Railway variables or a local secret store; never commit them.
 - `FRONT_OFFICE_LLM_TIMEOUT_SECONDS` is optional and defaults to `120`; it is
   bounded to 30-300 seconds per structured provider request so Luna/max has
   time to finish without creating an unbounded job.
+- `FRONT_OFFICE_EDITOR_MODE` is optional and defaults to `deterministic`; set it
+  to `llm` for a paid Luna desk-editor pass after each writer draft. The active
+  mode is exposed in `/healthz`, the Writer Desk, and the operator receipt so a
+  run cannot be mistaken for having received an LLM edit.
 
 The model slug and reasoning setting are separate. `max` is a reasoning-effort
 value, not a model name. Anthropic remains a compatibility option during
@@ -47,6 +51,7 @@ migration when explicitly configured.
 
    ```powershell
    $env:FRONT_OFFICE_EXPECTED_REVISION = "<commit deployed to Railway>"
+   $env:FRONT_OFFICE_EXPECTED_EDITOR_MODE = "llm" # only for a paid Luna editor run
    python scripts\smoke_live.py
    ```
 

@@ -614,6 +614,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "writer_model": "gpt-5.6-luna",
                 "writer_reasoning_effort": "max",
                 "writer_timeout_seconds": 120,
+                "writer_editor_mode": "deterministic",
                 "writer_api_key_env": "OPENAI_API_KEY",
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
@@ -621,6 +622,20 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "deployment_blockers": [],
             },
         )
+
+    def test_healthz_reports_configured_desk_review_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CLERK_PUBLISHABLE_KEY": "pk_test_123",
+                "FRONT_OFFICE_EDITOR_MODE": "llm",
+            },
+            clear=False,
+        ):
+            response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["writer_editor_mode"], "llm")
 
     def test_valid_token_serves_home_and_auto_provisions_user(self) -> None:
         response = self.client.get("/", cookies={"__session": self._token("user_valid")})
@@ -647,6 +662,7 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("requires FRONT_OFFICE_OPERATOR_TOKEN", response.text)
         self.assertIn('data-testid="writer-readiness"', response.text)
         self.assertIn("gpt-5.6-luna", response.text)
+        self.assertIn("Desk review:", response.text)
         self.assertIn('data-testid="writer-setup-note"', response.text)
         self.assertIn("OPENAI_API_KEY", response.text)
 
