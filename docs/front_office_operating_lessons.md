@@ -641,6 +641,14 @@ excluded from peer context as well as the printed facade. The deterministic
 gate remains authoritative, and the editor cannot add facts, scores, motives,
 transactions, or sources.
 
+## 2026-08-26 - Assigned lens is not a fallback byline
+
+The newsroom lineup can shape which question a deterministic fallback prepares,
+but it must not imply that a named reporter wrote the copy before an accepted
+LLM receipt exists. The effective fallback byline is The Front Office; the
+intended desk is retained as an assigned lens for the next paid run. This keeps
+the media facade honest while preserving the future writer contract.
+
 ## 2026-08-26 - A market disagreement needs a decision surface
 
 Four separate clock-minus-market fields are useful evidence, but buried fields

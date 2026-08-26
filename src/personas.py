@@ -231,6 +231,19 @@ def persona_metadata(value: Any = None, article_key: str | None = None) -> dict[
     }
 
 
+def front_office_metadata(article_key: str | None = None) -> dict[str, str]:
+    """Return the literal Front Office byline, bypassing newsroom assignment."""
+
+    key = str(article_key or "")
+    return persona_metadata(
+        {
+            "persona_id": DEFAULT_PERSONA_ID,
+            "article_reporters": {key: DEFAULT_PERSONA_ID} if key else {},
+        },
+        article_key,
+    )
+
+
 def reporter_lineup(value: Any = None) -> list[dict[str, str]]:
     """Return the resolved reporter for every article in editorial order."""
 

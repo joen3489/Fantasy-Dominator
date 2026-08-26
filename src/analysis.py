@@ -11,7 +11,7 @@ import pandas as pd
 
 from .availability import baseline_ppg_text, current_availability_status
 from .manager_preferences import HORIZON_FIELD_LABELS
-from .personas import normalize_writer_preferences, persona_metadata
+from .personas import DEFAULT_PERSONA_ID, front_office_metadata, normalize_writer_preferences, persona_metadata
 from .utils import ANALYSIS_DIR
 
 
@@ -214,7 +214,13 @@ def _decorate_deterministic_article(
 ) -> str:
     """Give deterministic fallback articles the same inspectable receipt shape as LLM output."""
 
-    reporter = persona_metadata(writer_preferences, article_key)
+    assigned_reporter = persona_metadata(writer_preferences, article_key)
+    # A deterministic artifact is a Front Office publication, not a claim
+    # that the assigned Luna reporter actually wrote it. Preserve the desk
+    # assignment separately so a later paid run can use the same newsroom
+    # contract without laundering a fallback into generated editorial.
+    reporter = front_office_metadata(article_key)
+    text = _neutralize_fallback_body(text, assigned_reporter["name"])
     evidence_ids = _deterministic_evidence_ids(article_key, evidence_rows)
     source_ids = _deterministic_source_ids(evidence_rows, source_tables)
     related_entities = _deterministic_related_entities(evidence_rows)
@@ -244,6 +250,10 @@ def _decorate_deterministic_article(
         "fallback_schema_version": FALLBACK_ARTICLE_SCHEMA_VERSION,
         "headline": _article_headline(text, article_key),
         **editorial_fields,
+        "assigned_reporter_id": assigned_reporter["persona_id"],
+        "assigned_reporter_name": assigned_reporter["name"],
+        "reporter_id": reporter["persona_id"],
+        "reporter_name": reporter["name"],
         "risk": "Deterministic fallback content is not a newly generated analyst article.",
         "confidence": confidence,
         "related_entities": related_entities,
@@ -264,6 +274,8 @@ def _decorate_deterministic_article(
     fields = {
         "reporter_persona": reporter["persona_id"],
         "reporter_name": reporter["name"],
+        "assigned_reporter_persona": assigned_reporter["persona_id"],
+        "assigned_reporter_name": assigned_reporter["name"],
         "fallback_schema_version": FALLBACK_ARTICLE_SCHEMA_VERSION,
         "evidence_fingerprint": fingerprint,
         "fallback_reason": "No current LLM artifact; deterministic fallback from validated evidence.",
@@ -271,6 +283,27 @@ def _decorate_deterministic_article(
         "source_receipt_json": json.dumps(source_receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
     }
     return _replace_front_matter_fields(text, fields)
+
+
+def _neutralize_fallback_body(text: str, assigned_reporter_name: str) -> str:
+    """Remove a reporter byline from deterministic prose while preserving its assignment.
+
+    The low-level fallback builders intentionally know the newsroom lens so
+    their copy can be useful in isolation. Once the artifact is stamped as a
+    deterministic publication, that name would imply a paid reporter wrote it.
+    Keep the body readable and let the structured receipt carry the assignment.
+    """
+
+    assigned = str(assigned_reporter_name or "").strip()
+    if not assigned or assigned == "The Front Office":
+        return text
+    marker = "\n---"
+    end = str(text).find(marker, 3) if str(text).startswith("---") else -1
+    if end < 0:
+        return str(text).replace(assigned, "The Front Office")
+    front = str(text)[: end + len(marker)]
+    body = str(text)[end + len(marker) :]
+    return front + body.replace(assigned, "The Front Office")
 
 
 def upgrade_deterministic_article_receipts(
@@ -626,12 +659,33 @@ def _article_receipt_from_text(
     previous: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     receipt = dict(previous or {})
+    mode = _front_matter_text_field(text, "model_mode") or receipt.get("mode") or GENERATION_MODE
+    raw_reporter_id = _front_matter_text_field(text, "reporter_persona") or receipt.get("reporter_id") or ""
+    raw_reporter_name = _front_matter_text_field(text, "reporter_name") or receipt.get("reporter_name") or ""
+    assigned_reporter_id = (
+        _front_matter_text_field(text, "assigned_reporter_persona")
+        or receipt.get("assigned_reporter_id")
+        or raw_reporter_id
+    )
+    assigned_reporter_name = (
+        _front_matter_text_field(text, "assigned_reporter_name")
+        or receipt.get("assigned_reporter_name")
+        or raw_reporter_name
+    )
+    if mode == GENERATION_MODE:
+        reporter_id = DEFAULT_PERSONA_ID
+        reporter_name = "The Front Office"
+    else:
+        reporter_id = raw_reporter_id
+        reporter_name = raw_reporter_name
     receipt.update(
         {
-            "mode": _front_matter_text_field(text, "model_mode") or receipt.get("mode") or GENERATION_MODE,
+            "mode": mode,
             "model": _front_matter_text_field(text, "model") or receipt.get("model") or "",
-            "reporter_id": _front_matter_text_field(text, "reporter_persona") or receipt.get("reporter_id") or "",
-            "reporter_name": _front_matter_text_field(text, "reporter_name") or receipt.get("reporter_name") or "",
+            "reporter_id": reporter_id,
+            "reporter_name": reporter_name,
+            "assigned_reporter_id": assigned_reporter_id,
+            "assigned_reporter_name": assigned_reporter_name,
             "generated_at": _front_matter_text_field(text, "generated_at") or receipt.get("generated_at") or "",
             "evidence_fingerprint": _front_matter_text_field(text, "evidence_fingerprint") or receipt.get("evidence_fingerprint") or "",
             "fallback_reason": _front_matter_text_field(text, "fallback_reason") or receipt.get("fallback_reason") or "",

@@ -710,7 +710,8 @@
               <span><strong>{{ featured_receipt.label or "No source receipt" }}</strong></span>
               <span><strong>{{ featured_receipt.news_row_count or 0 }}</strong> news rows · {{ featured_receipt.news_current or 0 }}/{{ featured_receipt.news_total or 0 }} news sources current</span>
               <span>{{ featured_receipt.as_of_label or "Latest refresh" }}</span>
-              <span>Reporter: {{ featured_receipt.reporter_name or "The Front Office" }}</span>
+              <span>{{ featured_receipt.reporter_label or "Reporter" }}: {{ featured_receipt.reporter_name or "The Front Office" }}</span>
+              {% if featured_receipt.reporter_label == "Desk" and featured_receipt.assigned_reporter_name %}<span>Assigned lens: {{ featured_receipt.assigned_reporter_name }}</span>{% endif %}
               <span>Edition: <strong>{{ featured_receipt.writer_mode or "Evidence-led template" }}</strong></span>
               <span>Latest news: <strong>{{ featured_receipt.latest_news_label or "Not recorded" }}</strong></span>
               <span>Writer output: <strong>{{ featured_content.label or "Not recorded" }}</strong></span>
@@ -810,7 +811,7 @@
               {% if writer_preview.available %}<span class="readiness-badge ready">{{ writer_preview.mode_label }}</span>{% endif %}
             </div>
             {% if writer_preview.available %}
-              <p class="writer-preview-meta">{{ writer_preview.reporter_name }}{% if writer_preview.generated_at_label %} · {{ writer_preview.generated_at_label }}{% endif %}</p>
+              <p class="writer-preview-meta">{{ writer_preview.reporter_label or "Reporter" }}: {{ writer_preview.reporter_name }}{% if writer_preview.reporter_label == "Desk" and writer_preview.assigned_reporter_name %} · assigned lens: {{ writer_preview.assigned_reporter_name }}{% endif %}{% if writer_preview.generated_at_label %} · {{ writer_preview.generated_at_label }}{% endif %}</p>
               <p class="writer-preview-body">{{ writer_preview.text }}</p>
               <div class="writer-preview-footer">
                 <a href="/league/{{ featured_league.league_id }}/#view-today">Read the full brief →</a>

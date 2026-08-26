@@ -60,6 +60,12 @@ different questions:
 The voices can disagree. The evidence cannot be silently rewritten to make the
 voices agree.
 
+An assigned desk is not the same thing as a published byline. Before an
+accepted LLM receipt exists, the deterministic evidence-led fallback is owned
+by The Front Office and may show the intended reporter as an assigned lens.
+Only an accepted generated receipt may say that a named reporter wrote the
+section.
+
 ### 5. Persistent intelligence beats disposable prose
 
 Manager and team dossiers should accumulate durable understanding across

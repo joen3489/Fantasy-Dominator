@@ -652,11 +652,20 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
                 "source_count": len(source_ids),
                 "source_ids": source_ids,
             }
+        mode = _front_matter_field(path, "model_mode") or "deterministic_template"
+        raw_reporter_id = _front_matter_field(path, "reporter_persona")
+        raw_reporter_name = _front_matter_field(path, "reporter_name")
+        assigned_reporter_id = _front_matter_field(path, "assigned_reporter_persona") or raw_reporter_id
+        assigned_reporter_name = _front_matter_field(path, "assigned_reporter_name") or raw_reporter_name
         receipts[key] = {
-            "mode": _front_matter_field(path, "model_mode") or "deterministic_template",
+            "mode": mode,
             "model": _front_matter_field(path, "model"),
-            "reporter_id": _front_matter_field(path, "reporter_persona"),
-            "reporter_name": _front_matter_field(path, "reporter_name"),
+            # The raw byline remains available as the assigned newsroom lens,
+            # but only automatic_llm artifacts can claim the persona wrote it.
+            "reporter_id": "front_office" if mode == "deterministic_template" else raw_reporter_id,
+            "reporter_name": "The Front Office" if mode == "deterministic_template" else raw_reporter_name,
+            "assigned_reporter_id": assigned_reporter_id,
+            "assigned_reporter_name": assigned_reporter_name,
             "generated_at": _front_matter_field(path, "generated_at"),
             "evidence_fingerprint": _front_matter_field(path, "evidence_fingerprint"),
             "fallback_reason": _front_matter_field(path, "fallback_reason"),

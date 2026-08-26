@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from .availability import baseline_ppg_label
-from .personas import persona_metadata, reporter_lineup
+from .personas import front_office_metadata, persona_metadata, reporter_lineup
 
 
 PUBLICATION_TEMPLATE_REGISTRY: dict[str, dict[str, Any]] = {
@@ -146,6 +146,23 @@ def build_editorial_issue(
     }
     article_modes = _article_modes(analysis)
     publication_articles = _publication_articles(analysis, writer_preferences)
+    primary_publication = next(
+        (article for article in publication_articles if article.get("key") == "daily_brief"),
+        publication_articles[0] if publication_articles else None,
+    )
+    issue_reporter = (
+        primary_publication.get("reporter_persona")
+        if isinstance(primary_publication, Mapping)
+        else reporter
+    ) or reporter
+    assigned_issue_reporter = (
+        primary_publication.get("assigned_reporter_persona")
+        if isinstance(primary_publication, Mapping)
+        else reporter
+    ) or reporter
+    if primary_publication and primary_publication.get("mode") == "deterministic_template":
+        lead = _neutralize_reader_story(lead, issue_reporter, reporter)
+        stories = [_neutralize_reader_story(story, issue_reporter, reporter) for story in stories]
     edition_label = _edition_label(as_of)
     team_label = my_team_name or "Your team"
     front_page_panels = _front_page_panels(
@@ -191,7 +208,7 @@ def build_editorial_issue(
         "as_of_label": f"As of {edition_label}" if edition_label else "As of the latest refresh",
         "team_name": team_label,
         "headline": lead["headline"],
-        "dek": _issue_dek(team_label, lead, signal_summary, persona_id),
+        "dek": _issue_dek(team_label, lead, signal_summary, issue_reporter.get("persona_id", persona_id)),
         "writer_mode": _writer_mode_label(article_modes),
         "article_modes": article_modes,
         "publication_articles": publication_articles,
@@ -210,7 +227,9 @@ def build_editorial_issue(
         },
         "front_page_panels": front_page_panels,
         "question_prompts": question_prompts,
-        "reporter_persona": reporter,
+        "reporter_label": "Desk" if primary_publication and primary_publication.get("mode") == "deterministic_template" else "Reporter",
+        "reporter_persona": issue_reporter,
+        "assigned_reporter_persona": assigned_issue_reporter,
         "reporter_lineup": reporter_lineup(writer_preferences),
         "freshness_label": source_summary["label"],
         "latest_news_published_at": latest_news_published_at,
@@ -1421,9 +1440,11 @@ def _publication_articles(
         default_reporter = persona_metadata(dict(writer_preferences or {}), key)
         mode = _text(receipt.get("mode") or analysis.get(mode_field)) or "deterministic_template"
         reporter = _publication_reporter(dict(writer_preferences or {}), key, receipt, mode, default_reporter)
+        assigned_reporter = _assigned_publication_reporter(dict(writer_preferences or {}), key, receipt, default_reporter)
         template = publication_template(key)
         review = review_publication_article(key, body, receipt, mode)
         published_body = body if review["status"] in {"approved", "fallback"} else ""
+        structured = _publication_structured(receipt, mode, assigned_reporter)
         output.append(
             {
                 "key": key,
@@ -1437,13 +1458,17 @@ def _publication_articles(
                 "reporter_id": reporter["persona_id"],
                 "reporter_name": reporter["name"],
                 "reporter_persona": reporter,
+                "reporter_label": "Desk" if mode == "deterministic_template" else "Reporter",
+                "assigned_reporter_id": assigned_reporter["persona_id"],
+                "assigned_reporter_name": assigned_reporter["name"],
+                "assigned_reporter_persona": assigned_reporter,
                 "generated_at": _text(receipt.get("generated_at")),
                 "evidence_fingerprint": _text(receipt.get("evidence_fingerprint")),
                 "fallback_reason": _text(receipt.get("fallback_reason")),
                 "source_receipt": dict(receipt.get("source_receipt") or {}) if isinstance(receipt.get("source_receipt"), Mapping) else {},
                 "content_hash": _text(receipt.get("content_hash")),
                 "model": _text(receipt.get("model")),
-                "structured": dict(receipt.get("structured") or {}) if isinstance(receipt.get("structured"), Mapping) else {},
+                "structured": structured,
                 "publication_status": review["status"],
                 "editorial_review": review,
             }
@@ -1628,18 +1653,17 @@ def _publication_reporter(
     mode: str,
     default_reporter: dict[str, str],
 ) -> dict[str, str]:
-    """Resolve one coherent reporter identity for a published article.
+    """Resolve the effective byline for a published article.
 
-    Older deterministic receipts may contain the generic ``front_office`` ID
-    while the article body was already assigned a newsroom reporter. Treat
-    that generic value as missing for fallback content. For a real generated
+    Deterministic fallback content is always published by The Front Office;
+    its assigned newsroom desk is carried separately. For a real generated
     receipt, preserve the reporter that actually wrote the artifact, but only
     when it resolves to a known persona.
     """
 
     receipt_id = _text(receipt.get("reporter_id")).lower()
-    if mode == "deterministic_template" and receipt_id in {"", "front_office"}:
-        return default_reporter
+    if mode == "deterministic_template":
+        return front_office_metadata(article_key)
     if not receipt_id:
         return default_reporter
     scoped = dict(writer_preferences)
@@ -1648,6 +1672,66 @@ def _publication_reporter(
     scoped["article_reporters"] = overrides
     candidate = persona_metadata(scoped, article_key)
     return candidate if candidate["persona_id"] == receipt_id else default_reporter
+
+
+def _assigned_publication_reporter(
+    writer_preferences: dict[str, Any],
+    article_key: str,
+    receipt: Mapping[str, Any],
+    default_reporter: dict[str, str],
+) -> dict[str, str]:
+    assigned_id = _text(receipt.get("assigned_reporter_id"))
+    if not assigned_id:
+        assigned_id = _text(receipt.get("reporter_id"))
+    if not assigned_id or assigned_id == "front_office":
+        return default_reporter
+    scoped = dict(writer_preferences)
+    overrides = dict(scoped.get("article_reporters") or {})
+    overrides[article_key] = assigned_id
+    scoped["article_reporters"] = overrides
+    candidate = persona_metadata(scoped, article_key)
+    return candidate if candidate["persona_id"] == assigned_id else default_reporter
+
+
+def _publication_structured(
+    receipt: Mapping[str, Any],
+    mode: str,
+    assigned_reporter: Mapping[str, Any],
+) -> dict[str, Any]:
+    structured = dict(receipt.get("structured") or {}) if isinstance(receipt.get("structured"), Mapping) else {}
+    if mode != "deterministic_template":
+        return structured
+    assigned_name = _text(assigned_reporter.get("name"))
+    if not assigned_name or assigned_name == "The Front Office":
+        return structured
+
+    def neutralize(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(assigned_name, "The Front Office")
+        if isinstance(value, list):
+            return [neutralize(item) for item in value]
+        if isinstance(value, dict):
+            return {key: neutralize(item) for key, item in value.items()}
+        return value
+
+    return neutralize(structured)
+
+
+def _neutralize_reader_story(
+    story: Mapping[str, Any],
+    reporter: Mapping[str, Any],
+    assigned_reporter: Mapping[str, Any],
+) -> dict[str, Any]:
+    result = dict(story)
+    existing = result.get("reporter_persona") if isinstance(result.get("reporter_persona"), Mapping) else assigned_reporter
+    result["assigned_reporter_persona"] = dict(existing)
+    result["assigned_reporter_id"] = _text(existing.get("persona_id"))
+    result["assigned_reporter_name"] = _text(existing.get("name"))
+    result["reporter_persona"] = dict(reporter)
+    result["reporter_id"] = _text(reporter.get("persona_id")) or "front_office"
+    result["reporter_name"] = _text(reporter.get("name")) or "The Front Office"
+    result["reporter_label"] = "Desk"
+    return result
 
 
 def _writer_mode_label(article_modes: Mapping[str, str]) -> str:

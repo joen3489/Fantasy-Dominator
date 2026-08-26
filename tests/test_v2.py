@@ -1776,6 +1776,21 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(receipt["writer_mode"], "Evidence-led template")
         self.assertEqual(receipt["latest_news_label"], "Not recorded")
 
+    def test_source_receipt_view_labels_fallback_as_desk_and_preserves_assigned_lens(self) -> None:
+        """Design source: AGENTS.md; a deterministic fallback cannot claim a reporter byline."""
+        receipt = _source_receipt_view(
+            {
+                "reporter_label": "Desk",
+                "reporter_persona": {"name": "The Front Office"},
+                "assigned_reporter_persona": {"name": "Look-Ahead Lonnie"},
+                "writer_mode": "Evidence-led template",
+            }
+        )
+
+        self.assertEqual(receipt["reporter_label"], "Desk")
+        self.assertEqual(receipt["reporter_name"], "The Front Office")
+        self.assertEqual(receipt["assigned_reporter_name"], "Look-Ahead Lonnie")
+
     def test_source_receipt_view_groups_real_news_datasets(self) -> None:
         receipt = _source_receipt_view(
             {

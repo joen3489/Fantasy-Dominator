@@ -10,6 +10,15 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-26 - A fallback needs an honest byline
+
+The deterministic fallback was visibly labeled as fallback, but its assigned
+newsroom persona still appeared as the reporter in the headquarters receipt,
+preview, and publication cards. That blurred the difference between a desk
+assignment and a paid Luna article. Fallback receipts now use The Front Office
+as the effective byline, retain the intended reporter as an assigned lens, and
+keep the six-person newsroom available for a validated writer run.
+
 ## 2026-08-26 - Make the universal price question explicit
 
 The Four-Window Market Board now has a dedicated Market Price view. It sorts

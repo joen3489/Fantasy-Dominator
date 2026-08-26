@@ -363,7 +363,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-writer-mode" class="tag issue-writer-mode">Evidence-led template</span>
           </div>
           <div class="issue-byline">
-            <span id="issue-reporter">Reporter is loading</span>
+            <span id="issue-reporter">Byline is loading</span>
             <span id="issue-as-of">As of the latest refresh</span>
             <span id="issue-freshness">Freshness is loading</span>
             <span id="issue-latest-news">Latest news is loading</span>
@@ -411,7 +411,7 @@ EDITORIAL_JS = r"""
       setText('issue-headline', issue.headline || 'Your edition is waiting for a refresh');
       setText('issue-dek', issue.dek || 'No editorial read has been compiled yet.');
       setText('issue-as-of', issue.as_of_label || 'As of the latest refresh');
-      setText('issue-reporter', (issue.reporter_persona || {}).name || 'The Front Office');
+      setText('issue-reporter', `${issue.reporter_label || 'Reporter'}: ${(issue.reporter_persona || {}).name || 'The Front Office'}`);
       setText('issue-freshness', issue.freshness_label || 'Freshness unavailable');
       setText('issue-writer-mode', issue.writer_mode || 'Evidence-led template');
       setText('issue-latest-news', issue.latest_news_label ? `Latest news ${issue.latest_news_label}` : 'Latest news not recorded');
@@ -544,6 +544,10 @@ EDITORIAL_JS = r"""
       const reviewStatus = String(article.publication_status || review.status || (mode === 'deterministic_template' ? 'fallback' : 'approved'));
       const isPrintable = reviewStatus === 'approved' || reviewStatus === 'fallback';
       const reporter = article.reporter_name || article.reporter_id || 'The Front Office';
+      const assignedReporter = article.assigned_reporter_name || '';
+      const byline = mode === 'deterministic_template'
+        ? `Desk: ${reporter}${assignedReporter ? ` · assigned lens: ${assignedReporter}` : ''}`
+        : `Reporter: ${reporter}`;
       const structured = article.structured || {};
       const template = article.template || {};
       const layout = String(template.layout || 'rail').replace(/[^a-z0-9_-]/gi, '');
@@ -578,7 +582,7 @@ EDITORIAL_JS = r"""
         const deskReview = review.mode === 'llm'
           ? `<p><strong>Desk review:</strong> ${escapeHtml(review.decision || 'hold')}${review.model ? ` · ${escapeHtml(review.model)}` : ''}${review.editor_notes ? ` · ${escapeHtml(review.editor_notes)}` : ''}</p>`
           : '';
-        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>Reporter: ${escapeHtml(reporter)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${deskReview}${visualDirection}${mediaReceipt}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
+        return `<details class="publication-receipt"><summary>Show publication receipt</summary><p>${escapeHtml(byline)}. Mode: ${escapeHtml(articleModeLabel(mode))}. ${fingerprint}${article.model ? ` Model: ${escapeHtml(article.model)}.` : ''} Source receipt: ${escapeHtml(structured.source_quality || 'unattributed')} (${escapeHtml(String(structured.source_count ?? 0))}).${fallbackReason}</p>${deskReview}${visualDirection}${mediaReceipt}${evidenceTrace}${sourceTrace}<p><a href="#view-data-room">Open the Data Room</a> to inspect the underlying tables, freshness, and limitations.</p></details>`;
       })();
       const actions = reviewStatus === 'approved'
         ? `<div class="publication-actions" aria-label="Explicit article feedback"><button type="button" data-content-interaction="useful" data-artifact-key="${escapeHtml(article.key || '')}">Useful</button><button type="button" data-content-interaction="not_useful" data-artifact-key="${escapeHtml(article.key || '')}">Needs work</button><button type="button" data-content-interaction="evidence_opened" data-artifact-key="${escapeHtml(article.key || '')}">Evidence reviewed</button></div>`
@@ -598,7 +602,7 @@ EDITORIAL_JS = r"""
         : reviewStatus === 'fallback'
           ? '<span class="tag publication-review-fallback">Evidence-led fallback</span>'
         : '<span class="tag publication-review-held-label">Held</span>';
-      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(reporter)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${isPrintable ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
+      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(byline)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${isPrintable ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
     }
 
     function publicationListItemMarkup(item) {

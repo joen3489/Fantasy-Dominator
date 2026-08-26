@@ -571,8 +571,8 @@ class DeterministicArticleTests(unittest.TestCase):
             self.assertIn("league_news_impact", payload["source_tables"])
             self.assertIn("matchups", payload["source_tables"])
 
-    def test_default_fallback_articles_use_distinct_newsroom_reporters(self) -> None:
-        """Encodes docs/reporter_personas.md and docs/front_office_principles.md's distinct-lens rule."""
+    def test_default_fallback_articles_keep_assigned_lenses_without_faking_reporter_byline(self) -> None:
+        """Design source: AGENTS.md; only accepted LLM receipts may claim a reporter wrote the article."""
         expected = {
             "daily_gm_brief.md": "look_ahead_lonnie",
             "team_report.md": "topline_tony",
@@ -586,14 +586,18 @@ class DeterministicArticleTests(unittest.TestCase):
             build_analysis_artifacts(analysis_dir, {}, {}, 2)
             for filename, reporter_id in expected.items():
                 text = (analysis_dir / filename).read_text(encoding="utf-8")
-                self.assertIn(f"reporter_persona: {reporter_id}", text)
+                self.assertIn("reporter_persona: front_office", text)
+                self.assertIn(f"assigned_reporter_persona: {reporter_id}", text)
                 self.assertIn("reporter_name:", text)
+                self.assertIn("assigned_reporter_name:", text)
                 self.assertIn("evidence_fingerprint:", text)
                 self.assertIn("fallback_reason:", text)
                 self.assertIn("article_payload_json:", text)
                 payload_line = next(line for line in text.splitlines() if line.startswith("article_payload_json: "))
                 payload = json.loads(payload_line.split(": ", 1)[1])
                 self.assertEqual(payload["fallback_schema_version"], "deterministic_fallback_v2")
+                self.assertEqual(payload["reporter_id"], "front_office")
+                self.assertEqual(payload["assigned_reporter_id"], reporter_id)
                 self.assertTrue(payload["lede"])
                 self.assertTrue(payload["thesis"])
                 self.assertTrue(payload["what_changed"])

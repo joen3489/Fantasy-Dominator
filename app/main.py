@@ -27,7 +27,7 @@ from src.editorial import build_editorial_issue
 from src.league_paths import LeaguePaths
 from src.league_registry import discover_leagues, save_registry
 from src.llm import writer_api_configuration
-from src.personas import persona_metadata, public_reporter_personas, reporter_lineup
+from src.personas import front_office_metadata, persona_metadata, public_reporter_personas, reporter_lineup
 from src.sleeper_api import SleeperAPI
 from src.team_identity import resolve_team_name
 from src.utils import DATA_DIR, load_config, load_json
@@ -1826,6 +1826,8 @@ def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]
         "generated_at_label": "",
         "reporter_persona": "",
         "reporter_name": "The Front Office",
+        "reporter_label": "Desk",
+        "assigned_reporter_name": "",
     }
     path = _private_paths(user_id, str(league.get("league_id") or "")).analysis_dir / "daily_gm_brief.md"
     if not path.is_file():
@@ -1893,7 +1895,10 @@ def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]
     }.get(mode, "Writer output")
     generated_at = front_matter.get("generated_at", "").strip()
     generated_at_label = generated_at.replace("T", " ").replace("+00:00", " UTC")
-    persona = persona_metadata({"persona_id": front_matter.get("reporter_persona", "")})
+    raw_reporter_id = front_matter.get("reporter_persona", "")
+    raw_reporter_name = front_matter.get("reporter_name", "")
+    assigned_persona = persona_metadata({"persona_id": front_matter.get("assigned_reporter_persona") or raw_reporter_id})
+    persona = front_office_metadata() if mode == "deterministic_template" else persona_metadata({"persona_id": raw_reporter_id})
     return {
         "available": True,
         "text": preview,
@@ -1903,6 +1908,8 @@ def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]
         "generated_at_label": generated_at_label,
         "reporter_persona": persona["persona_id"],
         "reporter_name": persona["name"],
+        "reporter_label": "Desk" if mode == "deterministic_template" else "Reporter",
+        "assigned_reporter_name": assigned_persona["name"] if mode == "deterministic_template" else raw_reporter_name,
     }
 
 
@@ -2010,6 +2017,8 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
     )
     reporter = editorial.get("reporter_persona") if isinstance(editorial, dict) else {}
     reporter_name = reporter.get("name") if isinstance(reporter, dict) else ""
+    assigned_reporter = editorial.get("assigned_reporter_persona") if isinstance(editorial, dict) else {}
+    reporter_label = str(editorial.get("reporter_label") or "Reporter") if isinstance(editorial, dict) else "Reporter"
     writer_mode = (
         str(editorial.get("writer_mode") or "Evidence-led template")
         if isinstance(editorial, dict)
@@ -2034,6 +2043,8 @@ def _source_receipt_view(editorial: dict[str, Any]) -> dict[str, Any]:
         "checked_at": checked_at,
         "as_of_label": str(editorial.get("as_of_label") or "Latest refresh"),
         "reporter_name": str(reporter_name or "The Front Office"),
+        "reporter_label": reporter_label,
+        "assigned_reporter_name": str((assigned_reporter or {}).get("name") or ""),
         "writer_mode": writer_mode,
         "latest_news_published_at": str(editorial.get("latest_news_published_at") or ""),
         "latest_news_label": str(editorial.get("latest_news_label") or "Not recorded"),

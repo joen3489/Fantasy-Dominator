@@ -468,8 +468,8 @@ class EditorialIssueTests(unittest.TestCase):
             {"morning-ledger", "team-notebook", "market-ticker", "four-window-ledger", "trade-desk", "manager-dossier"},
         )
 
-    def test_fallback_publication_receipts_use_the_assigned_newsroom_reporter(self) -> None:
-        """Encodes docs/front_office_principles.md's analyst-lens contract at the reader seam."""
+    def test_fallback_publication_receipts_use_front_office_byline_and_keep_assigned_lens(self) -> None:
+        """Design source: AGENTS.md; fallback content must not impersonate a paid reporter."""
         analysis = {
             "dailyGmBrief": "Daily fallback",
             "teamReport": "Team fallback",
@@ -499,9 +499,51 @@ class EditorialIssueTests(unittest.TestCase):
         }
         for article in issue["publication_articles"]:
             reporter_id = expected[article["key"]]
-            self.assertEqual(article["reporter_id"], reporter_id)
-            self.assertEqual(article["reporter_persona"]["persona_id"], reporter_id)
+            self.assertEqual(article["reporter_id"], "front_office")
+            self.assertEqual(article["reporter_persona"]["persona_id"], "front_office")
+            self.assertEqual(article["assigned_reporter_id"], reporter_id)
+            self.assertEqual(article["assigned_reporter_persona"]["persona_id"], reporter_id)
+            self.assertEqual(article["reporter_label"], "Desk")
             self.assertEqual(article["reporter_name"], article["reporter_persona"]["name"])
+
+    def test_fallback_issue_and_story_byline_are_front_office_not_assigned_persona(self) -> None:
+        """Design source: docs/front_office_principles.md; trust requires visible publication provenance."""
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "dailyGmBrief": "# Daily GM Brief\n\nLook-Ahead Lonnie should not appear as a writer here.",
+                "dailyGmBriefMode": "deterministic_template",
+                "articleReceipts": {
+                    "daily_brief": {
+                        "mode": "deterministic_template",
+                        "reporter_id": "look_ahead_lonnie",
+                        "reporter_name": "Look-Ahead Lonnie",
+                        "assigned_reporter_id": "look_ahead_lonnie",
+                        "assigned_reporter_name": "Look-Ahead Lonnie",
+                        "structured": {
+                            "headline": "Evidence-led read",
+                            "thesis": "The packet supports a bounded read.",
+                            "what_changed": "The current refresh updated the packet.",
+                            "action": "Open the receipt.",
+                            "evidence_ids": ["player:11:1"],
+                            "source_ids": ["source:stats"],
+                            "dek": "Look-Ahead Lonnie reads the packet.",
+                        },
+                    }
+                },
+            },
+            league_id="fallback-byline-league",
+            my_roster_id=2,
+            my_team_name="Fallback Byline Team",
+        )
+
+        self.assertEqual(issue["reporter_label"], "Desk")
+        self.assertEqual(issue["reporter_persona"]["persona_id"], "front_office")
+        self.assertEqual(issue["assigned_reporter_persona"]["persona_id"], "look_ahead_lonnie")
+        self.assertEqual(issue["publication_articles"][0]["reporter_name"], "The Front Office")
+        self.assertEqual(issue["publication_articles"][0]["assigned_reporter_name"], "Look-Ahead Lonnie")
+        self.assertEqual(issue["publication_articles"][0]["structured"]["dek"], "The Front Office reads the packet.")
+        self.assertTrue(all(story["reporter_name"] == "The Front Office" for story in issue["stories"]))
 
     def test_deterministic_publication_is_labeled_fallback_not_editor_approved(self) -> None:
         """Design source: AGENTS.md; fallback content must not imply a paid editor review."""
