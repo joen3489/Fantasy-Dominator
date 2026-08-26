@@ -986,6 +986,9 @@
           <h2>Writer Desk</h2>
           <p>Run the selected league's reporters after a refresh. This is an explicit, cost-incurring action; the operator key is used for this request only and is never saved.</p>
           <p class="writer-note" data-testid="writer-content-status">Selected league: {{ (featured_league.content_status or {}).label or "No writer receipt yet" }}.</p>
+          {% set selected_writer_job = selected_operator_status.get("job", "") %}
+          {% set selected_writer_state = selected_operator_status.get("state", "") %}
+          {% set selected_writer_terminal = selected_writer_job == "generate-insights" and selected_writer_state in ["complete", "partial", "failed"] %}
           <div class="writer-readiness" data-testid="writer-readiness">
             <span>Provider: <strong>{{ writer_provider }}</strong></span>
             <span>Model: <strong>{{ writer_model }}</strong></span>
@@ -1010,7 +1013,13 @@
             <button class="primary-button" type="button" data-writer-button>Generate this edition</button>
             <button class="refresh-button" type="button" data-writer-all-button>Generate all editions</button>
           </div>
-          <span class="writer-status" data-writer-status role="status"></span>
+          <span class="writer-status{% if selected_writer_state == "failed" %} error{% endif %}" data-writer-status data-testid="writer-run-status" role="status">
+            {% if selected_writer_job == "generate-insights" and selected_writer_state == "running" %}
+              {{ selected_operator_status.get("message") or "Writer run is in progress." }}{% if selected_operator_status.get("total_count") is not none %} ({{ selected_operator_status.get("completed_count") or 0 }}/{{ selected_operator_status.get("total_count") }} desks complete){% endif %}
+            {% elif selected_writer_terminal %}
+              Last writer run: {{ selected_operator_status.get("message") or selected_writer_state|capitalize }}
+            {% endif %}
+          </span>
         </section>
       {% endif %}
 

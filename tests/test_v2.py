@@ -649,6 +649,45 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn('data-testid="writer-setup-note"', response.text)
         self.assertIn("OPENAI_API_KEY", response.text)
 
+    def test_home_surfaces_selected_league_writer_run_state_after_reload(self) -> None:
+        """Design source: AGENTS.md; a cost-incurring run must remain truthful after a page reload."""
+
+        token = self._token("user_writer_status_home")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_status_home")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "writer-status", "season": "2026", "league_type": "dynasty", "name": "Writer Status", "roster_id": 1},
+        )
+        running = {
+            "state": "running",
+            "job": "generate-insights",
+            "message": "Trade Desk Talia (2/6) is in progress.",
+            "updated_at": "2026-08-26T18:00:00+00:00",
+            "completed_count": 2,
+            "total_count": 6,
+            "operator_enabled": True,
+        }
+        with patch("app.main.front_operator.status", return_value=running):
+            response = self.client.get("/?league_id=writer-status", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-testid="writer-run-status"', response.text)
+        self.assertIn("Trade Desk Talia (2/6) is in progress.", response.text)
+        self.assertIn("(2/6 desks complete)", response.text)
+
+        interrupted = running | {
+            "state": "failed",
+            "message": "The previous operator job was interrupted before completion; retry the run.",
+            "stage": "interrupted",
+        }
+        with patch("app.main.front_operator.status", return_value=interrupted):
+            response = self.client.get("/?league_id=writer-status", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="writer-status error"', response.text)
+        self.assertIn("Last writer run: The previous operator job was interrupted before completion; retry the run.", response.text)
+
     def test_profile_api_persists_two_leagues_and_writer_request_keeps_selected_scope(self) -> None:
         clerk_token = self._token("user_two_league_profiles")
         self.client.get("/", cookies={"__session": clerk_token})

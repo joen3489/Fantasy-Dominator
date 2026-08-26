@@ -201,6 +201,15 @@ def create_app() -> FastAPI:
         )
         attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
         writer_config = writer_api_configuration()
+        user_operator_status = _operator_status_for_user(user_id)
+        selected_operator_status = next(
+            (
+                item
+                for item in (user_operator_status.get("leagues") or [])
+                if str(item.get("league_id") or "") == selected_id
+            ),
+            {},
+        )
         return templates.TemplateResponse(
             request,
             "home.html",
@@ -213,7 +222,8 @@ def create_app() -> FastAPI:
                 "featured_league_id": str((featured_league or {}).get("league_id") or ""),
                 "attention": attention_items,
                 "queue_generated_at": attention_items[0].get("generated_at", "") if attention_items else "",
-                "operator_status": _operator_status_for_user(user_id),
+                "operator_status": user_operator_status,
+                "selected_operator_status": selected_operator_status,
                 "writer_personas": public_reporter_personas(include_newsroom=True),
                 "writer_api_configured": writer_config["configured"],
                 "writer_provider": writer_config["provider"],
