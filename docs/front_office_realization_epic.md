@@ -1998,3 +1998,15 @@ because the canonical market layer uses a cross-position `market_value` anchor,
 while horizon and other position-based scores answer different questions. The
 reader is directed back to position, decision horizon, availability, and the
 evidence receipt before treating a signal row as an action.
+
+## 2026-08-26 production deployment checkpoint
+
+The verified production revision is now `b376d03`. The authenticated
+headquarters shows the correct current Sleeper team, `Lulu’s Potatoe’s`, and
+the deployment exposes the configured Luna/max writer plus the LLM editor.
+The preceding protected run was recovered as interrupted, so the selected
+edition remains `0/6` generated reporter articles and visibly serves the
+evidence-led fallback. Release 1 therefore remains open only on the paid
+publication receipt: after a user-authorized selected-edition retry reaches a
+terminal state, run the strict six-article/model/editor smoke gate before any
+further product claim.

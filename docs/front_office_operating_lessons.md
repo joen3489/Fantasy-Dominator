@@ -717,3 +717,15 @@ scalar nulls before applying identity or availability rules, then carry the
 canonical status into economics and action surfaces. A local green test with
 hand-written empty strings is not enough; the adversarial fixture must pass a
 DataFrame-shaped null value through the real helper.
+
+## 2026-08-26 - Production revision and paid-publication boundary
+
+Production was deployed and verified at `b376d03`: the authenticated
+headquarters preserved the linked Sleeper identity `Lulu’s Potatoe’s`, public
+health reported Luna/max with `writer_editor_mode=llm`, and public smoke passed.
+The protected writer run that preceded the deploy was recovered as interrupted
+and the edition remains `0/6` reporter articles with evidence-led fallback.
+This is an intentional fail-closed state: configured model and editor mode are
+not evidence that paid copy was generated. The next acceptance action is one
+selected-edition run followed by the strict six-article receipt check; do not
+deploy or restart while that run is active.
