@@ -704,6 +704,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="writer-status error"', response.text)
         self.assertIn("Last writer run: The previous operator job was interrupted before completion; retry the run.", response.text)
+        self.assertIn('data-testid="writer-interrupted-retry-note"', response.text)
+        self.assertIn("reuses any valid article receipts", response.text)
 
     def test_home_surfaces_user_scoped_all_edition_writer_run(self) -> None:
         """Design source: AGENTS.md; aggregate runs must not disappear on a selected league page."""

@@ -1030,6 +1030,9 @@
               Last writer run: {{ selected_operator_status.get("message") or selected_writer_state|capitalize }}
             {% endif %}
           </span>
+          {% if selected_writer_terminal and selected_operator_status.get("stage") == "interrupted" %}
+            <p class="writer-note" data-testid="writer-interrupted-retry-note">A retry reuses any valid article receipts and targets only missing or held desks; it does not silently publish an interrupted run.</p>
+          {% endif %}
         </section>
       {% endif %}
 
