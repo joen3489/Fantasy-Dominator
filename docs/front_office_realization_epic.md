@@ -1989,3 +1989,12 @@ joins the exact current-season roster receipt before classifying rows, presents
 current-role baseline PPG separately from conditional history PPG, and counts
 only real `injury_*` statuses. This keeps aggregate media summaries from
 undoing the row-level protection against the Hill/Mixon regression.
+
+## 2026-08-26 tactical-signal presentation guardrail
+
+The Signal Board now states that Breakout and Sell scores are deterministic
+tactical screens, not market prices or universal player rankings. This matters
+because the canonical market layer uses a cross-position `market_value` anchor,
+while horizon and other position-based scores answer different questions. The
+reader is directed back to position, decision horizon, availability, and the
+evidence receipt before treating a signal row as an action.
