@@ -2161,3 +2161,17 @@ The issue-level newsroom now preserves counter-signals and open questions so
 different information desks become a running conversation rather than six
 tones restating one ranking. This remains editorial structure over
 deterministic evidence, with source receipts one click away.
+
+## 2026-08-27 - Record the newsroom release boundary honestly
+
+Revision `b0fdb81bad5805afab5d09426c1d04c1537ed610` is live on Railway and its
+public `/healthz` response matches the pushed `main` revision. The release
+reports the Luna model, max reasoning, ready database/schema, and no deployment
+blockers; the local suite is green at 418 tests and the local data audit passes.
+
+This is not authenticated production acceptance. The signed-in Chrome tab was
+present but the supported tab-claim operation timed out, so the exact Clerk →
+Sleeper → league → roster continuity, private article receipts, and visible
+conversation entry points remain unverified. Production also remains in
+inline writer execution until a real one-worker shared-volume restart exercise
+proves the queued mode. Keep the epic open until those checks are completed.

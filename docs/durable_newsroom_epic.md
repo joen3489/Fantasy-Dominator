@@ -1,6 +1,6 @@
 # Epic: Durable Newsroom and Editorial Intelligence
 
-Status: in progress — execution slices 1-6 locally implemented; authenticated production acceptance remains
+Status: in progress — execution slices 1-6 implemented; public deploy verified; authenticated production acceptance and worker restart exercise remain
 Date: 2026-08-27
 Owner: Fantasy Dominator product
 Scope: one authenticated manager, one or more private Sleeper league editions
@@ -131,6 +131,19 @@ its structured fragment supplies the hero headline, thesis, action, and byline.
 The hero may fall back to deterministic priority copy only when the publication
 is unavailable or held, keeping reporter attribution and copy provenance
 aligned.
+
+## Production checkpoint — 2026-08-27
+
+Revision `b0fdb81bad5805afab5d09426c1d04c1537ed610` is pushed to `main` and
+Railway `/healthz` reports the same revision with deployment blockers empty,
+the database/schema ready, and `gpt-5.6-luna` configured at `max` reasoning.
+The local gate is green at 418 tests and the processed-data audit passes.
+This is public deployment evidence only: the authenticated smoke could not be
+completed because the existing signed-in Chrome tab timed out during the
+supported claim step, and production is still configured for inline execution
+(`worker_execution_mode=inline`). Do not record the private edition, exact
+roster, generated publication, or worker-restart acceptance as verified until
+the runbook checks are completed.
 
 ## Outcome
 
