@@ -514,6 +514,39 @@ def rewrite_source_team_labels_in_articles(
     return analysis
 
 
+def rewrite_source_team_labels_in_structured_analysis(
+    analysis: dict[str, Any],
+    migrations: Mapping[str, str],
+) -> dict[str, Any]:
+    """Repair current trade-decision copy without rewriting history tables."""
+
+    replacements = sorted(
+        (
+            (_clean(stale), _clean(current))
+            for stale, current in migrations.items()
+            if _clean(stale) and _clean(current) and _clean(stale).casefold() != _clean(current).casefold()
+        ),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
+    if not replacements or "tradeTheses" not in analysis:
+        return analysis
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, str):
+            for stale, current in replacements:
+                value = value.replace(stale, current)
+            return value
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, Mapping):
+            return {key: rewrite(item) for key, item in value.items()}
+        return value
+
+    analysis["tradeTheses"] = rewrite(analysis.get("tradeTheses"))
+    return analysis
+
+
 def _deterministic_fallback_editorial_fields(
     article_key: str,
     reporter_name: str,

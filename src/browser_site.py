@@ -11,6 +11,7 @@ import pandas as pd
 from .analysis import (
     build_manager_dossier_items,
     rewrite_source_team_labels_in_articles,
+    rewrite_source_team_labels_in_structured_analysis,
     upgrade_deterministic_article_receipts,
 )
 from .editorial import build_editorial_issue
@@ -21,8 +22,7 @@ from .manager_profiles import build_manager_season_history
 from .economics import build_league_standings
 from .personas import reporter_lineup
 from .reality_check import build_reality_check_packet
-from .team_identity import resolve_team_name
-from .team_identity import historical_sleeper_team_names
+from .team_identity import current_sleeper_team_label_migrations, historical_sleeper_team_names, resolve_team_name
 
 from .utils import ANALYSIS_DIR, PROCESSED_DIR, load_config, load_json
 
@@ -135,6 +135,19 @@ def build_browser_site(
         ),
         my_team_name,
     )
+    team_label_migrations = current_sleeper_team_label_migrations(
+        tables["teams"],
+        league_id=str(league_id or ""),
+        season=str(config.get("current_season") or ""),
+    )
+    for stale_label, current_label in team_label_migrations.items():
+        analysis = rewrite_source_team_labels_in_articles(
+            analysis_dir,
+            analysis,
+            {stale_label},
+            current_label,
+        )
+    analysis = rewrite_source_team_labels_in_structured_analysis(analysis, team_label_migrations)
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     reality_check_packet = analysis.get("realityCheckPacket") if isinstance(analysis, Mapping) else {}
     if not isinstance(reality_check_packet, Mapping) or not reality_check_packet.get("schema_version"):
@@ -231,6 +244,19 @@ def rebuild_browser_shell(
         ),
         my_team_name,
     )
+    team_label_migrations = current_sleeper_team_label_migrations(
+        tables.get("teams", []),
+        league_id=current_league_id,
+        season=current_season,
+    )
+    for stale_label, current_label in team_label_migrations.items():
+        analysis = rewrite_source_team_labels_in_articles(
+            analysis_dir,
+            analysis,
+            {stale_label},
+            current_label,
+        )
+    analysis = rewrite_source_team_labels_in_structured_analysis(analysis, team_label_migrations)
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
         analysis,
@@ -4386,7 +4412,7 @@ def _page(
       const identityNote = unconfirmed
         ? `${{unconfirmed}} market name${{unconfirmed === 1 ? '' : 's'}} still need Sleeper confirmation before draft use. ${{draftNote}}`
         : `Market-board identities are linked or uniquely matched to Sleeper. ${{draftNote}}`;
-      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(team.strategy_name || posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster; ${{escapeHtml(String(summary.available_horizon_count || 0))}} have at least one comparable clock score from the same model used by rostered players. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
+      return `<div class="data-room-intro"><div><strong>${{escapeHtml(team.team_name || 'Unknown team')}}</strong> · ${{escapeHtml(String(room.season || 'current season'))}}<p class="note">${{escapeHtml(posture)}}${{team.contention_window ? ` · window ${{escapeHtml(team.contention_window)}}` : ''}}</p><p class="note">Needs: ${{escapeHtml(needs || 'not configured')}}. The board contains ${{escapeHtml(String(summary.available_player_count || 0))}} market-ranked names not matched to the current league roster; ${{escapeHtml(String(summary.available_horizon_count || 0))}} have at least one comparable clock score from the same model used by rostered players. ${{escapeHtml(identityNote)}}</p></div><a class="button-link" href="#view-data-room">Open source health</a></div>`;
     }}
 
     function draftRoomCards(rows, mode) {{
@@ -4596,7 +4622,7 @@ def _page(
     function canonicalEntityProfile(entityType, entityId) {{
       return (analysis.canonicalEntityProfiles || []).find(row =>
         row && row.status === 'current' && String(row.entity_type || '') === String(entityType || '') && String(row.entity_id || '') === String(entityId || '')
-      ) || {{}};
+      ) || null;
     }}
 
     function canonicalProfileMarkup(record, title) {{
