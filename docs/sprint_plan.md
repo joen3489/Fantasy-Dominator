@@ -1,5 +1,11 @@
 # Sleeper Dynasty Front Office Sprint Plan
 
+Next execution epic (2026-08-27): [`docs/durable_newsroom_epic.md`](durable_newsroom_epic.md)
+defines the next vertical program: durable article jobs, specialist evidence
+lanes, selective editor review, issue-level synthesis, and conversation surfaces
+throughout the private league reader. It supersedes adding isolated writer or
+presentation features without improving the run and publication seams.
+
 This document is the project control surface for building the full Sleeper dynasty front office app. It sits above `docs/data_contract.md`: the data contract defines current table/source rules, while this sprint plan defines the ordered path, V-model checks, source boundaries, and contradiction checks for future work.
 
 ## Product North Star

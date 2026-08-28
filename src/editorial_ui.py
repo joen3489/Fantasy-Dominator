@@ -133,7 +133,19 @@ EDITORIAL_STYLE = r"""
     .front-page-panel.tone-team { border-top-color: var(--gold); }
     .front-page-panel h3 { margin: 5px 0 7px; font-family: Georgia, "Times New Roman", serif; font-size: 21px; line-height: 1.05; }
     .front-page-panel .panel-eyebrow { color: var(--accent); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .front-page-panel .panel-byline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-top: 5px; }
+    .front-page-panel .panel-reporter { color: var(--ink); font-size: 12px; font-weight: 900; }
+    .front-page-panel .panel-question { color: var(--muted); font-size: 10px; line-height: 1.25; }
     .front-page-panel .panel-dek { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .panel-writer-read { margin: 11px 0 12px; padding: 10px 11px; border-left: 3px solid var(--gold); border-radius: 7px; background: #fbf8ed; }
+    .panel-writer-read-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
+    .panel-writer-read-label { color: var(--accent); }
+    .panel-writer-read h4 { margin: 6px 0 4px; font-family: Georgia, "Times New Roman", serif; font-size: 16px; line-height: 1.1; }
+    .panel-writer-read p { margin: 5px 0 0; color: var(--ink); font-size: 12px; line-height: 1.4; }
+    .panel-writer-read .panel-writer-action { color: var(--muted); }
+    .panel-writer-read a { color: var(--accent); font-size: 11px; font-weight: 900; text-decoration: none; }
+    .panel-writer-read a:hover { text-decoration: underline; }
+    .panel-writer-held { margin: 11px 0 12px; padding: 9px 10px; border-left: 3px solid var(--sell); border-radius: 7px; background: #fff3ef; color: var(--muted); font-size: 11px; line-height: 1.35; }
     .front-page-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
     .front-page-fact { padding: 7px 8px; border-radius: 7px; background: #f1f3ed; }
     .front-page-fact strong { display: block; font-size: 15px; line-height: 1.05; }
@@ -291,6 +303,38 @@ EDITORIAL_STYLE = r"""
     .publication-summary { margin: 0 0 14px; padding: 12px 13px; border-left: 3px solid var(--gold); background: #f4f0df; border-radius: 8px; }
     .publication-summary p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
     .publication-summary strong { color: var(--ink); }
+    .newsroom-room { margin: 0 18px 20px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(135deg, #f5f1e4, #fbfcf8 55%, #edf3ee); }
+    .newsroom-room-intro { display: flex; justify-content: space-between; gap: 14px; align-items: end; margin-bottom: 14px; }
+    .newsroom-room-intro h3 { margin: 3px 0 4px; font-family: Georgia, "Times New Roman", serif; font-size: 24px; }
+    .newsroom-room-intro p { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .newsroom-room-note { color: var(--muted); font-size: 11px; font-weight: 800; text-align: right; }
+    .newsroom-thread { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .newsroom-turn { position: relative; min-height: 160px; padding: 13px; border: 1px solid rgba(153, 169, 155, .72); border-radius: 11px; background: rgba(255, 253, 247, .88); box-shadow: 0 5px 14px rgba(19, 35, 27, .04); }
+    .newsroom-turn::after { content: "→"; position: absolute; top: 16px; right: -10px; z-index: 1; color: var(--gold); font-size: 18px; font-weight: 900; }
+    .newsroom-turn:last-child::after { display: none; }
+    .newsroom-turn[data-room-relationship="disputes"] { border-top: 3px solid var(--sell); }
+    .newsroom-turn[data-room-relationship="supports"] { border-top: 3px solid var(--buy); }
+    .newsroom-turn[data-room-relationship="asks"] { border-top: 3px solid var(--watch); }
+    .newsroom-turn[data-room-relationship="held_because"] { border-top: 3px solid var(--sell); opacity: .82; }
+    .newsroom-turn-top { display: flex; justify-content: space-between; gap: 8px; align-items: start; margin-bottom: 9px; }
+    .newsroom-turn-number { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fffaf0; font-size: 11px; font-weight: 900; }
+    .newsroom-turn-meta { display: flex; flex: 1; flex-wrap: wrap; justify-content: end; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
+    .newsroom-turn h4 { margin: 0 0 6px; font-family: Georgia, "Times New Roman", serif; font-size: 18px; line-height: 1.12; }
+    .newsroom-turn h4 a { color: var(--ink); text-decoration: none; }
+    .newsroom-turn h4 a:hover { color: var(--accent); text-decoration: underline; }
+    .newsroom-turn-relation { color: var(--accent); }
+    .newsroom-turn-caption, .newsroom-turn-thesis, .newsroom-turn-question { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .newsroom-turn-thesis { color: var(--ink); }
+    .newsroom-turn-question strong { color: var(--accent); }
+    .newsroom-turn-counter { margin: 8px 0 0; padding: 8px 9px; border-left: 2px solid var(--gold); background: #f4f0df; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .newsroom-issue-agreement, .newsroom-issue-tension, .newsroom-issue-questions, .newsroom-issue-conflicts { margin: 0 0 12px; padding: 10px 11px; border: 1px solid rgba(153, 169, 155, .72); border-radius: 9px; background: rgba(255, 253, 247, .72); color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .newsroom-issue-agreement { border-left: 3px solid var(--buy); }
+    .newsroom-issue-tension { border-left: 3px solid var(--sell); }
+    .newsroom-issue-conflicts { border-left: 3px solid var(--watch); }
+    .newsroom-issue-agreement strong, .newsroom-issue-tension strong, .newsroom-issue-questions strong, .newsroom-issue-conflicts strong { color: var(--ink); }
+    .newsroom-issue-agreement ul, .newsroom-issue-tension ul, .newsroom-issue-questions ul, .newsroom-issue-conflicts ul { margin: 6px 0 0; padding-left: 18px; }
+    .newsroom-turn-receipt { margin: 11px 0 0; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 10px; font-weight: 800; }
+    .newsroom-empty { margin: 0; color: var(--muted); font-size: 12px; }
     .learning-ledger { margin: 0 18px 18px; }
     .learning-ledger .tile-row { padding: 0; }
     .edition-changes, .media-ledger { margin: 0 18px 18px; }
@@ -343,6 +387,12 @@ EDITORIAL_STYLE = r"""
       .editorial-divider { margin-left: 12px; margin-right: 12px; }
       .data-room-intro { grid-template-columns: 1fr; }
       .decision-visual-grid { grid-template-columns: 1fr; }
+      .newsroom-room { margin-left: 12px; margin-right: 12px; }
+      .newsroom-room-intro { display: grid; align-items: start; }
+      .newsroom-room-note { text-align: left; }
+      .newsroom-thread { grid-template-columns: 1fr; }
+      .newsroom-turn::after { content: "↓"; top: auto; right: auto; bottom: -14px; left: 50%; }
+      .newsroom-turn:last-child::after { display: none; }
     }
 """
 
@@ -383,6 +433,8 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
         </div>
         <div class="editorial-divider"><span>Front page desk</span></div>
         <div id="issue-front-page" class="front-page-grid" data-testid="front-page-desk"></div>
+        <div class="editorial-divider"><span>The room is talking</span></div>
+        <section id="issue-newsroom" class="newsroom-room" data-testid="newsroom-conversation"></section>
         <div class="editorial-divider"><span>More from this edition</span></div>
         <div id="issue-stories" class="editorial-story-grid"></div>
         <div class="editorial-divider"><span>Desk reports</span></div>
@@ -442,6 +494,8 @@ EDITORIAL_JS = r"""
           ? panels.map(frontPagePanelMarkup).join('')
           : '<p class="note">The front-page desk has no connected panels yet. Open the Data Room to inspect the available evidence.</p>';
       }
+      const newsroom = document.getElementById('issue-newsroom');
+      if (newsroom) newsroom.innerHTML = newsroomConversationMarkup(issue.newsroom_conversation || [], issue.newsroom_edges || [], issue.newsroom_summary || {});
       document.getElementById('issue-stories').innerHTML = (issue.stories || []).length
         ? (issue.stories || []).map(story => editorialStoryMarkup(story, false)).join('')
         : '<p class="note">The edition has no secondary stories yet. That may be a quiet board, or a data problem worth opening below.</p>';
@@ -471,7 +525,59 @@ EDITORIAL_JS = r"""
         const title = anchor ? `<a href="#${escapeHtml(anchor)}">${escapeHtml(item.title || 'Untitled read')}</a>` : escapeHtml(item.title || 'Untitled read');
         return `<article class="front-page-item"><h4>${title}</h4><p>${escapeHtml(item.summary || '')}</p><p class="item-meta">${escapeHtml(item.meta || '')}</p><details class="evidence-drawer"><summary>Evidence</summary><p class="brief-card-evidence">${escapeHtml(item.evidence || 'Evidence trace not recorded.')}</p></details></article>`;
       }).join('');
-      return `<article class="front-page-panel tone-${tone}" data-panel-key="${escapeHtml(panel.key || '')}"><div class="panel-eyebrow">${escapeHtml(panel.eyebrow || 'Desk')}</div><h3>${escapeHtml(panel.title || 'Front page desk')}</h3><p class="panel-dek">${escapeHtml(panel.dek || '')}</p>${facts ? `<div class="front-page-facts">${facts}</div>` : ''}<div class="front-page-items">${items || '<p class="note">No connected items are available for this desk.</p>'}</div>${panel.uncertainty ? `<p class="panel-uncertainty"><strong>Limit:</strong> ${escapeHtml(panel.uncertainty)}</p>` : ''}<a class="panel-route" href="${escapeHtml(route)}">${escapeHtml(panel.route_label || 'Open the evidence')} →</a></article>`;
+      const reporter = String(panel.reporter_name || '').trim();
+      const question = String(panel.decision_question || '').trim();
+      const lens = reporter ? `<div class="panel-byline"><span class="panel-reporter">${escapeHtml(reporter)}</span>${question ? `<span class="panel-question">asks: ${escapeHtml(question)}</span>` : ''}</div>` : '';
+      const fragment = panel.writer_fragment && typeof panel.writer_fragment === 'object' ? panel.writer_fragment : {};
+      const fragmentKey = String(fragment.article_key || panel.article_key || '').trim();
+      const fragmentStatus = String(fragment.status || '').toLowerCase();
+      const fragmentReporter = String(fragment.reporter_name || reporter || 'The Front Office');
+      const fragmentLabel = fragment.mode === 'deterministic_template' ? 'Evidence-led desk note' : 'Reporter note';
+      const fragmentText = String(fragment.thesis || fragment.lede || '').trim();
+      const fragmentAction = String(fragment.action || '').trim();
+      const fragmentMarkup = fragment.available && fragmentText
+        ? `<div class="panel-writer-read" data-writer-fragment="${escapeHtml(fragmentKey)}"><div class="panel-writer-read-top"><span class="panel-writer-read-label">${escapeHtml(fragmentLabel)}</span><span>${escapeHtml(fragmentReporter)}</span></div>${fragment.headline ? `<h4>${escapeHtml(fragment.headline)}</h4>` : ''}<p>${escapeHtml(fragmentText)}</p>${fragmentAction ? `<p class="panel-writer-action"><strong>Question:</strong> ${escapeHtml(fragmentAction)}</p>` : ''}${fragmentKey ? `<a href="#publication-${escapeHtml(fragmentKey)}">Read the full desk report →</a>` : ''}</div>`
+        : fragmentStatus === 'held'
+          ? `<div class="panel-writer-held" data-writer-fragment="${escapeHtml(fragmentKey)}"><strong>${escapeHtml(fragmentReporter)} is held by The Desk Editor.</strong> The evidence-led panel remains available while the receipt is repaired.</div>`
+          : '';
+      return `<article class="front-page-panel tone-${tone}" data-panel-key="${escapeHtml(panel.key || '')}"><div class="panel-eyebrow">${escapeHtml(panel.eyebrow || 'Desk')}</div>${lens}<h3>${escapeHtml(panel.title || 'Front page desk')}</h3><p class="panel-dek">${escapeHtml(panel.dek || '')}</p>${fragmentMarkup}${facts ? `<div class="front-page-facts">${facts}</div>` : ''}<div class="front-page-items">${items || '<p class="note">No connected items are available for this desk.</p>'}</div>${panel.uncertainty ? `<p class="panel-uncertainty"><strong>Limit:</strong> ${escapeHtml(panel.uncertainty)}</p>` : ''}<a class="panel-route" href="${escapeHtml(route)}">${escapeHtml(panel.route_label || 'Open the evidence')} →</a></article>`;
+    }
+
+    function newsroomConversationMarkup(conversation, edges, summary) {
+      const items = Array.isArray(conversation) ? conversation : [];
+      const issueSummary = summary && typeof summary === 'object' ? summary : {};
+      const issueNote = String(issueSummary.note || '').trim();
+      if (!items.length) return `<p class="newsroom-empty">The specialist desks have not left a publishable room note yet. ${escapeHtml(issueNote || 'Open the evidence-led board below while the edition is being assembled.')}</p>`;
+      const edgeByTarget = new Map((Array.isArray(edges) ? edges : []).map(edge => [String(edge.target_article_key || ''), edge]));
+      const itemByKey = new Map(items.map(item => [String(item.article_key || ''), item]));
+      const cards = items.map((item, index) => {
+        const key = String(item.article_key || '');
+        const edge = edgeByTarget.get(key) || {};
+        const source = itemByKey.get(String(edge.source_article_key || item.previous_article_key || '')) || null;
+        const relationship = String(edge.relationship || (index ? 'extends' : 'opens the room')).replace(/_/g, ' ');
+        const status = String(item.publication_status || '').toLowerCase();
+        const statusLabel = status === 'held' ? 'held' : status === 'fallback' ? 'fallback' : 'published';
+        const evidenceCount = Array.isArray(item.evidence_ids) ? item.evidence_ids.filter(Boolean).length : 0;
+        const replyLabel = source ? `after ${source.reporter_name || source.title || 'the prior desk'}` : index ? 'adds the first lens' : 'starts the room';
+        const question = item.room_question ? `<p class="newsroom-turn-question"><strong>Question:</strong> ${escapeHtml(item.room_question)}</p>` : '';
+        const counter = item.counter_evidence && !String(item.counter_evidence).toLowerCase().includes('evidence is limited to the supplied packet') ? `<p class="newsroom-turn-counter"><strong>Counter-signal:</strong> ${escapeHtml(item.counter_evidence)}</p>` : '';
+        const reality = item.reality_check && typeof item.reality_check === 'object' ? item.reality_check : {};
+        const realityChecks = Array.isArray(reality.matched_checks) ? reality.matched_checks.length : 0;
+        const realityLabel = realityChecks ? ` · ${realityChecks} Reality Check limitation${realityChecks === 1 ? '' : 's'}` : '';
+        return `<article class="newsroom-turn" data-room-relationship="${escapeHtml(String(edge.relationship || (index ? 'extends' : 'opens')).replace(/[^a-z0-9_-]/gi, ''))}"><div class="newsroom-turn-top"><span class="newsroom-turn-number">${index + 1}</span><div class="newsroom-turn-meta"><span>${escapeHtml(item.reporter_name || item.assigned_reporter_name || 'The Front Office')}</span><span class="newsroom-turn-relation">${escapeHtml(relationship)}</span><span>${escapeHtml(statusLabel)}</span></div></div><h4><a href="#publication-${escapeHtml(key)}">${escapeHtml(item.headline || item.title || 'Desk read')}</a></h4><p class="newsroom-turn-caption">${escapeHtml(item.caption || replyLabel)}</p><p class="newsroom-turn-thesis">${escapeHtml(item.thesis || 'Open the desk report for the current evidence-backed read.')}</p>${counter}${question}<p class="newsroom-turn-receipt">${escapeHtml(replyLabel)}${realityLabel} · ${evidenceCount ? `${evidenceCount} evidence ID${evidenceCount === 1 ? '' : 's'}` : 'receipt not recorded'} · <a href="#publication-${escapeHtml(key)}">read the full desk report</a></p></article>`;
+      }).join('');
+      const missing = Array.isArray(issueSummary.missing_desks) ? issueSummary.missing_desks.length : 0;
+      const disagreement = Number(issueSummary.disagreement_count || 0);
+      const receipt = issueNote || (missing ? `${missing} registered desk${missing === 1 ? '' : 's'} are not in this print.` : 'All registered desks are in this print.');
+      const tensions = Array.isArray(issueSummary.tensions) ? issueSummary.tensions : [];
+      const questions = Array.isArray(issueSummary.open_questions) ? issueSummary.open_questions : [];
+      const agreements = Array.isArray(issueSummary.agreements) ? issueSummary.agreements : [];
+      const claimConflicts = Array.isArray(issueSummary.claim_conflicts) ? issueSummary.claim_conflicts : [];
+      const agreementMarkup = agreements.length ? `<div class="newsroom-issue-agreement"><strong>Where the room agrees</strong><ul>${agreements.map(agreement => `<li>${escapeHtml(agreement.summary || 'The desks share a supported read.')} <a href="#publication-${escapeHtml(agreement.target_article_key || '')}">open the desk</a></li>`).join('')}</ul></div>` : '';
+      const tensionMarkup = tensions.length ? `<div class="newsroom-issue-tension"><strong>Where the room disagrees</strong><ul>${tensions.map(tension => `<li>${escapeHtml(tension.summary || 'The desks disagree; open both receipts.')} <a href="#publication-${escapeHtml(tension.target_article_key || '')}">read the reply</a></li>`).join('')}</ul></div>` : '';
+      const questionMarkup = questions.length ? `<div class="newsroom-issue-questions"><strong>Questions left open</strong><ul>${questions.map(question => `<li>${escapeHtml(question.reporter_name || 'The desk')}: ${escapeHtml(question.question || '')} <a href="#publication-${escapeHtml(question.article_key || '')}">open desk</a></li>`).join('')}</ul></div>` : '';
+      const claimConflictMarkup = claimConflicts.length ? `<div class="newsroom-issue-conflicts"><strong>Claim register: competing reads</strong><ul>${claimConflicts.map(conflict => `<li><strong>${escapeHtml(conflict.subject_label || conflict.subject_key || 'Subject')}</strong> · ${escapeHtml(String(conflict.decision_window || 'window').replace(/_/g, ' '))} · ${escapeHtml(String(conflict.resolution_status || 'unresolved').replace(/_/g, ' '))}: ${escapeHtml(conflict.resolution || 'Keep both receipts visible; no winner selected.')}<ul>${(conflict.claims || []).map(claim => `<li>${escapeHtml(claim.reporter_name || claim.article_key || 'Desk')} (${escapeHtml(claim.stance || 'unknown')}): ${escapeHtml(claim.summary || '')} <a href="#publication-${escapeHtml(claim.article_key || '')}">receipt</a></li>`).join('')}</ul></li>`).join('')}</ul></div>` : '';
+      return `<div class="newsroom-room-intro"><div><div class="section-kicker">Bounded editorial context</div><h3>Different desks, one conversation</h3><p>Each card answers a different manager question. The arrows show editorial sequencing, not a new source claim; open any byline to inspect its receipt and the data room.</p></div><div class="newsroom-room-note">${items.length} newsroom turn${items.length === 1 ? '' : 's'} · ${Array.isArray(edges) ? edges.length : 0} linked move${Array.isArray(edges) && edges.length === 1 ? '' : 's'}${issueSummary.agreement_count ? ` · ${issueSummary.agreement_count} supported handoff${issueSummary.agreement_count === 1 ? '' : 's'}` : ''}${disagreement ? ` · ${disagreement} disagreement${disagreement === 1 ? '' : 's'}` : ''}${claimConflicts.length ? ` · ${claimConflicts.length} claim conflict${claimConflicts.length === 1 ? '' : 's'}` : ''}<br>${escapeHtml(receipt)}</div></div>${agreementMarkup}${tensionMarkup}${claimConflictMarkup}${questionMarkup}<div class="newsroom-thread">${cards}</div>`;
     }
 
     function renderEditorialMedia() {
@@ -560,6 +666,11 @@ EDITORIAL_JS = r"""
         structured.action ? `<p><strong>Question:</strong> ${escapeHtml(structured.action)}</p>` : '',
         structured.counter_evidence ? `<p><strong>Counter-signal:</strong> ${escapeHtml(structured.counter_evidence)}</p>` : ''
       ].filter(Boolean).join('');
+      const roomMove = String(structured.room_move || '').trim().toLowerCase();
+      const roomQuestion = String(structured.room_question || '').trim();
+      const roomMarkup = roomMove || roomQuestion
+        ? `<div class="publication-summary"><p><strong>Room move:</strong> ${escapeHtml((roomMove || 'extends').replace(/_/g, ' '))}${roomQuestion ? ` · <strong>Question:</strong> ${escapeHtml(roomQuestion)}` : ''}</p></div>`
+        : '';
       const receipt = (() => {
         const evidenceIds = Array.isArray(structured.evidence_ids) ? structured.evidence_ids.filter(Boolean).map(value => String(value)) : [];
         const sourceIds = Array.isArray(structured.source_ids) ? structured.source_ids.filter(Boolean).map(value => String(value)) : [];
@@ -602,7 +713,7 @@ EDITORIAL_JS = r"""
         : reviewStatus === 'fallback'
           ? '<span class="tag publication-review-fallback">Evidence-led fallback</span>'
         : '<span class="tag publication-review-held-label">Held</span>';
-      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(byline)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${isPrintable ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
+      return `<article id="publication-${escapeHtml(article.key || '')}" class="publication-card publication-layout-${layout}" data-article-key="${escapeHtml(article.key || '')}" data-template-id="${escapeHtml(template.template_id || 'evidence-note')}">${mediaMarkup}<div class="publication-meta"><span class="tag">${escapeHtml(articleModeLabel(mode))}</span><span>${escapeHtml(template.label || 'Desk report')}</span><span>${escapeHtml(byline)}</span>${reviewBadge}</div><h3>${escapeHtml(structured.headline || article.title || 'Desk report')}</h3>${isPrintable ? `${summary ? `<div class="publication-summary">${summary}</div>` : ''}${roomMarkup}${bodyMarkup}${actions}${outcome}` : reviewMarkup}${receipt}</article>`;
     }
 
     function publicationListItemMarkup(item) {

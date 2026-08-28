@@ -11,7 +11,7 @@ cannot remove the evidence, source trace, confidence, or risk that came with the
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from .availability import baseline_ppg_label, current_availability_status
+from .availability import availability_note, baseline_ppg_label, current_availability_status
 from .personas import front_office_metadata, persona_metadata, reporter_lineup
 
 
@@ -146,6 +146,15 @@ def build_editorial_issue(
     }
     article_modes = _article_modes(analysis)
     publication_articles = _publication_articles(analysis, writer_preferences)
+    newsroom_conversation = _newsroom_conversation(publication_articles)
+    newsroom_edges = _newsroom_edges(newsroom_conversation)
+    claim_conflicts = _newsroom_claim_conflicts(newsroom_conversation)
+    newsroom_summary = _newsroom_summary(
+        newsroom_conversation,
+        newsroom_edges,
+        article_modes,
+        claim_conflicts=claim_conflicts,
+    )
     primary_publication = next(
         (article for article in publication_articles if article.get("key") == "daily_brief"),
         publication_articles[0] if publication_articles else None,
@@ -160,6 +169,8 @@ def build_editorial_issue(
         if isinstance(primary_publication, Mapping)
         else reporter
     ) or reporter
+    if primary_publication and isinstance(primary_publication.get("story_fragment"), Mapping):
+        lead = _publication_lead_story(primary_publication, lead)
     if primary_publication and primary_publication.get("mode") == "deterministic_template":
         lead = _neutralize_reader_story(lead, issue_reporter, reporter)
         stories = [_neutralize_reader_story(story, issue_reporter, reporter) for story in stories]
@@ -172,6 +183,8 @@ def build_editorial_issue(
         my_roster_id=my_roster_id,
         my_team_name=team_label,
         current_season=current_season,
+        writer_preferences=writer_preferences,
+        publication_articles=publication_articles,
     )
     question_prompts = [
         {
@@ -212,6 +225,11 @@ def build_editorial_issue(
         "writer_mode": _writer_mode_label(article_modes),
         "article_modes": article_modes,
         "publication_articles": publication_articles,
+        "newsroom_conversation": newsroom_conversation,
+        "newsroom_edges": newsroom_edges,
+        "claim_conflicts": claim_conflicts,
+        "newsroom_summary": newsroom_summary,
+        "conversation_schema_version": "publication_edges_v1",
         "publication_receipt": {
             "current_count": sum(1 for article in publication_articles if article.get("mode") == "automatic_llm" and article.get("publication_status") == "approved"),
             "available_count": len(publication_articles),
@@ -250,6 +268,8 @@ def _front_page_panels(
     my_roster_id: int | str | None,
     my_team_name: str,
     current_season: str,
+    writer_preferences: Mapping[str, Any] | None = None,
+    publication_articles: Sequence[Mapping[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     """Build the front-page rails that connect a story to a decision surface.
 
@@ -259,12 +279,206 @@ def _front_page_panels(
     the data-room path.
     """
 
-    return [
+    panels = [
         _team_pulse_panel(tables, league_id, my_roster_id, my_team_name, current_season),
         _news_watch_panel(tables, league_id, my_roster_id),
         _market_watch_panel(tables, my_roster_id, league_id=league_id, current_season=current_season),
         _manager_watch_panel(tables, analysis, my_roster_id),
+        _reality_check_panel(
+            tables,
+            league_id,
+            my_roster_id,
+            current_season,
+            packet=analysis.get("realityCheckPacket") if isinstance(analysis, Mapping) else None,
+        ),
     ]
+    # Front-page rails are deterministic teasers, but they still need a
+    # visible information owner. This prevents five anonymous panels from
+    # feeling like one generic LLM voice and gives the reader a direct bridge
+    # into the corresponding desk article.
+    panel_assignments = {
+        "team_pulse": "team_report",
+        "news_watch": "team_report",
+        "market_watch": "market_watch",
+        "manager_watch": "manager_intel",
+        "reality_check": "reality_check",
+    }
+    preferences = dict(writer_preferences) if isinstance(writer_preferences, Mapping) else {}
+    raw_article_reporters = preferences.get("article_reporters")
+    article_reporters = dict(raw_article_reporters) if isinstance(raw_article_reporters, Mapping) else {}
+    article_reporters.setdefault("reality_check", "reality_check_riley")
+    preferences["article_reporters"] = article_reporters
+    publication_by_key = {
+        _text(article.get("key")): article
+        for article in publication_articles
+        if isinstance(article, Mapping) and _text(article.get("key"))
+    }
+    for panel in panels:
+        article_key = panel_assignments.get(str(panel.get("key") or ""), "")
+        reporter = persona_metadata(preferences, article_key)
+        panel["article_key"] = article_key
+        panel["reporter_id"] = reporter["persona_id"]
+        panel["reporter_name"] = reporter["name"]
+        panel["reporter"] = reporter
+        panel["decision_question"] = reporter["question"]
+        panel["information_contract"] = reporter["evidence_scope"]
+        publication = publication_by_key.get(article_key)
+        fragment = publication.get("story_fragment") if isinstance(publication, Mapping) else None
+        panel["writer_fragment"] = (
+            dict(fragment)
+            if isinstance(fragment, Mapping)
+            else _unpublished_writer_fragment(article_key, reporter)
+        )
+    return panels
+
+
+def _reality_check_panel(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    league_id: str,
+    my_roster_id: int | str | None,
+    current_season: str,
+    *,
+    packet: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Expose deterministic limitations before a writer turns a row into a call.
+
+    Riley is a verification desk, not a second ranking model. This rail is
+    intentionally small: it surfaces current availability conflicts, missing
+    roster joins, and limited source receipts that can invalidate an otherwise
+    attractive headline.
+    """
+
+    packet = packet if isinstance(packet, Mapping) else {}
+    packet_checks = packet.get("checks") if isinstance(packet.get("checks"), list) else []
+    if packet_checks:
+        flagged = [
+            _front_page_item(
+                title=_text(check.get("entity_name")) + (f" · {_text(check.get('title'))}" if _text(check.get("title")) else ""),
+                summary=_text(check.get("detail")) or "A deterministic limitation needs review before action.",
+                meta=f"{_text(check.get('severity')) or 'review'} · {_text(check.get('source_table')) or 'source receipt'}",
+                anchor=(
+                    _anchor("player", _text(check.get("entity_id")))
+                    if _text(check.get("entity_id"))
+                    else "view-data-room"
+                ),
+                evidence=(
+                    f"{_text(check.get('source_table')) or 'source receipt'}; "
+                    f"{_text(check.get('source_trace')) or 'trace unavailable'}; "
+                    f"evidence_ids={','.join(str(value) for value in (check.get('evidence_ids') or []) if str(value).strip())}"
+                ),
+                tone="news",
+            )
+            for check in packet_checks
+            if isinstance(check, Mapping)
+        ]
+        roster_count = int(packet.get("roster_rows_checked") or 0)
+        source_limited_count = sum(
+            1
+            for check in packet_checks
+            if isinstance(check, Mapping) and str(check.get("check_id") or "").startswith("source.")
+        )
+        return {
+            "key": "reality_check",
+            "eyebrow": "Reality Check Riley",
+            "title": "What deserves skepticism",
+            "dek": _text(packet.get("summary")) or f"{len(flagged)} deterministic limitation(s) flagged for this exact roster.",
+            "facts": [
+                {"label": "Roster rows checked", "value": roster_count},
+                {"label": "Actionable rows", "value": packet.get("actionable_player_rows_checked", "not recorded")},
+                {"label": "Flagged", "value": len(flagged)},
+                {"label": "Source limits", "value": source_limited_count},
+                {"label": "Market quality", "value": (packet.get("market_quality") or {}).get("status", "not recorded")},
+            ],
+            "items": flagged[:4],
+            "route": "#view-data-room",
+            "route_label": "Open the proof",
+            "uncertainty": "This is a persisted deterministic verification packet spanning the selected roster and actionable league player universe. It can limit a claim and identify a join to inspect; it does not create a new ranking or replace the source receipt.",
+            "source_trace": ";".join(str(value) for value in (packet.get("source_tables") or []) if str(value).strip()) or "reality_check",
+            "packet_fingerprint": _text(packet.get("fingerprint")),
+            "packet_generated_at": _text(packet.get("generated_at")),
+            "tone": "news",
+        }
+
+    roster = [
+        dict(row)
+        for row in _scope_rows(_rows(tables, "roster_players"), league_id=league_id, season=current_season)
+        if _same_id(row.get("roster_id"), my_roster_id)
+    ]
+    dossiers = [
+        dict(row)
+        for row in _scope_rows(_rows(tables, "player_dossiers"), league_id=league_id, season=current_season)
+        if _same_id(row.get("roster_id"), my_roster_id)
+    ]
+    dossier_ids = {_text(row.get("player_id")) for row in dossiers if _text(row.get("player_id"))}
+    flagged: list[dict[str, Any]] = []
+    for row in roster:
+        player_id = _text(row.get("player_id"))
+        player_name = _text(row.get("player_name")) or player_id or "Roster player"
+        status = current_availability_status(row)
+        if status == "no_current_nfl_team":
+            flagged.append(
+                _front_page_item(
+                    title=f"{player_name} · no current NFL team",
+                    summary="Historical production may be useful conditionally, but next-game and rest-of-season action should remain unavailable until a team and role are confirmed.",
+                    meta="availability boundary · conditional history only",
+                    anchor=_anchor("player", player_id),
+                    evidence=_front_page_evidence(row, "roster_players"),
+                    tone="news",
+                )
+            )
+        elif status.startswith("injury_"):
+            flagged.append(
+                _front_page_item(
+                    title=f"{player_name} · {status.replace('injury_', '')}",
+                    summary=f"{availability_note(row)}. Any season baseline remains conditional on availability; recovery timing is not modeled here.",
+                    meta="availability boundary · verify before acting",
+                    anchor=_anchor("player", player_id),
+                    evidence=_front_page_evidence(row, "roster_players"),
+                    tone="news",
+                )
+            )
+        if player_id and dossiers and player_id not in dossier_ids:
+            flagged.append(
+                _front_page_item(
+                    title=f"{player_name} · dossier join missing",
+                    summary="The roster row is present, but its player dossier is not joined to this exact Sleeper player ID. Do not use a missing dossier as a zero-value signal.",
+                    meta="identity boundary · join requires review",
+                    anchor=_anchor("player", player_id),
+                    evidence=_front_page_evidence(row, "roster_players"),
+                    tone="news",
+                )
+            )
+    health = _source_health(tables)
+    limited_sources = [row for row in health if not row.get("healthy")]
+    if limited_sources and not flagged:
+        flagged.append(
+            _front_page_item(
+                title="A source receipt is limited",
+                summary="The edition remains readable, but at least one source is cached, unavailable, or otherwise limited. Treat the affected reads as context until the receipt is current.",
+                meta="source health · inspect the Data Room",
+                anchor="view-data-room",
+                evidence="source_freshness;news_source_freshness;projection_source_freshness",
+                tone="news",
+            )
+        )
+    return {
+        "key": "reality_check",
+        "eyebrow": "Reality Check Riley",
+        "title": "What deserves skepticism",
+        "dek": f"{len(flagged)} limitation{'s' if len(flagged) != 1 else ''} flagged for this exact roster; a clean rail is a receipt, not a guarantee.",
+        "facts": [
+            {"label": "Roster rows checked", "value": len(roster)},
+            {"label": "Flagged", "value": len(flagged)},
+            {"label": "Limited sources", "value": len(limited_sources)},
+            {"label": "Market quality", "value": "not recorded"},
+        ],
+        "items": flagged[:4],
+        "route": "#view-data-room",
+        "route_label": "Open the proof",
+        "uncertainty": "This is a deterministic verification rail. It can limit a claim and identify a join to inspect; it does not create a new ranking or replace the source receipt.",
+        "source_trace": "roster_players;player_dossiers;source_freshness;news_source_freshness;projection_source_freshness",
+        "tone": "news",
+    }
 
 
 def _team_pulse_panel(
@@ -296,6 +510,11 @@ def _team_pulse_panel(
         if _same_id(row.get("roster_id"), my_roster_id)
         and (not league_id or not _text(row.get("league_id")) or _same_id(row.get("league_id"), league_id))
     ]
+    matchups = [
+        row for row in _scope_rows(_rows(tables, "matchups"), league_id=league_id, season=current_season)
+        if _same_id(row.get("roster_id"), my_roster_id)
+    ]
+    matchups.sort(key=lambda row: (_number(row.get("week")), _text(row.get("matchup_id"))), reverse=True)
     injury_count = sum(
         1 for row in roster if current_availability_status(row).startswith("injury_")
     )
@@ -326,6 +545,60 @@ def _team_pulse_panel(
     conditional_history_ppg = sum(_number(row.get("projected_ppg")) for row in conditional_history_rows)
     dossier_by_player = {str(row.get("player_id")): row for row in dossiers if _text(row.get("player_id"))}
     items: list[dict[str, Any]] = []
+    matchup = matchups[0] if matchups else {}
+    lineup_receipt = _matchup_lineup_receipt(
+        tables,
+        league_id=league_id,
+        season=current_season,
+        roster_id=my_roster_id,
+        matchup=matchup,
+    )
+    if matchup:
+        opponent = _text(matchup.get("opponent_team_name")) or f"Roster {_text(matchup.get('opponent_roster_id')) or 'unknown'}"
+        result = _text(matchup.get("result")) or "not recorded"
+        points_for = _number_or_text(matchup.get("points_for"))
+        points_against = _number_or_text(matchup.get("points_against"))
+        margin = _number_or_text(matchup.get("margin"))
+        items.append(
+            _front_page_item(
+                title=f"Week {_text(matchup.get('week')) or 'current'} · {my_team_name or 'Your team'} vs {opponent}",
+                summary=(
+                    f"Topline Tony's matchup read: {result}, {points_for} for and {points_against} against "
+                    f"(margin {margin}). This is the observed Sleeper matchup receipt; lineup and next-game "
+                    "interpretation belongs in the Team Report, not in the score row."
+                ),
+                meta="weekly matchup · exact Sleeper receipt",
+                anchor=_anchor("team", my_roster_id),
+                evidence=_front_page_evidence(matchup, "matchups"),
+                tone="team",
+            )
+        )
+        if lineup_receipt.get("status") in {"reconciled", "partial"}:
+            contributors = lineup_receipt.get("top_contributors") or []
+            contributor_text = ", ".join(
+                f"{_text(row.get('player_name')) or 'Unknown player'} {_number_or_text(row.get('player_points'))}"
+                for row in contributors[:3]
+            ) or "no named contributors"
+            reconciliation = _text(lineup_receipt.get("reconciliation_label"))
+            items.append(
+                _front_page_item(
+                    title=f"Week {_text(matchup.get('week')) or 'current'} · who supplied the points",
+                    summary=(
+                        f"Topline Tony's lineup receipt: {contributor_text}. Starters supplied "
+                        f"{_number_or_text(lineup_receipt.get('starter_points'))} points and non-starters "
+                        f"{_number_or_text(lineup_receipt.get('bench_points'))}; {reconciliation}."
+                    ),
+                    meta="exact Sleeper player-point receipt · attribution before interpretation",
+                    anchor=_anchor("team", my_roster_id),
+                    evidence=(
+                        "matchup_player_points; "
+                        f"matchup_id={_text(matchup.get('matchup_id'))}; "
+                        f"rows={_text(lineup_receipt.get('row_count'))}; "
+                        f"known_points={_text(lineup_receipt.get('known_points'))}"
+                    ),
+                    tone="team",
+                )
+            )
     for row in sorted(news, key=lambda item: _text(item.get("published_at")), reverse=True)[:2]:
         player_name = _text(row.get("player_name")) or "Rostered player"
         dossier = dossier_by_player.get(str(row.get("player_id")), {})
@@ -373,6 +646,8 @@ def _team_pulse_panel(
                 "value": round(conditional_history_ppg, 2) if conditional_history_rows else "0",
             },
             {"label": "Injury flags", "value": injury_count},
+            {"label": "Matchup receipts", "value": len(matchups)},
+            {"label": "Lineup attribution", "value": lineup_receipt.get("status", "unavailable")},
             {"label": "Season", "value": current_season or "current"},
         ],
         "items": items,
@@ -383,8 +658,94 @@ def _team_pulse_panel(
             "conditional history PPG remains research context and is not current-role production. Injury-limited "
             "baselines remain conditional on being active."
         ),
-        "source_trace": "roster_players;player_dossiers;league_news_impact",
+        "matchup_lineup_receipt": lineup_receipt,
+        "source_trace": "roster_players;player_dossiers;matchups;matchup_player_points;league_news_impact",
         "tone": "team",
+    }
+
+
+def _matchup_lineup_receipt(
+    tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    league_id: str,
+    season: str,
+    roster_id: int | str | None,
+    matchup: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Reconcile exact nested Sleeper player points to the selected matchup.
+
+    Blank or placeholder 0-0 rows remain unavailable. A mismatch against the
+    aggregate team score is reported as partial instead of being silently
+    treated as a complete lineup explanation.
+    """
+
+    matchup = matchup if isinstance(matchup, Mapping) else {}
+    matchup_id = _text(matchup.get("matchup_id"))
+    base = {
+        "status": "unavailable" if not matchup_id else "unplayed",
+        "matchup_id": matchup_id,
+        "row_count": 0,
+        "known_points": 0,
+        "starter_points": 0,
+        "bench_points": 0,
+        "top_contributors": [],
+        "reconciliation_delta": "",
+        "reconciliation_label": "player-point rows are unavailable",
+        "source_trace": "matchup_player_points",
+    }
+    if not matchup_id:
+        return base
+    rows = [
+        row
+        for row in _scope_rows(_rows(tables, "matchup_player_points"), league_id=league_id, season=season)
+        if _same_id(row.get("roster_id"), roster_id)
+        and _same_id(row.get("matchup_id"), matchup_id)
+    ]
+    base["row_count"] = len(rows)
+    played_rows = [row for row in rows if _text(row.get("matchup_status")).lower() == "played"]
+    if not played_rows:
+        return base
+    known_rows = [row for row in played_rows if _text(row.get("player_points")) != ""]
+    starter_rows = [row for row in known_rows if _text(row.get("is_starter")).lower() in {"true", "1", "yes"}]
+    bench_rows = [row for row in known_rows if row not in starter_rows]
+    starter_points = sum(_number(row.get("player_points")) for row in starter_rows)
+    bench_points = sum(_number(row.get("player_points")) for row in bench_rows)
+    known_points = starter_points + bench_points
+    top_contributors = sorted(
+        (
+            {
+                "player_id": _text(row.get("player_id")),
+                "player_name": _text(row.get("player_name")) or _text(row.get("player_id")),
+                "player_points": _number_or_text(row.get("player_points")),
+                "is_starter": _text(row.get("is_starter")),
+                "source_trace": _text(row.get("source_trace")) or "matchup_player_points",
+            }
+            for row in known_rows
+        ),
+        key=lambda row: (_number(row.get("player_points")), _text(row.get("player_name"))),
+        reverse=True,
+    )[:5]
+    team_points_text = _text(matchup.get("points_for"))
+    team_points = _number(team_points_text) if team_points_text else None
+    delta = None if team_points is None else round(known_points - team_points, 2)
+    status = "reconciled" if team_points is not None and abs(delta or 0) <= 0.1 and len(known_rows) == len(played_rows) else "partial"
+    label = (
+        f"player receipts reconcile to {_number_or_text(team_points)} team points"
+        if status == "reconciled"
+        else "player receipts are partial; inspect blank rows and aggregate matchup total"
+    )
+    return {
+        **base,
+        "status": status,
+        "known_points": round(known_points, 2),
+        "starter_points": round(starter_points, 2),
+        "bench_points": round(bench_points, 2),
+        "top_contributors": top_contributors,
+        "reconciliation_delta": delta if delta is not None else "",
+        "reconciliation_label": label,
+        "player_rows_played": len(played_rows),
+        "player_rows_known": len(known_rows),
+        "team_points": team_points if team_points is not None else "",
     }
 
 
@@ -651,7 +1012,7 @@ def _market_watch_panel(
         "key": "market_watch",
         "eyebrow": "Market desk",
         "title": "Where the model disagrees",
-        "dek": "Projection-to-market gaps are research leads for price discovery, not guaranteed mispricing.",
+        "dek": "Projection-to-market gaps are research leads for price discovery, not confirmed mispricing.",
         "facts": [
         {"label": "Horizon rows", "value": len(horizon_rows)},
         {"label": "Available clocks", "value": len(available_rows)},
@@ -1448,6 +1809,160 @@ def _excerpt(value: Any, limit: int = 250) -> str:
     return text[: max(1, limit - 1)].rstrip() + "…"
 
 
+def _unpublished_writer_fragment(
+    article_key: str,
+    reporter: Mapping[str, Any] | None = None,
+    *,
+    status: str = "not_published",
+) -> dict[str, Any]:
+    """Return a safe placeholder for a desk with no printable fragment.
+
+    Front-page panels need a stable contract even when a writer is held,
+    unavailable, or has not run yet. The placeholder carries the assigned
+    lens, but deliberately carries no prose that could leak an unapproved
+    draft into the reader facade.
+    """
+
+    reporter = reporter if isinstance(reporter, Mapping) else {}
+    return {
+        "schema_version": "writer_fragment_v1",
+        "article_key": _text(article_key),
+        "available": False,
+        "status": _text(status) or "not_published",
+        "mode": "",
+        "reporter_name": _text(reporter.get("name")) or "The Front Office",
+        "assigned_reporter_name": _text(reporter.get("name")),
+        "reporter_label": "Reporter",
+        "headline": "",
+        "lede": "",
+        "thesis": "",
+        "counter_evidence": "",
+        "action": "",
+        "evidence_ids": [],
+        "source_ids": [],
+        "evidence_count": 0,
+        "source_count": 0,
+        "evidence_fingerprint": "",
+    }
+
+
+def _publication_lead_story(
+    article: Mapping[str, Any],
+    fallback: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Make the issue hero a view of the primary publication, not a new read.
+
+    The issue hero is the most prominent byline on the page. When a daily
+    publication is printable, its structured fragment must supply that hero's
+    headline and thesis so an LLM reporter can never appear above unrelated
+    deterministic priority prose. If the article is held or unavailable, the
+    deterministic lead remains the truthful fallback.
+    """
+
+    fragment = article.get("story_fragment") if isinstance(article.get("story_fragment"), Mapping) else {}
+    if not fragment.get("available"):
+        return dict(fallback)
+    structured = article.get("structured") if isinstance(article.get("structured"), Mapping) else {}
+    reporter = article.get("reporter_persona") if isinstance(article.get("reporter_persona"), Mapping) else {}
+    assigned = article.get("assigned_reporter_persona") if isinstance(article.get("assigned_reporter_persona"), Mapping) else {}
+    evidence_ids = [str(value) for value in (fragment.get("evidence_ids") or []) if str(value).strip()]
+    source_ids = [str(value) for value in (fragment.get("source_ids") or []) if str(value).strip()]
+    evidence = "Article receipt: "
+    evidence += f"evidence_ids={','.join(evidence_ids) or 'not recorded'}"
+    evidence += f"; source_ids={','.join(source_ids) or 'not recorded'}"
+    return {
+        "story_id": f"publication:{_text(article.get('key')) or 'daily_brief'}",
+        "story_type": "brief",
+        "eyebrow": _text((article.get("template") or {}).get("label")) or "Daily GM Brief",
+        "headline": _text(fragment.get("headline")) or _text(fallback.get("headline")) or "The current edition",
+        "dek": _text(fragment.get("lede")) or _text(fragment.get("thesis")) or _text(fallback.get("dek")),
+        "action": _text(fragment.get("action")) or _text(fallback.get("action")),
+        "watchout": _text(fragment.get("counter_evidence")) or _text(fallback.get("watchout")),
+        "confidence": _confidence(structured.get("confidence")) if structured.get("confidence") else _confidence(fallback.get("confidence")),
+        "priority_score": "",
+        "entity_type": "edition",
+        "entity_id": _text(article.get("key")) or "daily_brief",
+        "entity_name": _text(fallback.get("entity_name")) or "The Front Office",
+        "team_name": _text(fallback.get("team_name")),
+        "anchor": "view-today",
+        "claims": [],
+        "evidence": evidence,
+        "sources": [],
+        "is_lead": True,
+        "reporter_id": _text(reporter.get("persona_id")) or "front_office",
+        "reporter_name": _text(reporter.get("name")) or "The Front Office",
+        "reporter_persona": dict(reporter),
+        "assigned_reporter_id": _text(assigned.get("persona_id")),
+        "assigned_reporter_name": _text(assigned.get("name")),
+        "assigned_reporter_persona": dict(assigned),
+        "publication_article_key": _text(article.get("key")),
+        "publication_status": _text(article.get("publication_status")),
+    }
+
+
+def _publication_fragment(article: Mapping[str, Any]) -> dict[str, Any]:
+    """Project one publication into a reusable, bounded reader fragment.
+
+    This is the canonical bridge between a paid desk call and its placements.
+    It contains only structured fields and receipt metadata; templates should
+    reuse it rather than parse article prose or trigger another provider call.
+    Held articles retain their status and lens but not their unapproved copy.
+    """
+
+    key = _text(article.get("key"))
+    structured = article.get("structured") if isinstance(article.get("structured"), Mapping) else {}
+    status = _text(article.get("publication_status")) or "not_published"
+    mode = _text(article.get("mode")) or "deterministic_template"
+    reporter_name = _text(article.get("reporter_name")) or "The Front Office"
+    assigned_name = _text(article.get("assigned_reporter_name"))
+    is_printable = status in {"approved", "fallback"} and bool(_text(article.get("body")))
+    if not is_printable:
+        fragment = _unpublished_writer_fragment(
+            key,
+            {
+                "name": assigned_name or reporter_name,
+            },
+            status=status,
+        )
+        fragment["mode"] = mode
+        fragment["reporter_name"] = reporter_name
+        fragment["assigned_reporter_name"] = assigned_name
+        fragment["reporter_label"] = "Desk" if mode == "deterministic_template" else "Reporter"
+        fragment["evidence_fingerprint"] = _text(article.get("evidence_fingerprint"))
+        return fragment
+
+    evidence_ids = list(dict.fromkeys(
+        _text(value)
+        for value in (structured.get("evidence_ids") or structured.get("cited_evidence_ids") or [])
+        if _text(value)
+    ))[:40]
+    source_ids = list(dict.fromkeys(
+        _text(value)
+        for value in (structured.get("source_ids") or [])
+        if _text(value)
+    ))[:40]
+    return {
+        "schema_version": "writer_fragment_v1",
+        "article_key": key,
+        "available": True,
+        "status": status,
+        "mode": mode,
+        "reporter_name": reporter_name,
+        "assigned_reporter_name": assigned_name,
+        "reporter_label": "Desk" if mode == "deterministic_template" else "Reporter",
+        "headline": _excerpt(structured.get("headline") or article.get("title"), 150),
+        "lede": _excerpt(structured.get("lede"), 240),
+        "thesis": _excerpt(structured.get("thesis") or structured.get("what_changed"), 260),
+        "counter_evidence": _excerpt(structured.get("counter_evidence"), 220),
+        "action": _excerpt(structured.get("action"), 220),
+        "evidence_ids": evidence_ids,
+        "source_ids": source_ids,
+        "evidence_count": len(evidence_ids),
+        "source_count": len(source_ids),
+        "evidence_fingerprint": _text(article.get("evidence_fingerprint")),
+    }
+
+
 def _publication_articles(
     analysis: Mapping[str, Any],
     writer_preferences: Mapping[str, Any] | None = None,
@@ -1458,16 +1973,16 @@ def _publication_articles(
     now a first-class publication instead of an orphaned file counted by status.
     """
     specs = (
-        ("daily_brief", "Daily GM Brief", "dailyGmBrief", "dailyGmBriefMode"),
-        ("team_report", "Your Team Report", "teamReport", "teamReportMode"),
-        ("market_watch", "Market Watch", "marketWatch", "marketWatchMode"),
-        ("horizon_watch", "Four-Window Market Read", "horizonWatch", "horizonWatchMode"),
-        ("trade_desk", "Trade Desk", "tradeDeskRead", "tradeDeskReadMode"),
-        ("manager_intel", "Manager Intel", "managerIntel", "managerIntelMode"),
+        ("daily_brief", "Daily GM Brief", "dailyGmBrief", "dailyGmBriefMode", 6, "closes the loop", "the flagship synthesis"),
+        ("team_report", "Your Team Report", "teamReport", "teamReportMode", 1, "opens the room", "what changed around your roster"),
+        ("market_watch", "Market Watch", "marketWatch", "marketWatchMode", 2, "tests the price", "where role and market disagree"),
+        ("horizon_watch", "Four-Window Market Read", "horizonWatch", "horizonWatchMode", 5, "sets the clock", "how the answer changes with time"),
+        ("trade_desk", "Trade Desk", "tradeDeskRead", "tradeDeskReadMode", 3, "finds the counterpart", "which conversation could create value"),
+        ("manager_intel", "Manager Intel", "managerIntel", "managerIntelMode", 4, "reads the room", "what league history says to investigate"),
     )
     receipts = analysis.get("articleReceipts") if isinstance(analysis.get("articleReceipts"), Mapping) else {}
     output: list[dict[str, Any]] = []
-    for key, title, body_field, mode_field in specs:
+    for key, title, body_field, mode_field, conversation_order, conversation_relation, conversation_caption in specs:
         body = _text(analysis.get(body_field))
         if not body:
             continue
@@ -1480,8 +1995,8 @@ def _publication_articles(
         review = review_publication_article(key, body, receipt, mode)
         published_body = body if review["status"] in {"approved", "fallback"} else ""
         structured = _publication_structured(receipt, mode, assigned_reporter)
-        output.append(
-            {
+        source_receipt = dict(receipt.get("source_receipt") or {}) if isinstance(receipt.get("source_receipt"), Mapping) else {}
+        article = {
                 "key": key,
                 "title": title,
                 "body": published_body,
@@ -1500,15 +2015,352 @@ def _publication_articles(
                 "generated_at": _text(receipt.get("generated_at")),
                 "evidence_fingerprint": _text(receipt.get("evidence_fingerprint")),
                 "fallback_reason": _text(receipt.get("fallback_reason")),
-                "source_receipt": dict(receipt.get("source_receipt") or {}) if isinstance(receipt.get("source_receipt"), Mapping) else {},
+                "source_receipt": source_receipt,
                 "content_hash": _text(receipt.get("content_hash")),
                 "model": _text(receipt.get("model")),
                 "structured": structured,
                 "publication_status": review["status"],
                 "editorial_review": review,
+                "conversation_order": conversation_order,
+                "conversation_relation": conversation_relation,
+                "conversation_caption": conversation_caption,
+                "reality_check": structured.get("reality_check") or source_receipt.get("reality_check") or {},
+            }
+        article["story_fragment"] = _publication_fragment(article)
+        output.append(article)
+    return output
+
+
+def _newsroom_conversation(publication_articles: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Turn independent desk outputs into a readable chain of perspectives.
+
+    The relationships are presentation metadata, not factual claims. Each
+    card still links back to its own structured receipt and evidence drawer;
+    the chain simply tells the reader why the next voice is worth opening.
+    """
+
+    entries: list[dict[str, Any]] = []
+    ordered = sorted(
+        (item for item in publication_articles if str(item.get("body") or "").strip()),
+        key=lambda item: int(item.get("conversation_order") or 99),
+    )
+    previous_key = ""
+    for item in ordered:
+        structured = item.get("structured") if isinstance(item.get("structured"), Mapping) else {}
+        fragment = item.get("story_fragment") if isinstance(item.get("story_fragment"), Mapping) else None
+        if not isinstance(fragment, Mapping):
+            # Keep this helper backwards-compatible for callers that provide
+            # the small pre-publication shape directly. Runtime publications
+            # always carry story_fragment_v1, so this branch cannot bypass the
+            # publication gate for a real reader bundle.
+            fragment = {
+                "headline": _excerpt(structured.get("headline") or item.get("title"), 150),
+                "lede": _excerpt(structured.get("lede"), 240),
+                "thesis": _excerpt(structured.get("thesis") or structured.get("what_changed") or item.get("body"), 260),
+                "counter_evidence": _excerpt(structured.get("counter_evidence"), 220),
+                "evidence_ids": [
+                    _text(value)
+                    for value in (structured.get("evidence_ids") or structured.get("cited_evidence_ids") or [])
+                    if _text(value)
+                ],
+            }
+        item_persona = item.get("reporter_persona") if isinstance(item.get("reporter_persona"), Mapping) else {}
+        entries.append(
+            {
+                "article_key": str(item.get("key") or ""),
+                "title": str(item.get("title") or ""),
+                "reporter_name": str(item.get("reporter_name") or item.get("assigned_reporter_name") or "The Front Office"),
+                "assigned_reporter_name": str(item.get("assigned_reporter_name") or ""),
+                "reporter_persona": dict(item_persona),
+                "relation": str(item.get("conversation_relation") or "continues the room"),
+                "caption": str(item.get("conversation_caption") or ""),
+                "headline": str(fragment.get("headline") or item.get("title") or "Desk read"),
+                "lede": str(fragment.get("lede") or ""),
+                "thesis": str(fragment.get("thesis") or ""),
+                "counter_evidence": str(fragment.get("counter_evidence") or ""),
+                "room_move": str((item.get("structured") or {}).get("room_move") or "").strip().lower()
+                if isinstance(item.get("structured"), Mapping)
+                else "",
+                "reply_to": str((item.get("structured") or {}).get("reply_to") or "").strip()
+                if isinstance(item.get("structured"), Mapping)
+                else "",
+                "room_question": _excerpt((item.get("structured") or {}).get("room_question"), 180)
+                if isinstance(item.get("structured"), Mapping)
+                else "",
+                "evidence_ids": list(fragment.get("evidence_ids") or [])[:40],
+                "source_ids": list(fragment.get("source_ids") or [])[:40],
+                "claim_positions": _claim_positions((item.get("structured") or {}).get("claim_positions"))
+                if isinstance(item.get("structured"), Mapping)
+                else [],
+                "previous_article_key": previous_key,
+                "publication_status": str(item.get("publication_status") or ""),
+                "evidence_fingerprint": str(item.get("evidence_fingerprint") or ""),
+                "reality_check": dict(item.get("reality_check") or {}) if isinstance(item.get("reality_check"), Mapping) else {},
+            }
+        )
+        previous_key = str(item.get("key") or "")
+    return entries
+
+
+def _claim_positions(value: Any) -> list[dict[str, Any]]:
+    """Keep the structured claim register small enough for reader and peer context."""
+
+    if not isinstance(value, list):
+        return []
+    output: list[dict[str, Any]] = []
+    for item in value[:12]:
+        if not isinstance(item, Mapping):
+            continue
+        subject_key = _text(item.get("subject_key"))
+        window = _text(item.get("decision_window")).lower()
+        stance = _text(item.get("stance")).lower()
+        summary = _excerpt(item.get("summary"), 220)
+        evidence_ids = [
+            _text(evidence_id)
+            for evidence_id in (item.get("evidence_ids") or [])
+            if _text(evidence_id)
+        ][:12]
+        if not subject_key or not window or not stance or not summary or not evidence_ids:
+            continue
+        output.append(
+            {
+                "subject_key": subject_key,
+                "subject_label": _text(item.get("subject_label")) or subject_key,
+                "decision_window": window,
+                "stance": stance,
+                "summary": summary,
+                "evidence_ids": list(dict.fromkeys(evidence_ids)),
             }
         )
     return output
+
+
+def _newsroom_claim_conflicts(conversation: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Compare same-subject, same-window positions without choosing a fake winner.
+
+    A writer's prose is not parsed as fact. Only the structured claim register
+    can enter this ledger, and every entry has already passed the article
+    evidence boundary. The result distinguishes an explicit room disagreement
+    from a conflict that still needs an editor or manager decision.
+    """
+
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for article in conversation:
+        article_key = _text(article.get("article_key"))
+        reporter = _text(article.get("reporter_name")) or "The desk"
+        for claim in _claim_positions(article.get("claim_positions")):
+            key = (_text(claim.get("subject_key")).lower(), _text(claim.get("decision_window")).lower())
+            if not key[0] or not key[1]:
+                continue
+            grouped.setdefault(key, []).append(
+                {
+                    "article_key": article_key,
+                    "reporter_name": reporter,
+                    "subject_key": claim["subject_key"],
+                    "subject_label": claim["subject_label"],
+                    "decision_window": claim["decision_window"],
+                    "stance": claim["stance"],
+                    "summary": claim["summary"],
+                    "evidence_ids": claim["evidence_ids"],
+                    "room_move": _text(article.get("room_move")).lower(),
+                    "reply_to": _text(article.get("reply_to")),
+                    "reality_check": article.get("reality_check") if isinstance(article.get("reality_check"), Mapping) else {},
+                }
+            )
+
+    conflicts: list[dict[str, Any]] = []
+    for (_, _), claims in grouped.items():
+        stances = {_text(claim.get("stance")).lower() for claim in claims}
+        direct_conflict = "positive" in stances and "negative" in stances
+        conditional_conflict = "conditional" in stances and bool(stances & {"positive", "negative", "mixed"})
+        mixed_conflict = "mixed" in stances and bool(stances & {"positive", "negative"})
+        if not (direct_conflict or conditional_conflict or mixed_conflict):
+            continue
+        explicit_dispute = any(
+            _text(claim.get("room_move")).lower() in {"disputes", "supersedes"}
+            for claim in claims
+        )
+        high_reality_limit = any(
+            any(
+                _text(check.get("severity")).lower() == "high"
+                for check in (claim.get("reality_check") or {}).get("matched_checks", [])
+                if isinstance(check, Mapping)
+            )
+            for claim in claims
+        )
+        resolution_status = (
+            "limited_by_reality_check"
+            if high_reality_limit
+            else "explicitly_disputed"
+            if explicit_dispute
+            else "unresolved"
+        )
+        all_evidence: list[str] = []
+        for claim in claims:
+            for evidence_id in claim.get("evidence_ids") or []:
+                if evidence_id not in all_evidence:
+                    all_evidence.append(evidence_id)
+        conflicts.append(
+            {
+                "subject_key": claims[0]["subject_key"],
+                "subject_label": claims[0]["subject_label"],
+                "decision_window": claims[0]["decision_window"],
+                "stances": sorted(stances),
+                "resolution_status": resolution_status,
+                "resolution": (
+                    "Keep the competing reads conditional because a high-severity Reality Check limitation is present."
+                    if resolution_status == "limited_by_reality_check"
+                    else "The desks explicitly disagree; keep both receipts visible and do not select a winner without manager review."
+                    if resolution_status == "explicitly_disputed"
+                    else "The same subject and window have competing positions; the editor has not selected a winner."
+                ),
+                "claims": [
+                    {
+                        "article_key": claim["article_key"],
+                        "reporter_name": claim["reporter_name"],
+                        "stance": claim["stance"],
+                        "summary": claim["summary"],
+                        "evidence_ids": claim["evidence_ids"],
+                    }
+                    for claim in claims
+                ],
+                "evidence_ids": all_evidence[:24],
+            }
+        )
+    return conflicts[:12]
+
+
+def _newsroom_edges(conversation: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Create safe, queryable relationships between adjacent newsroom desks.
+
+    An edge is editorial structure, not a new factual claim. The default is
+    ``extends`` because a different evidence question should not be presented
+    as disagreement unless the writer explicitly supplied that move. Explicit
+    moves are accepted only when they point to a prior card in this issue.
+    """
+
+    allowed = {"supports", "disputes", "extends", "asks", "supersedes", "held_because"}
+    seen_prior: set[str] = set()
+    edges: list[dict[str, Any]] = []
+    for item in conversation:
+        target = str(item.get("article_key") or "").strip()
+        source = str(item.get("reply_to") or item.get("previous_article_key") or "").strip()
+        if source and source != target and source in seen_prior and target:
+            relationship = str(item.get("room_move") or "extends").strip().lower()
+            if relationship not in allowed:
+                relationship = "extends"
+            reporter = str(item.get("reporter_name") or item.get("assigned_reporter_name") or "The desk")
+            caption = str(item.get("caption") or "adds a distinct evidence question")
+            counterpoint = _excerpt(item.get("counter_evidence"), 180)
+            summary = f"{reporter} {caption}; the relationship is editorial context, not source evidence."
+            if relationship == "disputes" and counterpoint:
+                summary += f" Counter-signal: {counterpoint}"
+            edges.append(
+                {
+                    "source_article_key": source,
+                    "target_article_key": target,
+                    "relationship": relationship,
+                    "summary": summary,
+                    "source_evidence_ids": list(item.get("evidence_ids") or [])[:40],
+                    "status": "visible" if str(item.get("publication_status") or "") != "held" else "held",
+                }
+            )
+        if target:
+            seen_prior.add(target)
+    return edges
+
+
+def _newsroom_summary(
+    conversation: Sequence[Mapping[str, Any]],
+    edges: Sequence[Mapping[str, Any]],
+    article_modes: Mapping[str, Any],
+    *,
+    claim_conflicts: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Give the front page a truthful issue-level receipt without another LLM call."""
+
+    expected = {str(key) for key in article_modes if str(key).strip()}
+    available = {str(item.get("article_key") or "") for item in conversation if str(item.get("article_key") or "").strip()}
+    relationships: dict[str, int] = {}
+    for edge in edges:
+        relationship = str(edge.get("relationship") or "extends").strip().lower()
+        relationships[relationship] = relationships.get(relationship, 0) + 1
+    missing = sorted(expected - available)
+    held = sorted(
+        str(item.get("article_key") or "")
+        for item in conversation
+        if str(item.get("publication_status") or "").lower() == "held"
+    )
+    questions = [
+        {
+            "article_key": str(item.get("article_key") or ""),
+            "reporter_name": str(item.get("reporter_name") or "The desk"),
+            "question": _excerpt(item.get("room_question"), 180),
+        }
+        for item in conversation
+        if str(item.get("room_question") or "").strip()
+    ]
+    tensions = [
+        {
+            "source_article_key": str(edge.get("source_article_key") or ""),
+            "target_article_key": str(edge.get("target_article_key") or ""),
+            "relationship": str(edge.get("relationship") or "extends"),
+            "summary": _excerpt(edge.get("summary"), 300),
+        }
+        for edge in edges
+        if str(edge.get("relationship") or "").lower() in {"disputes", "supersedes"}
+    ]
+    agreements = [
+        {
+            "source_article_key": str(edge.get("source_article_key") or ""),
+            "target_article_key": str(edge.get("target_article_key") or ""),
+            "relationship": str(edge.get("relationship") or "supports"),
+            "summary": _excerpt(edge.get("summary"), 300),
+        }
+        for edge in edges
+        if str(edge.get("relationship") or "").lower() in {"supports", "held_because"}
+    ]
+    next_question = (
+        str(questions[0].get("question") or "").strip()
+        if questions
+        else "Which desk read should change the manager's next investigation?"
+    )
+    return {
+        "expected_desks": len(expected),
+        "available_desks": len(available),
+        "missing_desks": missing,
+        "edge_count": len(edges),
+        "relationship_counts": dict(sorted(relationships.items())),
+        "disagreement_count": relationships.get("disputes", 0),
+        "claim_conflict_count": len(claim_conflicts or []),
+        "unresolved_claim_conflict_count": sum(
+            1
+            for conflict in (claim_conflicts or [])
+            if _text(conflict.get("resolution_status")) in {"unresolved", "explicitly_disputed"}
+        ),
+        "claim_conflicts": [dict(conflict) for conflict in (claim_conflicts or [])[:8]],
+        "agreement_count": len(agreements),
+        "held_desks": held,
+        "open_questions": questions[:5],
+        "agreements": agreements[:5],
+        "tensions": tensions[:5],
+        "room_synthesis": {
+            "agreement_count": len(agreements),
+            "disagreement_count": len(tensions),
+            "next_question": next_question,
+            "agreements": agreements[:5],
+            "tensions": tensions[:5],
+            "open_questions": questions[:5],
+        },
+        "status": "complete" if expected and not missing else "partial" if available else "empty",
+        "note": (
+            "The room has no publishable desk notes yet; the deterministic evidence board remains available."
+            if not available
+            else f"{len(missing)} desk{' is' if len(missing) == 1 else 's are'} missing from the printed conversation."
+            if missing
+            else "All registered desk notes are present in the printed conversation."
+        ),
+    }
 
 
 def review_publication_article(
@@ -1758,7 +2610,13 @@ def _neutralize_reader_story(
     assigned_reporter: Mapping[str, Any],
 ) -> dict[str, Any]:
     result = dict(story)
-    existing = result.get("reporter_persona") if isinstance(result.get("reporter_persona"), Mapping) else assigned_reporter
+    existing = (
+        result.get("assigned_reporter_persona")
+        if isinstance(result.get("assigned_reporter_persona"), Mapping)
+        else result.get("reporter_persona")
+        if isinstance(result.get("reporter_persona"), Mapping)
+        else assigned_reporter
+    )
     result["assigned_reporter_persona"] = dict(existing)
     result["assigned_reporter_id"] = _text(existing.get("persona_id"))
     result["assigned_reporter_name"] = _text(existing.get("name"))

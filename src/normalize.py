@@ -27,6 +27,27 @@ MATCHUP_COLUMNS = [
 ]
 
 
+MATCHUP_PLAYER_COLUMNS = [
+    "season",
+    "league_id",
+    "week",
+    "matchup_id",
+    "roster_id",
+    "player_id",
+    "player_name",
+    "position",
+    "nfl_team",
+    "team_name",
+    "opponent_roster_id",
+    "opponent_team_name",
+    "is_starter",
+    "player_points",
+    "matchup_status",
+    "source_trace",
+    "evidence",
+]
+
+
 def build_user_maps(users: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     users_by_id = {str(user.get("user_id")): user for user in users}
     team_names = {}
@@ -492,9 +513,95 @@ def normalize_matchups(
     return rows
 
 
+def normalize_matchup_player_points(
+    season: str,
+    league_id: str,
+    matchups_by_week: dict[int, list[dict[str, Any]]],
+    roster_map: dict[int, dict[str, Any]],
+    players: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Preserve the player receipts nested inside each Sleeper matchup row.
+
+    The team-level matchup table is enough for standings, but it cannot answer
+    the editorial question "who actually carried this result?" Sleeper keeps
+    that evidence in ``players_points`` and ``starters``. This table flattens
+    those exact IDs without treating future 0-0 rows as played games.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for week, raw_rows in sorted(matchups_by_week.items(), key=lambda item: int(item[0])):
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for raw in raw_rows or []:
+            roster_id = _int_or_none(raw.get("roster_id"))
+            if roster_id is None:
+                continue
+            raw_matchup_id = raw.get("matchup_id")
+            matchup_id = "" if raw_matchup_id in (None, "", 0, "0") else str(raw_matchup_id)
+            group_key = matchup_id or f"unpaired:{roster_id}"
+            groups[group_key].append({"raw": raw, "roster_id": roster_id, "matchup_id": matchup_id})
+
+        source_trace = f"sleeper:league/{league_id}/matchups/{week}"
+        for group in groups.values():
+            for entry in group:
+                raw = entry["raw"]
+                roster_id = entry["roster_id"]
+                opponents = [other for other in group if other["roster_id"] != roster_id]
+                opponent = opponents[0] if opponents else {}
+                opponent_roster_id = opponent.get("roster_id", "") if opponent else ""
+                points_for = _number_or_none(raw.get("points"))
+                if points_for is None:
+                    points_for = _number_or_none(raw.get("custom_points"))
+                opponent_raw = (opponent.get("raw") or {}) if isinstance(opponent, dict) else {}
+                points_against = _number_or_none(opponent_raw.get("points"))
+                if points_against is None:
+                    points_against = _number_or_none(opponent_raw.get("custom_points"))
+                matchup_status = "played" if _matchup_result(points_for, points_against) in {"win", "loss", "tie"} else "unplayed"
+
+                players_points = raw.get("players_points")
+                players_points = players_points if isinstance(players_points, dict) else {}
+                player_ids = {str(pid) for pid in listify(raw.get("players")) if pid not in (None, "")}
+                player_ids.update(str(pid) for pid in players_points if pid not in (None, ""))
+                starters = {str(pid) for pid in listify(raw.get("starters")) if pid not in (None, "")}
+                for player_id in sorted(player_ids):
+                    player_points = _number_or_none(players_points.get(player_id))
+                    player_name_text = player_name(players, player_id) or player_id
+                    evidence = (
+                        f"week={week}; matchup_id={entry['matchup_id'] or 'not recorded'}; "
+                        f"roster_id={roster_id}; player_id={player_id}; "
+                        f"player_points={_format_number(player_points)}; "
+                        f"is_starter={player_id in starters}; matchup_status={matchup_status}"
+                    )
+                    rows.append(
+                        {
+                            "season": season,
+                            "league_id": league_id,
+                            "week": week,
+                            "matchup_id": entry["matchup_id"],
+                            "roster_id": roster_id,
+                            "player_id": player_id,
+                            "player_name": player_name_text,
+                            "position": player_field(players, player_id, "position"),
+                            "nfl_team": player_field(players, player_id, "team"),
+                            "team_name": roster_map.get(roster_id, {}).get("team_name", ""),
+                            "opponent_roster_id": opponent_roster_id,
+                            "opponent_team_name": roster_map.get(opponent_roster_id, {}).get("team_name", "") if opponent_roster_id else "",
+                            "is_starter": player_id in starters,
+                            "player_points": _format_number(player_points),
+                            "matchup_status": matchup_status,
+                            "source_trace": source_trace,
+                            "evidence": evidence,
+                        }
+                    )
+    return rows
+
+
 def to_dataframes(tables: dict[str, list[dict[str, Any]]]) -> dict[str, pd.DataFrame]:
+    column_map = {
+        "matchups": MATCHUP_COLUMNS,
+        "matchup_player_points": MATCHUP_PLAYER_COLUMNS,
+    }
     return {
-        name: pd.DataFrame(rows, columns=MATCHUP_COLUMNS if name == "matchups" else None)
+        name: pd.DataFrame(rows, columns=column_map.get(name))
         for name, rows in tables.items()
     }
 

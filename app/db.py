@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,10 @@ REQUIRED_TABLES = {
     "content_artifact_history",
     "content_interactions",
     "refresh_runs",
+    "edition_runs",
+    "edition_jobs",
+    "publication_edges",
+    "newsroom_workers",
 }
 
 
@@ -155,12 +160,105 @@ def init_db(path: Path | None = None) -> None:
                 recorded_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS edition_runs (
+                run_id TEXT PRIMARY KEY,
+                operator_run_id TEXT NOT NULL DEFAULT '',
+                user_id INTEGER NOT NULL,
+                league_id TEXT NOT NULL,
+                season TEXT NOT NULL,
+                roster_id INTEGER,
+                requested_article_keys_json TEXT NOT NULL DEFAULT '[]',
+                state TEXT NOT NULL DEFAULT 'queued',
+                stage TEXT NOT NULL DEFAULT 'queued',
+                started_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT,
+                last_heartbeat_at TEXT,
+                lease_until TEXT,
+                worker_id TEXT NOT NULL DEFAULT '',
+                bundle_revision TEXT NOT NULL DEFAULT '',
+                completed_count INTEGER NOT NULL DEFAULT 0,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 2,
+                cancel_requested_at TEXT,
+                edition_fingerprint TEXT NOT NULL DEFAULT '',
+                source_receipt_json TEXT NOT NULL DEFAULT '{}',
+                failure_class TEXT NOT NULL DEFAULT '',
+                failure_message TEXT NOT NULL DEFAULT '',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS edition_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                article_key TEXT NOT NULL,
+                phase TEXT NOT NULL DEFAULT 'writer',
+                state TEXT NOT NULL DEFAULT 'queued',
+                attempt INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT,
+                evidence_fingerprint TEXT NOT NULL DEFAULT '',
+                prompt_version TEXT NOT NULL DEFAULT '',
+                lease_until TEXT,
+                worker_id TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                reasoning_effort TEXT NOT NULL DEFAULT '',
+                provider_request_id TEXT NOT NULL DEFAULT '',
+                client_request_id TEXT NOT NULL DEFAULT '',
+                usage_json TEXT NOT NULL DEFAULT '{}',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                error_class TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT '',
+                UNIQUE(run_id, article_key, phase),
+                FOREIGN KEY(run_id) REFERENCES edition_runs(run_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS publication_edges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                source_article_key TEXT NOT NULL,
+                target_article_key TEXT NOT NULL,
+                relationship TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                source_evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'visible',
+                created_at TEXT NOT NULL,
+                UNIQUE(run_id, source_article_key, target_article_key, relationship),
+                FOREIGN KEY(run_id) REFERENCES edition_runs(run_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS newsroom_workers (
+                worker_id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                last_heartbeat_at TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'idle',
+                run_id TEXT NOT NULL DEFAULT ''
+            );
             """
         )
         _ensure_column(conn, "users", "sleeper_user_id", "TEXT")
         _ensure_column(conn, "users", "selected_league_id", "TEXT")
         _ensure_column(conn, "user_leagues", "identity_status", "TEXT NOT NULL DEFAULT 'unverified'")
         _ensure_column(conn, "user_leagues", "identity_checked_at", "TEXT")
+        for column, definition in (
+            ("lease_until", "TEXT"),
+            ("worker_id", "TEXT NOT NULL DEFAULT ''"),
+            ("max_attempts", "INTEGER NOT NULL DEFAULT 2"),
+            ("cancel_requested_at", "TEXT"),
+            ("edition_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+            ("source_receipt_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ):
+            _ensure_column(conn, "edition_runs", column, definition)
+        for column, definition in (
+            ("lease_until", "TEXT"),
+            ("worker_id", "TEXT NOT NULL DEFAULT ''"),
+            ("client_request_id", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            _ensure_column(conn, "edition_jobs", column, definition)
         for column, definition in (
             ("article_id", "TEXT NOT NULL DEFAULT ''"),
             ("section", "TEXT NOT NULL DEFAULT ''"),
@@ -338,6 +436,98 @@ def storage_health(path: Path | None = None) -> dict[str, Any]:
     }
 
 
+def heartbeat_newsroom_worker(
+    worker_id: str,
+    *,
+    state: str = "idle",
+    run_id: str = "",
+) -> dict[str, Any]:
+    """Persist a safe liveness receipt for the separate newsroom worker."""
+
+    worker = str(worker_id or "").strip()
+    if not worker:
+        raise ValueError("worker_id is required")
+    now = datetime.now(timezone.utc).isoformat()
+    normalized_state = str(state or "idle").strip().lower()
+    if normalized_state not in {"idle", "working", "stopping"}:
+        normalized_state = "working"
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO newsroom_workers(worker_id, started_at, last_heartbeat_at, state, run_id)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(worker_id) DO UPDATE SET
+                last_heartbeat_at = excluded.last_heartbeat_at,
+                state = excluded.state,
+                run_id = excluded.run_id
+            """,
+            (worker, now, now, normalized_state, str(run_id or "")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "worker_id": worker,
+        "last_heartbeat_at": now,
+        "state": normalized_state,
+        "run_id": str(run_id or ""),
+    }
+
+
+def newsroom_worker_health(*, max_age_seconds: int = 300, path: Path | None = None) -> dict[str, Any]:
+    """Summarize worker liveness without exposing worker or league identities."""
+
+    db_path = path or DB_PATH
+    if not db_path.is_file():
+        return {
+            "heartbeat_schema_ready": False,
+            "worker_count": 0,
+            "active_worker_count": 0,
+            "active": False,
+            "last_heartbeat_at": "",
+        }
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT last_heartbeat_at, state FROM newsroom_workers ORDER BY last_heartbeat_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return {
+            "heartbeat_schema_ready": False,
+            "worker_count": 0,
+            "active_worker_count": 0,
+            "active": False,
+            "last_heartbeat_at": "",
+        }
+
+    now = datetime.now(timezone.utc)
+    age_limit = max(1, min(int(max_age_seconds), 3600))
+    active_count = 0
+    latest = str(rows[0]["last_heartbeat_at"] or "") if rows else ""
+    for row in rows:
+        try:
+            heartbeat_at = datetime.fromisoformat(str(row["last_heartbeat_at"]).replace("Z", "+00:00"))
+            if heartbeat_at.tzinfo is None:
+                heartbeat_at = heartbeat_at.replace(tzinfo=timezone.utc)
+            if (now - heartbeat_at).total_seconds() <= age_limit:
+                active_count += 1
+        except (TypeError, ValueError, OverflowError):
+            continue
+    return {
+        "heartbeat_schema_ready": True,
+        "worker_count": len(rows),
+        "active_worker_count": active_count,
+        "active": bool(active_count),
+        "last_heartbeat_at": latest,
+        "max_age_seconds": age_limit,
+    }
+
+
 def storage_audit(current_user_id: int | None = None, path: Path | None = None) -> dict[str, Any]:
     """Return operator-safe counts for diagnosing identity/storage continuity.
 
@@ -359,6 +549,9 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
             "manager_trade_profiles": 0,
             "content_artifacts": 0,
             "refresh_runs": 0,
+            "edition_runs": 0,
+            "edition_jobs": 0,
+            "publication_edges": 0,
             "orphan_user_leagues": 0,
             "orphan_team_profiles": 0,
             "orphan_manager_trade_profiles": 0,
@@ -415,6 +608,9 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
                 "manager_trade_profiles": count("SELECT COUNT(*) FROM manager_trade_profiles"),
                 "content_artifacts": count("SELECT COUNT(*) FROM content_artifacts"),
                 "refresh_runs": count("SELECT COUNT(*) FROM refresh_runs"),
+                "edition_runs": count("SELECT COUNT(*) FROM edition_runs"),
+                "edition_jobs": count("SELECT COUNT(*) FROM edition_jobs"),
+                "publication_edges": count("SELECT COUNT(*) FROM publication_edges"),
                 "orphan_user_leagues": orphan_leagues,
                 "orphan_team_profiles": orphan_profiles,
                 "orphan_manager_trade_profiles": orphan_manager_profiles,
@@ -431,6 +627,9 @@ def storage_audit(current_user_id: int | None = None, path: Path | None = None) 
             "manager_trade_profiles": 0,
             "content_artifacts": 0,
             "refresh_runs": 0,
+            "edition_runs": 0,
+            "edition_jobs": 0,
+            "publication_edges": 0,
             "orphan_user_leagues": 0,
             "orphan_team_profiles": 0,
             "orphan_manager_trade_profiles": 0,
@@ -1373,6 +1572,888 @@ def content_learning_summary(
     }
 
 
+def start_edition_run(
+    user_id: int,
+    league_id: str,
+    season: str,
+    roster_id: int | str | None = None,
+    operator_run_id: str = "",
+    article_keys: list[str] | tuple[str, ...] | None = None,
+    metadata: dict[str, Any] | None = None,
+    edition_fingerprint: str = "",
+    source_receipt: dict[str, Any] | None = None,
+    initial_state: str = "running",
+    initial_stage: str = "refreshing",
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    """Create the durable receipt for one league newsroom edition.
+
+    This is deliberately separate from ``content_artifacts``.  An artifact is
+    the last published result; an edition run is the execution ledger that
+    explains what was attempted, reused, held, or interrupted on the way
+    there.  Keeping both lets a retry resume without pretending a partial run
+    was a complete publication.
+    """
+
+    now = datetime.now(timezone.utc).isoformat()
+    run_id = uuid.uuid4().hex
+    requested = [str(key) for key in (article_keys or []) if str(key).strip()]
+    state = str(initial_state or "running").strip().lower()
+    stage = str(initial_stage or ("queued" if state == "queued" else "refreshing")).strip().lower()
+    if state not in {"queued", "running"}:
+        raise ValueError("initial_state must be queued or running")
+    attempts = max(1, min(int(max_attempts), 5))
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO edition_runs(
+                run_id, operator_run_id, user_id, league_id, season, roster_id,
+                requested_article_keys_json, state, stage, started_at, updated_at,
+                last_heartbeat_at, total_count, max_attempts, edition_fingerprint,
+                source_receipt_json, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                str(operator_run_id or ""),
+                int(user_id),
+                str(league_id),
+                str(season),
+                int(roster_id) if str(roster_id or "").strip().isdigit() else None,
+                json.dumps(requested, sort_keys=True),
+                state,
+                stage,
+                now,
+                now,
+                now,
+                len(requested),
+                attempts,
+                str(edition_fingerprint or ""),
+                json.dumps(source_receipt or {}, sort_keys=True),
+                json.dumps(metadata or {}, sort_keys=True),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(run_id) or {"run_id": run_id, "state": state}
+
+
+def update_edition_run(
+    run_id: str,
+    *,
+    state: str | None = None,
+    stage: str | None = None,
+    completed_count: int | None = None,
+    total_count: int | None = None,
+    bundle_revision: str | None = None,
+    edition_fingerprint: str | None = None,
+    source_receipt: dict[str, Any] | None = None,
+    failure_class: str | None = None,
+    failure_message: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    complete: bool = False,
+    worker_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Checkpoint a newsroom run without accepting arbitrary SQL fields."""
+
+    assignments = ["updated_at = ?", "last_heartbeat_at = ?"]
+    values: list[Any] = [datetime.now(timezone.utc).isoformat()] * 2
+    for column, value in (
+        ("state", state),
+        ("stage", stage),
+        ("completed_count", completed_count),
+        ("total_count", total_count),
+        ("bundle_revision", bundle_revision),
+        ("edition_fingerprint", edition_fingerprint),
+        ("failure_class", failure_class),
+        ("failure_message", failure_message),
+    ):
+        if value is not None:
+            assignments.append(f"{column} = ?")
+            values.append(value)
+    if metadata is not None:
+        assignments.append("metadata_json = ?")
+        values.append(json.dumps(metadata, sort_keys=True))
+    if source_receipt is not None:
+        assignments.append("source_receipt_json = ?")
+        values.append(json.dumps(source_receipt, sort_keys=True))
+    if complete:
+        assignments.extend(["completed_at = ?", "lease_until = NULL", "worker_id = ''"])
+        values.append(datetime.now(timezone.utc).isoformat())
+    where = "run_id = ?"
+    where_values: list[Any] = [str(run_id)]
+    if worker_id is not None:
+        now = datetime.now(timezone.utc).isoformat()
+        where += " AND worker_id = ? AND state NOT IN ('complete', 'completed', 'failed', 'cancelled', 'dead_letter') AND cancel_requested_at IS NULL AND (lease_until IS NULL OR lease_until > ?)"
+        where_values.extend([str(worker_id), now])
+    values.extend(where_values)
+    conn = _connect()
+    try:
+        cursor = conn.execute(f"UPDATE edition_runs SET {', '.join(assignments)} WHERE {where}", tuple(values))
+        if worker_id is not None and cursor.rowcount != 1:
+            conn.rollback()
+            return None
+        conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def start_edition_job(
+    run_id: str,
+    article_key: str,
+    *,
+    phase: str = "writer",
+    evidence_fingerprint: str = "",
+    prompt_version: str = "",
+    provider: str = "",
+    model: str = "",
+    reasoning_effort: str = "",
+    client_request_id: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Start or retry one desk phase, incrementing its durable attempt count."""
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        run = conn.execute(
+            "SELECT state, max_attempts, cancel_requested_at FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+        if run is None:
+            conn.rollback()
+            return None
+        existing = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+            (str(run_id), str(article_key), str(phase)),
+        ).fetchone()
+        run_state = str(run[0] or "").strip().lower()
+        if run_state != "running":
+            conn.rollback()
+            return _edition_job_row(existing) if existing is not None else {"state": run_state or "unavailable"}
+        if bool(run[2]):
+            conn.rollback()
+            return _edition_job_row(existing) if existing is not None else {"state": "cancelled"}
+        if existing is not None:
+            existing_state = str(existing["state"] or "").lower()
+            if existing_state in {"published", "reused", "skipped", "reviewed", "held", "dead_letter", "cancelled"}:
+                conn.rollback()
+                return _edition_job_row(existing)
+            if existing_state in {"failed", "interrupted"} and int(existing["attempt"] or 0) >= max(1, int(run[1] or 2)):
+                conn.execute(
+                    """
+                    UPDATE edition_jobs
+                    SET state = 'dead_letter', updated_at = ?, completed_at = ?,
+                        lease_until = NULL, worker_id = '', error_class = 'retry_budget_exhausted',
+                        error_message = ?
+                    WHERE run_id = ? AND article_key = ? AND phase = ?
+                    """,
+                    (now, now, f"Retry budget exhausted after {max(1, int(run[1] or 2))} attempts.", str(run_id), str(article_key), str(phase)),
+                )
+                conn.commit()
+                return _edition_job_row(conn.execute(
+                    "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+                    (str(run_id), str(article_key), str(phase)),
+                ).fetchone())
+        conn.execute(
+            """
+            INSERT INTO edition_jobs(
+                run_id, article_key, phase, state, attempt, started_at, updated_at,
+                evidence_fingerprint, prompt_version, provider, model, reasoning_effort,
+                client_request_id, metadata_json
+            ) VALUES (?, ?, ?, 'running', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, article_key, phase) DO UPDATE SET
+                state = 'running', attempt = edition_jobs.attempt + 1,
+                started_at = excluded.started_at, updated_at = excluded.updated_at,
+                completed_at = NULL, evidence_fingerprint = excluded.evidence_fingerprint,
+                prompt_version = excluded.prompt_version, provider = excluded.provider,
+                model = excluded.model, reasoning_effort = excluded.reasoning_effort,
+                client_request_id = CASE WHEN excluded.client_request_id = ''
+                    THEN edition_jobs.client_request_id ELSE excluded.client_request_id END,
+                lease_until = NULL, worker_id = '', provider_request_id = '', usage_json = '{}', metadata_json = excluded.metadata_json,
+                error_class = '', error_message = ''
+            """,
+            (
+                str(run_id), str(article_key), str(phase), now, now,
+                str(evidence_fingerprint or ""), str(prompt_version or ""),
+                str(provider or ""), str(model or ""), str(reasoning_effort or ""),
+                str(client_request_id or ""),
+                json.dumps(metadata or {}, sort_keys=True),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+            (str(run_id), str(article_key), str(phase)),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _edition_job_row(row) if row is not None else None
+
+
+def claim_edition_run(
+    run_id: str,
+    worker_id: str,
+    *,
+    lease_seconds: int = 300,
+) -> dict[str, Any] | None:
+    """Atomically claim a queued, interrupted, or expired edition run.
+
+    This is the seam a future Railway worker can use.  The current inline
+    operator path remains compatible, while a second worker cannot claim a
+    live run until its lease expires or it is the same worker renewing it.
+    """
+
+    worker = str(worker_id or "").strip()
+    if not worker:
+        raise ValueError("worker_id is required")
+    seconds = max(1, min(int(lease_seconds), 3600))
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lease_until = (now_dt.timestamp() + seconds)
+    lease = datetime.fromtimestamp(lease_until, timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT state, stage, worker_id, lease_until, metadata_json FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+        if row is None:
+            conn.rollback()
+            return None
+        state = str(row[0] or "").strip().lower()
+        owner = str(row[2] or "").strip()
+        expired = _lease_is_expired(row[3], now_dt)
+        if state in {"complete", "completed", "failed"} or (
+            state in {"running", "cancel_requested"} and owner and owner != worker and not expired
+        ) or state not in {"queued", "interrupted", "running", "cancel_requested"}:
+            conn.rollback()
+            return None
+        stage = str(row[1] or "").strip()
+        if state in {"queued", "interrupted"} or stage in {"", "queued", "interrupted"}:
+            metadata = _decode_json(row[4])
+            stage = str(metadata.get("resume_stage") or "refreshing").strip() or "refreshing"
+        conn.execute(
+            """
+            UPDATE edition_runs
+            SET state = 'running', stage = ?, updated_at = ?, last_heartbeat_at = ?,
+                lease_until = ?, worker_id = ?,
+                cancel_requested_at = CASE WHEN ? = 'cancel_requested' THEN cancel_requested_at ELSE NULL END,
+                failure_class = '', failure_message = ''
+            WHERE run_id = ?
+            """,
+            (stage, now, now, lease, worker, state, str(run_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def claim_next_edition_run(
+    worker_id: str,
+    *,
+    lease_seconds: int = 300,
+) -> dict[str, Any] | None:
+    """Atomically claim the oldest queued or recoverable edition run.
+
+    A worker should use this instead of selecting a run and claiming it in two
+    separate requests.  The transaction closes the race where two Railway
+    worker instances wake up on the same queue row.
+    """
+
+    worker = str(worker_id or "").strip()
+    if not worker:
+        raise ValueError("worker_id is required")
+    seconds = max(1, min(int(lease_seconds), 3600))
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lease = datetime.fromtimestamp(now_dt.timestamp() + seconds, timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT run_id, state, stage, worker_id, lease_until, metadata_json
+            FROM edition_runs
+            WHERE completed_at IS NULL
+              AND (
+                state IN ('queued', 'interrupted')
+                OR (state IN ('running', 'cancel_requested') AND worker_id <> '' AND (lease_until IS NULL OR lease_until <= ?))
+              )
+            ORDER BY started_at, rowid
+            LIMIT 1
+            """,
+            (now,),
+        ).fetchone()
+        if row is None:
+            conn.rollback()
+            return None
+        state = str(row[1] or "").strip().lower()
+        stage = str(row[2] or "").strip()
+        if state in {"queued", "interrupted"} or stage in {"", "queued", "interrupted"}:
+            metadata = _decode_json(row[5])
+            stage = str(metadata.get("resume_stage") or "refreshing").strip() or "refreshing"
+        conn.execute(
+            """
+            UPDATE edition_runs
+            SET state = 'running', stage = ?, updated_at = ?, last_heartbeat_at = ?,
+                lease_until = ?, worker_id = ?,
+                cancel_requested_at = CASE WHEN ? = 'cancel_requested' THEN cancel_requested_at ELSE NULL END,
+                failure_class = '', failure_message = ''
+            WHERE run_id = ?
+            """,
+            (stage, now, now, lease, worker, state, str(row[0])),
+        )
+        conn.commit()
+        run_id = str(row[0])
+    finally:
+        conn.close()
+    return get_edition_run(run_id)
+
+
+def heartbeat_edition_run(
+    run_id: str,
+    worker_id: str,
+    *,
+    lease_seconds: int = 300,
+) -> dict[str, Any] | None:
+    """Extend a run lease only when the caller still owns the run."""
+
+    worker = str(worker_id or "").strip()
+    if not worker:
+        raise ValueError("worker_id is required")
+    seconds = max(1, min(int(lease_seconds), 3600))
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lease = datetime.fromtimestamp(now_dt.timestamp() + seconds, timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE edition_runs
+            SET updated_at = ?, last_heartbeat_at = ?, lease_until = ?
+            WHERE run_id = ? AND state IN ('running', 'cancel_requested') AND worker_id = ?
+              AND (lease_until IS NULL OR lease_until > ?)
+            """,
+            (now, now, lease, str(run_id), worker, now),
+        )
+        conn.commit()
+        if cursor.rowcount != 1:
+            return None
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def edition_run_cancel_requested(run_id: str) -> bool:
+    """Return whether a non-terminal edition has a cancellation request."""
+
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT state, cancel_requested_at FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return False
+    return str(row[0] or "").strip().lower() in {"cancel_requested", "cancelled"} or bool(row[1])
+
+
+def request_edition_cancellation(run_id: str) -> dict[str, Any] | None:
+    """Request cancellation without stealing a live worker's lease.
+
+    Queued work can be cancelled immediately.  Running work is marked for
+    cooperative cancellation so the current provider call can finish safely;
+    the worker then closes the run and suppresses publication.
+    """
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT state FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+        if row is None:
+            conn.rollback()
+            return None
+        state = str(row[0] or "").strip().lower()
+        if state in {"complete", "completed", "failed", "cancelled", "dead_letter"}:
+            conn.rollback()
+        elif state in {"queued", "interrupted"}:
+            conn.execute(
+                """
+                UPDATE edition_runs
+                SET state = 'cancelled', stage = 'cancelled', updated_at = ?,
+                    last_heartbeat_at = ?, completed_at = ?, cancel_requested_at = ?,
+                    lease_until = NULL, worker_id = '', failure_class = 'cancelled',
+                    failure_message = 'Cancellation requested before the newsroom started.'
+                WHERE run_id = ?
+                """,
+                (now, now, now, now, str(run_id)),
+            )
+            conn.execute(
+                """
+                UPDATE edition_jobs
+                SET state = 'cancelled', updated_at = ?, completed_at = ?,
+                    lease_until = NULL, worker_id = '', error_class = 'cancelled',
+                    error_message = 'Edition cancelled before this desk phase ran.'
+                WHERE run_id = ? AND state NOT IN ('published', 'reused', 'skipped', 'reviewed', 'held', 'dead_letter', 'cancelled')
+                """,
+                (now, now, str(run_id)),
+            )
+            conn.commit()
+        else:
+            conn.execute(
+                """
+                UPDATE edition_runs
+                SET state = 'cancel_requested', updated_at = ?, last_heartbeat_at = ?,
+                    cancel_requested_at = ?, failure_class = 'cancel_requested',
+                    failure_message = 'Cancellation requested; the active desk will stop before publication.'
+                WHERE run_id = ? AND completed_at IS NULL
+                """,
+                (now, now, now, str(run_id)),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def cancel_edition_run(
+    run_id: str,
+    *,
+    worker_id: str | None = None,
+    message: str = "Edition cancelled before publication.",
+) -> dict[str, Any] | None:
+    """Close a cancellation request and suppress every in-flight job."""
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        where = "run_id = ? AND completed_at IS NULL"
+        values: list[Any] = [str(run_id)]
+        if worker_id is not None:
+            where += " AND worker_id = ? AND state IN ('running', 'cancel_requested')"
+            values.append(str(worker_id))
+        cursor = conn.execute(
+            f"""
+            UPDATE edition_runs
+            SET state = 'cancelled', stage = 'cancelled', updated_at = ?,
+                last_heartbeat_at = ?, completed_at = ?, lease_until = NULL,
+                worker_id = '', failure_class = 'cancelled', failure_message = ?
+            WHERE {where}
+            """,
+            (now, now, now, str(message), *values),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return get_edition_run(str(run_id))
+        conn.execute(
+            """
+            UPDATE edition_jobs
+            SET state = 'cancelled', updated_at = ?, completed_at = ?,
+                lease_until = NULL, worker_id = '', error_class = 'cancelled',
+                error_message = ?
+            WHERE run_id = ? AND state NOT IN ('published', 'reused', 'skipped', 'reviewed', 'held', 'dead_letter', 'cancelled')
+            """,
+            (now, now, str(message), str(run_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def claim_edition_job(
+    run_id: str,
+    article_key: str,
+    worker_id: str,
+    *,
+    phase: str = "writer",
+    evidence_fingerprint: str = "",
+    prompt_version: str = "",
+    provider: str = "",
+    model: str = "",
+    reasoning_effort: str = "",
+    client_request_id: str = "",
+    lease_seconds: int = 300,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Atomically claim one desk phase for the owner of an edition run."""
+
+    worker = str(worker_id or "").strip()
+    if not worker:
+        raise ValueError("worker_id is required")
+    seconds = max(1, min(int(lease_seconds), 3600))
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    lease = datetime.fromtimestamp(now_dt.timestamp() + seconds, timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            "SELECT state, worker_id, lease_until, max_attempts, cancel_requested_at FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+        if (
+            run is None
+            or str(run[0] or "").lower() != "running"
+            or str(run[1] or "") != worker
+            or _lease_is_expired(run[2], now_dt)
+            or bool(run[4])
+        ):
+            conn.rollback()
+            return None
+        row = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+            (str(run_id), str(article_key), str(phase)),
+        ).fetchone()
+        if row is not None:
+            state = str(row["state"] or "").lower()
+            current_owner = str(row["worker_id"] or "")
+            expired = _lease_is_expired(row["lease_until"], now_dt)
+            if state in {"dead_letter", "cancelled"}:
+                conn.rollback()
+                return _edition_job_row(row)
+            if state in {"published", "reused", "skipped", "reviewed", "held"} or (state == "running" and current_owner != worker and not expired):
+                conn.rollback()
+                return None
+            if state == "running" and current_owner == worker and not expired:
+                conn.rollback()
+                return _edition_job_row(row)
+            max_attempts = max(1, int(run[3] or 2))
+            if int(row["attempt"] or 0) >= max_attempts:
+                conn.execute(
+                    """
+                    UPDATE edition_jobs
+                    SET state = 'dead_letter', updated_at = ?, completed_at = ?,
+                        lease_until = NULL, worker_id = '', error_class = 'retry_budget_exhausted',
+                        error_message = ?
+                    WHERE run_id = ? AND article_key = ? AND phase = ?
+                    """,
+                    (
+                        now,
+                        now,
+                        f"Retry budget exhausted after {max_attempts} attempts.",
+                        str(run_id),
+                        str(article_key),
+                        str(phase),
+                    ),
+                )
+                conn.commit()
+                return _edition_job_row(
+                    conn.execute(
+                        "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+                        (str(run_id), str(article_key), str(phase)),
+                    ).fetchone()
+                )
+            conn.execute(
+                """
+                UPDATE edition_jobs
+                SET state = 'running', attempt = attempt + 1, started_at = ?, updated_at = ?,
+                    completed_at = NULL, lease_until = ?, worker_id = ?,
+                    evidence_fingerprint = ?, prompt_version = ?, provider = ?, model = ?,
+                    reasoning_effort = ?, client_request_id = COALESCE(NULLIF(?, ''), client_request_id), provider_request_id = '', usage_json = '{}',
+                    metadata_json = ?, error_class = '', error_message = ''
+                WHERE run_id = ? AND article_key = ? AND phase = ?
+                """,
+                (
+                    now, now, lease, worker, str(evidence_fingerprint or ""),
+                    str(prompt_version or ""), str(provider or ""), str(model or ""),
+                    str(reasoning_effort or ""), str(client_request_id or ""),
+                    json.dumps(metadata or {}, sort_keys=True),
+                    str(run_id), str(article_key), str(phase),
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO edition_jobs(
+                    run_id, article_key, phase, state, attempt, started_at, updated_at,
+                    evidence_fingerprint, prompt_version, lease_until, worker_id,
+                    provider, model, reasoning_effort, client_request_id, metadata_json
+                ) VALUES (?, ?, ?, 'running', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(run_id), str(article_key), str(phase), now, now,
+                    str(evidence_fingerprint or ""), str(prompt_version or ""), lease, worker,
+                    str(provider or ""), str(model or ""), str(reasoning_effort or ""),
+                    str(client_request_id or ""),
+                    json.dumps(metadata or {}, sort_keys=True),
+                ),
+            )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+            (str(run_id), str(article_key), str(phase)),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _edition_job_row(row) if row is not None else None
+
+
+def finish_edition_job(
+    run_id: str,
+    article_key: str,
+    *,
+    phase: str = "writer",
+    state: str,
+    provider_request_id: str = "",
+    usage: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    error_class: str = "",
+    error_message: str = "",
+    worker_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Close a desk receipt while retaining safe provider telemetry."""
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        where = "run_id = ? AND article_key = ? AND phase = ?"
+        where_values: list[Any] = [str(run_id), str(article_key), str(phase)]
+        if worker_id is not None:
+            where += " AND worker_id = ? AND state = 'running'"
+            where_values.append(str(worker_id))
+        cursor = conn.execute(
+            f"""
+            UPDATE edition_jobs
+            SET state = ?, updated_at = ?, completed_at = ?, provider_request_id = ?,
+                lease_until = NULL, worker_id = '', usage_json = ?, metadata_json = ?,
+                error_class = ?, error_message = ?
+            WHERE {where}
+            """,
+            (
+                str(state), now, now, str(provider_request_id or ""),
+                json.dumps(usage or {}, sort_keys=True), json.dumps(metadata or {}, sort_keys=True),
+                str(error_class or ""), str(error_message or ""),
+                *where_values,
+            ),
+        )
+        if worker_id is not None and cursor.rowcount != 1:
+            conn.rollback()
+            return None
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? AND article_key = ? AND phase = ?",
+            (str(run_id), str(article_key), str(phase)),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _edition_job_row(row) if row is not None else None
+
+
+def interrupt_edition_run(
+    run_id: str,
+    *,
+    resume_stage: str = "",
+    failure_message: str = "The worker stopped before the edition run reached a terminal publication state.",
+    worker_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Mark a run and only its in-flight jobs recoverable after a worker exit.
+
+    When a worker supplies its identity, recovery is conditional on still
+    owning the run.  A stale worker must not interrupt a run that another
+    worker reclaimed after its lease expired.
+    """
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT metadata_json FROM edition_runs WHERE run_id = ?",
+            (str(run_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            metadata = json.loads(row[0] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if resume_stage:
+            metadata["resume_stage"] = str(resume_stage)
+        where = "run_id = ? AND completed_at IS NULL"
+        where_values: list[Any] = [str(run_id)]
+        if worker_id is not None:
+            where += " AND worker_id = ? AND state IN ('running', 'cancel_requested')"
+            where_values.append(str(worker_id))
+        cursor = conn.execute(
+            """
+            UPDATE edition_runs
+            SET state = 'interrupted', stage = 'interrupted', updated_at = ?,
+                last_heartbeat_at = ?, failure_class = 'worker_restart',
+                failure_message = ?, metadata_json = ?, lease_until = NULL, worker_id = ''
+            WHERE """ + where,
+            (
+                now,
+                now,
+                str(failure_message),
+                json.dumps(metadata, sort_keys=True),
+                *where_values,
+            ),
+        )
+        if worker_id is not None and cursor.rowcount != 1:
+            conn.rollback()
+            return get_edition_run(str(run_id))
+        job_where = "run_id = ? AND state = 'running'"
+        job_values: list[Any] = [str(run_id)]
+        if worker_id is not None:
+            job_where += " AND worker_id = ?"
+            job_values.append(str(worker_id))
+        conn.execute(
+            """
+            UPDATE edition_jobs
+            SET state = 'interrupted', updated_at = ?, completed_at = NULL,
+                lease_until = NULL, worker_id = '',
+                error_class = 'worker_restart', error_message = ?
+            WHERE """ + job_where,
+            (now, str(failure_message), *job_values),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_edition_run(str(run_id))
+
+
+def replace_publication_edges(run_id: str, edges: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Persist the deterministic editorial graph for one private edition."""
+
+    allowed_relationships = {"supports", "disputes", "extends", "asks", "supersedes", "held_because"}
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM publication_edges WHERE run_id = ?", (str(run_id),))
+        for raw in edges or []:
+            if not isinstance(raw, dict):
+                continue
+            source = str(raw.get("source_article_key") or "").strip()
+            target = str(raw.get("target_article_key") or "").strip()
+            relationship = str(raw.get("relationship") or "").strip().lower()
+            if not source or not target or source == target or relationship not in allowed_relationships:
+                continue
+            evidence_ids = [
+                str(value).strip()
+                for value in (raw.get("source_evidence_ids") or [])
+                if str(value).strip()
+            ]
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO publication_edges(
+                    run_id, source_article_key, target_article_key, relationship,
+                    summary, source_evidence_ids_json, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(run_id),
+                    source,
+                    target,
+                    relationship,
+                    str(raw.get("summary") or "")[:500],
+                    json.dumps(evidence_ids[:40], sort_keys=True),
+                    str(raw.get("status") or "visible") if str(raw.get("status") or "visible") in {"visible", "held", "stale"} else "visible",
+                    now,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return list_publication_edges(str(run_id))
+
+
+def list_publication_edges(run_id: str) -> list[dict[str, Any]]:
+    """Read the private editorial graph without exposing another league's rows."""
+
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM publication_edges WHERE run_id = ? ORDER BY id",
+            (str(run_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        payload = _row(row)
+        raw = payload.pop("source_evidence_ids_json", "[]")
+        try:
+            evidence_ids = json.loads(raw or "[]")
+        except (TypeError, json.JSONDecodeError):
+            evidence_ids = []
+        payload["source_evidence_ids"] = [str(value) for value in evidence_ids] if isinstance(evidence_ids, list) else []
+        output.append(payload)
+    return output
+
+
+def get_edition_run(run_id: str) -> dict[str, Any] | None:
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM edition_runs WHERE run_id = ?", (str(run_id),)).fetchone()
+        if row is None:
+            return None
+        payload = _edition_run_row(row)
+        jobs = conn.execute(
+            "SELECT * FROM edition_jobs WHERE run_id = ? ORDER BY id",
+            (str(run_id),),
+        ).fetchall()
+        payload["jobs"] = [_edition_job_row(job) for job in jobs]
+        payload["publication_edges"] = list_publication_edges(str(run_id))
+        return payload
+    finally:
+        conn.close()
+
+
+def latest_edition_run(user_id: int, league_id: str) -> dict[str, Any] | None:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT run_id FROM edition_runs
+            WHERE user_id = ? AND league_id = ?
+            ORDER BY started_at DESC, rowid DESC LIMIT 1
+            """,
+            (int(user_id), str(league_id)),
+        ).fetchone()
+    finally:
+        conn.close()
+    return get_edition_run(str(row[0])) if row is not None else None
+
+
+def _edition_run_row(row: sqlite3.Row) -> dict[str, Any]:
+    payload = _row(row)
+    for key in ("requested_article_keys_json", "metadata_json", "source_receipt_json"):
+        raw = payload.pop(key, "{}")
+        try:
+            decoded = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            decoded = [] if key.endswith("keys_json") else {}
+        payload[key.removesuffix("_json")] = decoded
+    return payload
+
+
+def _edition_job_row(row: sqlite3.Row) -> dict[str, Any]:
+    payload = _row(row)
+    for source, target in (("usage_json", "usage"), ("metadata_json", "metadata")):
+        raw = payload.pop(source, "{}")
+        try:
+            decoded = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            decoded = {}
+        payload[target] = decoded if isinstance(decoded, dict) else {}
+    return payload
+
+
 def start_refresh_run(user_id: int, league_id: str, season: str) -> int:
     started_at = datetime.now(timezone.utc).isoformat()
     conn = _connect()
@@ -1495,6 +2576,18 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
     columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _lease_is_expired(value: Any, now: datetime | None = None) -> bool:
+    if not value:
+        return True
+    try:
+        lease = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return True
+    if lease.tzinfo is None:
+        lease = lease.replace(tzinfo=timezone.utc)
+    return lease <= (now or datetime.now(timezone.utc))
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:

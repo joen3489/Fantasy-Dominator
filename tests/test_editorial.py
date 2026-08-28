@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.editorial import build_editorial_issue
+from src.editorial import _newsroom_claim_conflicts, _newsroom_conversation, build_editorial_issue
 from src.editorial_ui import inject_editorial_facade
 
 
@@ -160,11 +160,194 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertNotIn("My Team", {story.get("reporter_name") for story in issue["stories"]})
         self.assertEqual(
             {panel["key"] for panel in issue["front_page_panels"]},
-            {"team_pulse", "news_watch", "market_watch", "manager_watch"},
+            {"team_pulse", "news_watch", "market_watch", "manager_watch", "reality_check"},
         )
         market_panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "market_watch")
         self.assertTrue(market_panel["uncertainty"])
         self.assertTrue(all("evidence" in item for item in market_panel["items"]))
+        panel_map = {panel["key"]: panel for panel in issue["front_page_panels"]}
+        self.assertEqual(panel_map["team_pulse"]["reporter_name"], "Topline Tony")
+        self.assertEqual(panel_map["market_watch"]["reporter_name"], "Waiver Wire Waverly")
+        self.assertEqual(panel_map["manager_watch"]["reporter_name"], "Dossier Dana")
+        self.assertEqual(panel_map["reality_check"]["reporter_name"], "Reality Check Riley")
+        self.assertTrue(panel_map["market_watch"]["decision_question"])
+        reality_panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "reality_check")
+        self.assertIn("Reality Check Riley", reality_panel["eyebrow"])
+        self.assertEqual(reality_panel["facts"][0]["label"], "Roster rows checked")
+
+    def test_team_pulse_puts_topline_matchup_receipt_on_the_reader_surface(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; weekly matchup facts need a reporter path."""
+
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-27T12:00:00+00:00", "current_season": "2026"}],
+                "matchups": [
+                    {
+                        "season": "2026",
+                        "league_id": "league-1",
+                        "week": "1",
+                        "roster_id": "2",
+                        "team_name": "Lulu's Potatoes",
+                        "opponent_roster_id": "7",
+                        "opponent_team_name": "Kyle's Team",
+                        "points_for": "112.4",
+                        "points_against": "104.1",
+                        "margin": "8.3",
+                        "result": "win",
+                        "source_trace": "sleeper:league/league-1/matchups/1",
+                    }
+                ],
+            },
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="Lulu's Potatoes",
+        )
+
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "team_pulse")
+        item = panel["items"][0]
+        self.assertIn("Kyle's Team", item["title"])
+        self.assertIn("Topline Tony", item["summary"])
+        self.assertIn("matchups", item["evidence"])
+
+    def test_team_pulse_reconciles_nested_points_before_narrating_contributors(self) -> None:
+        """Design source: AGENTS.md and docs/durable_newsroom_epic.md; attribution precedes narrative."""
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-27T12:00:00+00:00", "current_season": "2026"}],
+                "matchups": [{
+                    "season": "2026", "league_id": "league-1", "week": "3", "matchup_id": "m3",
+                    "roster_id": "2", "team_name": "Lulu's Potatoes", "opponent_roster_id": "7",
+                    "opponent_team_name": "Kyle's Team", "points_for": "54.5", "points_against": "48.0",
+                    "margin": "6.5", "result": "win", "source_trace": "sleeper:matchups",
+                }],
+                "matchup_player_points": [
+                    {
+                        "season": "2026", "league_id": "league-1", "week": "3", "matchup_id": "m3",
+                        "roster_id": "2", "player_id": "qb", "player_name": "Anchor QB", "is_starter": "True",
+                        "player_points": "24.5", "matchup_status": "played", "source_trace": "sleeper:players_points",
+                    },
+                    {
+                        "season": "2026", "league_id": "league-1", "week": "3", "matchup_id": "m3",
+                        "roster_id": "2", "player_id": "wr", "player_name": "Anchor WR", "is_starter": "True",
+                        "player_points": "30.0", "matchup_status": "played", "source_trace": "sleeper:players_points",
+                    },
+                ],
+            },
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="Lulu's Potatoes",
+        )
+
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "team_pulse")
+        receipt = panel["matchup_lineup_receipt"]
+        self.assertEqual(receipt["status"], "reconciled")
+        self.assertEqual(receipt["starter_points"], 54.5)
+        self.assertEqual(receipt["bench_points"], 0)
+        self.assertEqual(receipt["top_contributors"][0]["player_name"], "Anchor WR")
+        attribution = next(item for item in panel["items"] if "who supplied" in item["title"])
+        self.assertIn("reconcile", attribution["summary"])
+        self.assertIn("matchup_player_points", attribution["evidence"])
+
+    def test_claim_register_surfaces_competing_reads_without_selecting_a_fake_winner(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; disagreement must be structured and reviewable."""
+        conversation = _newsroom_conversation(
+            [
+                {
+                    "key": "team_report",
+                    "body": "team",
+                    "title": "Your Team Report",
+                    "reporter_name": "Topline Tony",
+                    "conversation_order": 1,
+                    "publication_status": "approved",
+                    "structured": {
+                        "headline": "Start with the week",
+                        "thesis": "The next game is the question.",
+                        "evidence_ids": ["player:anchor:week"],
+                        "claim_positions": [{
+                            "subject_key": "anchor",
+                            "subject_label": "Anchor Player",
+                            "decision_window": "next_game",
+                            "stance": "positive",
+                            "summary": "The weekly role supports using the player now.",
+                            "evidence_ids": ["player:anchor:week"],
+                        }],
+                    },
+                },
+                {
+                    "key": "horizon_watch",
+                    "body": "horizon",
+                    "title": "Four-Window Market Read",
+                    "reporter_name": "Market Clock Morgan",
+                    "conversation_order": 5,
+                    "publication_status": "approved",
+                    "structured": {
+                        "headline": "The clock disagrees",
+                        "thesis": "The long view is different.",
+                        "evidence_ids": ["player:anchor:clock"],
+                        "claim_positions": [{
+                            "subject_key": "anchor",
+                            "subject_label": "Anchor Player",
+                            "decision_window": "next_game",
+                            "stance": "negative",
+                            "summary": "The market and current context argue for patience this week.",
+                            "evidence_ids": ["player:anchor:clock"],
+                        }],
+                    },
+                },
+            ]
+        )
+
+        conflicts = _newsroom_claim_conflicts(conversation)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["resolution_status"], "unresolved")
+        self.assertIn("competing positions", conflicts[0]["resolution"])
+        self.assertEqual({claim["reporter_name"] for claim in conflicts[0]["claims"]}, {"Topline Tony", "Market Clock Morgan"})
+        self.assertEqual(conflicts[0]["evidence_ids"], ["player:anchor:week", "player:anchor:clock"])
+
+    def test_claim_register_does_not_call_agreement_a_conflict(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; different desks may agree while owning different evidence."""
+        conversation = _newsroom_conversation(
+            [
+                {
+                    "key": "team_report", "body": "team", "reporter_name": "Topline Tony", "conversation_order": 1,
+                    "structured": {"evidence_ids": ["player:anchor"], "claim_positions": [{
+                        "subject_key": "anchor", "subject_label": "Anchor Player", "decision_window": "dynasty",
+                        "stance": "positive", "summary": "The long view supports patience.", "evidence_ids": ["player:anchor"],
+                    }]},
+                },
+                {
+                    "key": "horizon_watch", "body": "horizon", "reporter_name": "Market Clock Morgan", "conversation_order": 5,
+                    "structured": {"evidence_ids": ["player:anchor"], "claim_positions": [{
+                        "subject_key": "anchor", "subject_label": "Anchor Player", "decision_window": "dynasty",
+                        "stance": "positive", "summary": "The dynasty window supports patience.", "evidence_ids": ["player:anchor"],
+                    }]},
+                },
+            ]
+        )
+        self.assertEqual(_newsroom_claim_conflicts(conversation), [])
+
+    def test_reality_check_surfaces_a_no_team_roster_row_before_editorial_claims(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; verification is a first-class front-page desk."""
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}],
+                "roster_players": [{
+                    "league_id": "reality-league", "season": "2026", "roster_id": "2", "player_id": "hill",
+                    "player_name": "Tyreek Hill", "nfl_team": "", "availability_scope": "current_season_snapshot",
+                    "availability_note": "No current NFL team in Sleeper; historical baseline is conditional on signing",
+                }],
+                "player_dossiers": [{
+                    "league_id": "reality-league", "season": "2026", "roster_id": "2", "player_id": "hill",
+                    "player_name": "Tyreek Hill", "projected_ppg": "16",
+                }],
+            },
+            league_id="reality-league",
+            my_roster_id=2,
+            my_team_name="Reality Team",
+        )
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "reality_check")
+        self.assertTrue(any("Tyreek Hill" in item["title"] for item in panel["items"]))
+        self.assertTrue(any("conditional" in item["summary"].lower() for item in panel["items"]))
 
     def test_empty_issue_is_an_honest_quiet_edition(self) -> None:
         issue = build_editorial_issue(
@@ -440,6 +623,61 @@ class EditorialIssueTests(unittest.TestCase):
         self.assertIn("A real report", issue["publication_articles"][0]["body"])
         self.assertEqual(issue["publication_articles"][0]["reporter_name"], "Topline Tony")
         self.assertEqual(issue["publication_articles"][0]["evidence_fingerprint"], "evidence-123")
+        self.assertEqual(issue["newsroom_summary"]["available_desks"], 1)
+        self.assertIn("daily_brief", issue["newsroom_summary"]["missing_desks"])
+
+    def test_newsroom_summary_keeps_counterpoint_and_open_question_visible(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; the facade should show a live editorial room."""
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "teamReport": "# Your Team Report\n\n## Cornerstones\nThe roster has weekly pressure.",
+                "marketWatch": "# Market Watch\n\n## Buy-Low Targets\nThe price may be patient.",
+                "teamReportMode": "automatic_llm",
+                "marketWatchMode": "automatic_llm",
+                "articleReceipts": {
+                    "team_report": {
+                        "mode": "automatic_llm",
+                        "reporter_name": "Topline Tony",
+                        "structured": {
+                            "headline": "Weekly pressure",
+                            "thesis": "The lineup needs a short-window answer.",
+                            "what_changed": "The matchup changed.",
+                            "action": "Inspect the receipt.",
+                            "evidence_ids": ["player:1:1"],
+                            "source_ids": ["source:stats"],
+                            "room_question": "Does the short window outweigh the price?",
+                        },
+                    },
+                    "market_watch": {
+                        "mode": "automatic_llm",
+                        "reporter_name": "Waiver Wire Waverly",
+                        "structured": {
+                            "headline": "Price patience",
+                            "thesis": "The market still needs a role check.",
+                            "what_changed": "The price moved.",
+                            "action": "Inspect the receipt.",
+                            "counter_evidence": "The weekly edge may not persist.",
+                            "room_move": "disputes",
+                            "reply_to": "team_report",
+                            "evidence_ids": ["player:2:1"],
+                            "source_ids": ["source:market"],
+                        },
+                    },
+                },
+            },
+            league_id="conversation-league",
+            my_roster_id=2,
+            my_team_name="Conversation Team",
+        )
+
+        summary = issue["newsroom_summary"]
+        self.assertEqual(summary["disagreement_count"], 1)
+        self.assertTrue(summary["tensions"])
+        self.assertEqual(summary["room_synthesis"]["disagreement_count"], 1)
+        self.assertTrue(summary["room_synthesis"]["next_question"])
+        self.assertEqual(summary["open_questions"][0]["reporter_name"], "Topline Tony")
+        self.assertIn("Counter-signal", issue["newsroom_edges"][0]["summary"])
 
     def test_persisted_llm_hold_stays_off_the_printed_facade(self) -> None:
         issue = build_editorial_issue(
@@ -523,6 +761,147 @@ class EditorialIssueTests(unittest.TestCase):
             {article["template_id"] for article in articles.values()},
             {"morning-ledger", "team-notebook", "market-ticker", "four-window-ledger", "trade-desk", "manager-dossier"},
         )
+
+    def test_front_page_reuses_one_bounded_writer_fragment_for_panel_and_publication(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; placements reuse one desk call."""
+        receipt = {
+            "mode": "automatic_llm",
+            "reporter_id": "topline_tony",
+            "reporter_name": "Topline Tony",
+            "evidence_fingerprint": "fp-team",
+            "structured": {
+                "headline": "The matchup sets the tone",
+                "lede": "A short lead for the team report.",
+                "thesis": "The weekly matchup is the immediate pressure point.",
+                "what_changed": "The opponent and lineup pressure moved this week.",
+                "action": "Check the flex decision before the early window.",
+                "evidence_ids": ["matchup:league-1:2:1"],
+                "source_ids": ["sleeper:matchups"],
+            },
+        }
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}],
+                "matchups": [{
+                    "season": "2026", "league_id": "league-1", "week": "1", "roster_id": "2",
+                    "team_name": "My Team", "opponent_roster_id": "7", "opponent_team_name": "Their Team",
+                    "points_for": "110", "points_against": "100", "margin": "10", "result": "win",
+                    "source_trace": "sleeper:matchups",
+                }],
+            },
+            {
+                "teamReport": "# Team Report\n\nA generated team report.",
+                "teamReportMode": "automatic_llm",
+                "articleReceipts": {"team_report": receipt},
+            },
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="My Team",
+        )
+
+        publication = next(article for article in issue["publication_articles"] if article["key"] == "team_report")
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "team_pulse")
+        self.assertEqual(panel["writer_fragment"], publication["story_fragment"])
+        self.assertTrue(panel["writer_fragment"]["available"])
+        self.assertEqual(panel["writer_fragment"]["reporter_name"], "Topline Tony")
+        self.assertEqual(panel["writer_fragment"]["evidence_ids"], ["matchup:league-1:2:1"])
+        self.assertEqual(
+            next(item for item in issue["newsroom_conversation"] if item["article_key"] == "team_report")["thesis"],
+            panel["writer_fragment"]["thesis"],
+        )
+
+    def test_printable_daily_brief_fragment_drives_issue_hero_attribution(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; the hero cannot misattribute deterministic copy."""
+        issue = build_editorial_issue(
+            {
+                "refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}],
+                "today_priority_board": [{
+                    "item_type": "buy_low",
+                    "item_type_label": "Deterministic priority",
+                    "entity_type": "player",
+                    "entity_id": "priority-player",
+                    "entity_name": "Priority Player",
+                    "why": "This is the deterministic priority-board explanation.",
+                    "evidence": "priority evidence",
+                    "risk": "priority risk",
+                    "confidence": "high",
+                    "priority_score": "99",
+                }],
+            },
+            {
+                "dailyGmBrief": "# Daily GM Brief\n\nGenerated brief body.",
+                "dailyGmBriefMode": "automatic_llm",
+                "articleReceipts": {
+                    "daily_brief": {
+                        "mode": "automatic_llm",
+                        "reporter_id": "look_ahead_lonnie",
+                        "reporter_name": "Look-Ahead Lonnie",
+                        "structured": {
+                            "headline": "The generated window is the story",
+                            "lede": "The generated lede belongs to the current edition.",
+                            "thesis": "The long view changes the decision.",
+                            "what_changed": "The desk found a changed timeline.",
+                            "action": "Check the future window before trading.",
+                            "counter_evidence": "This remains conditional on the supplied packet.",
+                            "confidence": "medium",
+                            "evidence_ids": ["horizon:player:1"],
+                            "source_ids": ["source:horizon"],
+                        },
+                    }
+                },
+            },
+            league_id="hero-league",
+            my_roster_id=2,
+            my_team_name="Hero Team",
+        )
+
+        self.assertEqual(issue["lead"]["headline"], "The generated window is the story")
+        self.assertIn("generated lede", issue["lead"]["dek"])
+        self.assertEqual(issue["lead"]["reporter_name"], "Look-Ahead Lonnie")
+        self.assertEqual(issue["lead"]["assigned_reporter_name"], "Look-Ahead Lonnie")
+        self.assertNotIn("deterministic priority-board explanation", issue["lead"]["dek"])
+
+    def test_held_writer_fragment_does_not_leak_unapproved_copy_into_panel(self) -> None:
+        """Design source: AGENTS.md; editor holds remain visible without leaking draft prose."""
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-01T00:00:00+00:00", "current_season": "2026"}]},
+            {
+                "teamReport": "# Team Report\n\nThis draft must not appear on a panel.",
+                "teamReportMode": "automatic_llm",
+                "articleReceipts": {
+                    "team_report": {
+                        "mode": "automatic_llm",
+                        "reporter_id": "topline_tony",
+                        "reporter_name": "Topline Tony",
+                        "structured": {
+                            "headline": "Held headline",
+                            "thesis": "Held private thesis.",
+                            "what_changed": "Held change.",
+                            "action": "Held action.",
+                            "evidence_ids": ["player:1:1"],
+                            "source_ids": ["source:stats"],
+                        },
+                        "editorial_review": {
+                            "mode": "llm",
+                            "status": "held",
+                            "decision": "hold",
+                            "errors": ["availability repair"],
+                        },
+                    }
+                },
+            },
+            league_id="held-fragment-league",
+            my_roster_id=2,
+            my_team_name="Held Team",
+        )
+
+        panel = next(panel for panel in issue["front_page_panels"] if panel["key"] == "team_pulse")
+        fragment = panel["writer_fragment"]
+        self.assertFalse(fragment["available"])
+        self.assertEqual(fragment["status"], "held")
+        self.assertEqual(fragment["thesis"], "")
+        self.assertEqual(fragment["action"], "")
+        self.assertEqual(fragment["evidence_ids"], [])
 
     def test_fallback_publication_receipts_use_front_office_byline_and_keep_assigned_lens(self) -> None:
         """Design source: AGENTS.md; fallback content must not impersonate a paid reporter."""
@@ -838,7 +1217,18 @@ class EditorialUiTests(unittest.TestCase):
         self.assertIn("Today's Board", rendered)
         self.assertIn("Front page desk", rendered)
         self.assertIn("frontPagePanelMarkup", rendered)
+        self.assertIn("panel-writer-read", rendered)
+        self.assertIn("writer_fragment", rendered)
+        self.assertIn("Read the full desk report", rendered)
+        self.assertIn("panel-reporter", rendered)
+        self.assertIn("panel-question", rendered)
         self.assertIn('data-testid="front-page-desk"', rendered)
+        self.assertIn('data-testid="newsroom-conversation"', rendered)
+        self.assertIn("newsroomConversationMarkup", rendered)
+        self.assertIn("Where the room agrees", rendered)
+        self.assertIn("Claim register: competing reads", rendered)
+        self.assertIn("Different desks, one conversation", rendered)
+        self.assertIn("issue.newsroom_summary", rendered)
         self.assertIn("Desk reports", rendered)
         self.assertIn("publicationArticleMarkup", rendered)
         self.assertIn("publicationContentBlocksMarkup", rendered)

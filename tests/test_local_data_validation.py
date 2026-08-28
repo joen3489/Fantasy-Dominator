@@ -12,6 +12,11 @@ from scripts.validate_local_data import HORIZON_MOVEMENT_COLUMNS, audit_local_da
 
 REQUIRED_TABLES = {
     "refresh_metadata": ["generated_at", "current_season", "analysis_artifacts_status"],
+    "matchup_player_points": [
+        "season", "league_id", "week", "matchup_id", "roster_id", "player_id",
+        "player_name", "position", "team_name", "opponent_roster_id",
+        "is_starter", "player_points", "matchup_status", "source_trace", "evidence",
+    ],
     "news_events": ["source", "event_id", "published_at", "source_trace"],
     "news_source_freshness": ["source", "dataset", "status", "checked_at"],
     "source_freshness": ["source", "dataset", "status", "checked_at"],
@@ -54,6 +59,20 @@ class LocalDataValidationTests(unittest.TestCase):
                 rows[0] = {"generated_at": generated_at, "current_season": "2026", "analysis_artifacts_status": "generated"}
             elif table == "news_events":
                 rows[0] = {"source": "rotowire_rss", "event_id": "news-1", "published_at": generated_at, "source_trace": "https://example.test/news-1"}
+            elif table == "matchup_player_points":
+                rows[0] = {column: "value" for column in columns}
+                rows[0].update(
+                    {
+                        "season": "2026",
+                        "league_id": "league-1",
+                        "week": "1",
+                        "matchup_id": "matchup-1",
+                        "roster_id": "2",
+                        "player_id": "player-1",
+                        "matchup_status": "played",
+                        "player_points": "12.5",
+                    }
+                )
             elif table.endswith("freshness"):
                 rows[0] = {"source": "test_source", "dataset": table, "status": "refreshed", "checked_at": generated_at}
             elif table == "player_horizon_market_scores":

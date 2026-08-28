@@ -557,7 +557,7 @@ def build_player_horizon_market_scores(
         elif career.get("status") == "unavailable_missing_projection":
             risk_bits.append("career window is unavailable because projection evidence is missing")
         elif career.get("status", "").startswith("internal"):
-            risk_bits.append("career window is an internal age-curve projection, not a guaranteed career total")
+            risk_bits.append("career window is an internal age-curve projection, not an assured career total")
         if career.get("history_status") == "ambiguous":
             risk_bits.append("historical career anchor was withheld because the normalized source-player join is ambiguous")
         elif career.get("history_status") not in {"matched", "unavailable"} and career_points is not None:
@@ -1304,7 +1304,7 @@ def _career_projection(
         "status": status,
         "basis": (
             f"{basis_prefix}{games:.0f} projected games/year, peak age {peak_age}; "
-            "not a lifetime or guaranteed career total"
+            "not a lifetime or assured career total"
         ),
         **history_fields,
     }

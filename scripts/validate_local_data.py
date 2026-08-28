@@ -17,6 +17,11 @@ from typing import Any
 
 REQUIRED_TABLES = {
     "refresh_metadata": ("generated_at", "current_season", "analysis_artifacts_status"),
+    "matchup_player_points": (
+        "season", "league_id", "week", "matchup_id", "roster_id", "player_id",
+        "player_name", "position", "team_name", "opponent_roster_id",
+        "is_starter", "player_points", "matchup_status", "source_trace", "evidence",
+    ),
     "news_events": ("source", "event_id", "published_at", "source_trace"),
     "news_source_freshness": ("source", "dataset", "status", "checked_at"),
     "source_freshness": ("source", "dataset", "status", "checked_at"),
@@ -224,6 +229,42 @@ REQUIRED_TABLES["player_horizon_market_scores"] = REQUIRED_TABLES["player_horizo
 )
 
 
+def _audit_matchup_player_points(rows: list[dict[str, str]], errors: list[str]) -> None:
+    """Check player receipts stay unique and reconcile played/unplayed state."""
+
+    keys = [
+        (
+            str(row.get("season") or "").strip(),
+            str(row.get("league_id") or "").strip(),
+            str(row.get("week") or "").strip(),
+            str(row.get("matchup_id") or "").strip(),
+            str(row.get("roster_id") or "").strip(),
+            str(row.get("player_id") or "").strip(),
+        )
+        for row in rows
+    ]
+    duplicate_keys = sorted({key for key in keys if key[-1] and keys.count(key) > 1})
+    if duplicate_keys:
+        errors.append(
+            "matchup_player_points.csv contains duplicate source keys: "
+            + ", ".join("/".join(key) for key in duplicate_keys[:5])
+        )
+    allowed_statuses = {"played", "unplayed"}
+    invalid_statuses = sorted({str(row.get("matchup_status") or "").strip() for row in rows if str(row.get("matchup_status") or "").strip() not in allowed_statuses})
+    if invalid_statuses:
+        errors.append(
+            "matchup_player_points.csv contains unsupported matchup_status values: "
+            + ", ".join(invalid_statuses[:5])
+        )
+    inconsistent_rows = [
+        row for row in rows
+        if str(row.get("matchup_status") or "").strip() == "unplayed"
+        and str(row.get("player_points") or "").strip() not in {"", "0", "0.0", "0.00"}
+    ]
+    if inconsistent_rows:
+        errors.append("matchup_player_points.csv has non-zero player points on unplayed matchup rows")
+
+
 def _audit_projection_availability(
     tables: dict[str, list[dict[str, str]]],
     errors: list[str],
@@ -291,6 +332,7 @@ def audit_local_data(
             errors.append(f"{table}.csv has no rows")
 
     _audit_projection_availability(tables, errors)
+    _audit_matchup_player_points(tables.get("matchup_player_points", []), errors)
     _audit_opportunity_scope(tables.get("player_opportunity_scores", []), tables.get("refresh_metadata", []), errors)
 
     player_history_identity = _audit_player_history(processed_dir / "player_transaction_history.csv", errors, warnings)

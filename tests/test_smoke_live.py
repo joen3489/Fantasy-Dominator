@@ -59,6 +59,38 @@ class LiveSmokeContractTests(unittest.TestCase):
 
         self.assertEqual(get.call_count, 2)
 
+    def test_authenticated_smoke_requires_the_expected_deployed_revision(self) -> None:
+        """Design source: AGENTS.md and docs/production_runbook.md; private acceptance must bind to an exact commit."""
+        health = Mock(status_code=200)
+        health.json.return_value = {
+            "ok": True,
+            "revision": "deployed",
+            "auth_mode": "live",
+            "auth_configuration_ready": True,
+            "public_url_ready": True,
+            "data_root_configured": True,
+            "database_present": True,
+            "database_schema_ready": True,
+            "operator_token_configured": True,
+            "scheduler_enabled": True,
+            "writer_api_configured": True,
+        }
+        login = Mock(status_code=200, text="Sign in to the Front Office")
+        health.raise_for_status.return_value = None
+        login.raise_for_status.return_value = None
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_SESSION_TOKEN": "session"},
+            clear=True,
+        ), patch("scripts.smoke_live._get", side_effect=[health, login]) as get:
+            with self.assertRaisesRegex(
+                SystemExit,
+                "FRONT_OFFICE_EXPECTED_REVISION is missing",
+            ):
+                main("https://example.test")
+
+        self.assertEqual(get.call_count, 2)
+
     def test_health_requires_live_auth_and_durable_schema(self) -> None:
         errors, warnings = validate_health_payload(
             {
@@ -140,6 +172,27 @@ class LiveSmokeContractTests(unittest.TestCase):
             errors, _ = validate_health_payload(payload)
 
         self.assertIn("running revision='old'; expected 'new'", errors)
+
+    def test_health_rejects_worker_mode_without_a_live_worker_heartbeat(self) -> None:
+        payload = {
+            "ok": True,
+            "auth_mode": "live",
+            "auth_configuration_ready": True,
+            "public_url_ready": True,
+            "data_root_configured": True,
+            "database_present": True,
+            "database_schema_ready": True,
+            "operator_token_configured": True,
+            "scheduler_enabled": True,
+            "writer_api_configured": True,
+            "writer_execution_mode": "worker",
+            "worker_service_configured": True,
+            "worker_queue_ready": False,
+        }
+
+        errors, _ = validate_health_payload(payload)
+
+        self.assertTrue(any("no recent newsroom worker heartbeat is present" in error for error in errors))
 
     def test_health_rejects_explicit_deployment_gate_blockers(self) -> None:
         errors, _ = validate_health_payload(

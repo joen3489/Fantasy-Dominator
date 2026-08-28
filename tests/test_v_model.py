@@ -18,7 +18,7 @@ from src.draft_room import build_draft_room
 from src.economics import build_asset_market_gaps, build_economic_tables, build_league_standings, build_manager_behavior_signals, build_manager_event_log, build_opportunity_board
 from src.external_sources import _normalize_dynastyprocess_market_sources, _normalize_pick_values, build_market_consensus_values, refresh_external_sources
 from src.news import build_news_tables
-from src.normalize import build_roster_maps, normalize_matchups, normalize_traded_picks, normalize_trades, normalize_waivers, to_dataframes
+from src.normalize import build_roster_maps, normalize_matchup_player_points, normalize_matchups, normalize_traded_picks, normalize_trades, normalize_waivers, to_dataframes
 from src.pick_ownership import build_pick_ownership
 from src.players import players_table
 from src.priority_board import build_today_priority_board
@@ -45,6 +45,7 @@ EXPECTED_TABLE_COLUMNS = {
     "trades": ["season", "league_id", "week", "transaction_id", "created_datetime", "team_a_roster_id", "team_a_name", "team_a_players_received", "team_a_player_ids_received", "team_a_picks_received", "team_a_faab_received", "team_b_roster_id", "team_b_name", "team_b_players_received", "team_b_player_ids_received", "team_b_picks_received", "team_b_faab_received", "raw"],
     "waivers": ["season", "league_id", "week", "transaction_id", "roster_id", "team_name", "player_added", "player_added_ids", "player_dropped", "player_dropped_ids", "waiver_bid", "status", "failure_reason"],
     "matchups": ["season", "league_id", "week", "matchup_id", "roster_id", "team_name", "opponent_roster_id", "opponent_team_name", "points_for", "points_against", "margin", "result", "source_trace", "evidence"],
+    "matchup_player_points": ["season", "league_id", "week", "matchup_id", "roster_id", "player_id", "player_name", "position", "nfl_team", "team_name", "opponent_roster_id", "opponent_team_name", "is_starter", "player_points", "matchup_status", "source_trace", "evidence"],
     "player_usage_weekly": ["source", "season", "week", "player_id", "player_name", "position", "team", "opponent_team", "game_id", "targets", "carries", "receptions", "passing_attempts", "fantasy_points_ppr", "source_trace"],
     "nfl_schedule": ["season", "week", "game_id", "game_type", "gameday", "away_team", "home_team", "schedule_status", "source_trace"],
     "nfl_team_defense_factors": ["team", "position", "games_sample", "fantasy_points_allowed_per_game", "league_position_average", "matchup_factor", "confidence", "validation_seasons", "validation_games", "validation_mae", "validation_baseline_mae", "validation_mae_delta", "validation_direction_accuracy", "validation_status", "source_trace"],
@@ -93,7 +94,7 @@ EXPECTED_TABLE_COLUMNS = {
     "player_dossiers": ["player_id", "player_name", "position", "age", "roster_id", "team_name", "roster_status", "availability_scope", "current_availability_status", "injury_status", "injury_body_part", "availability_note", "market_value", "projected_fantasy_points", "projected_ppg", "projection_confidence", "signal_label", "breakout_score", "sell_score", "news_impact", "transaction_count", "last_transaction", "source_trace"],
     "player_transaction_history": ["player_id", "identity_method", "player_name", "event_type", "season", "week", "created_datetime", "roster_id", "team_name", "counterparty", "direction", "evidence", "source_trace"],
     "player_profile_tags": ["entity_id", "entity_name", "tag", "score", "confidence", "evidence", "risk", "source_trace", "generated_at"],
-    "refresh_metadata": ["generated_at", "refresh_mode", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "requested_week_end", "current_week", "historical_refresh_scope", "matchups_status", "matchup_rows", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "manager_transaction_preference_rows", "counterparty_edge_rows", "counterparty_asset_interest_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows", "player_horizon_market_rows", "available_player_horizon_rows", "horizon_snapshot_rows", "horizon_accuracy_rows", "horizon_movement_rows", "nfl_schedule_rows", "nfl_team_defense_factor_rows"],
+    "refresh_metadata": ["generated_at", "refresh_mode", "current_season", "configured_league_ids", "configured_seasons", "ingested_seasons", "historical_league_ids_configured", "transaction_week_start", "transaction_week_end", "requested_week_end", "current_week", "historical_refresh_scope", "matchups_status", "matchup_rows", "matchup_player_points_rows", "source_scope", "raw_cache_root", "raw_external_cache_root", "browser_is_primary_surface", "recommendation_packets_status", "analysis_artifacts_status", "analysis_generated_at", "analysis_context_packet_count", "target_thesis_count", "sell_thesis_count", "trade_thesis_count", "market_source_rows", "market_consensus_rows", "projection_source_rows", "projection_accuracy_rows", "manager_valuation_profile_rows", "manager_transaction_preference_rows", "counterparty_edge_rows", "counterparty_asset_interest_rows", "manager_profile_tag_rows", "player_profile_tag_rows", "player_dossier_rows", "player_horizon_market_rows", "available_player_horizon_rows", "horizon_snapshot_rows", "horizon_accuracy_rows", "horizon_movement_rows", "nfl_schedule_rows", "nfl_team_defense_factor_rows"],
 }
 
 EXPECTED_TABLE_COLUMNS["player_horizon_market_scores"][9:9] = [
@@ -104,6 +105,23 @@ EXPECTED_TABLE_COLUMNS["player_horizon_market_scores"][9:9] = [
 
 
 class VModelTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Direct writer workflow tests intentionally omit the production job
+        # wrapper. Keep their progress checkpoints out of the repository's
+        # real operator receipt so a green suite cannot leave a phantom run.
+        self._operator_status_tmp = tempfile.TemporaryDirectory()
+        status_dir = Path(self._operator_status_tmp.name) / "operator" / "status"
+        self._operator_status_patch = patch.multiple(
+            operator,
+            OPERATOR_STATUS_DIR=status_dir,
+            STATUS_PATH=status_dir / "operator_status.json",
+        )
+        self._operator_status_patch.start()
+
+    def tearDown(self) -> None:
+        self._operator_status_patch.stop()
+        self._operator_status_tmp.cleanup()
+
     def test_railway_handler_uses_http_11(self) -> None:
         self.assertEqual(RailwayHTTPRequestHandler.protocol_version, "HTTP/1.1")
 
@@ -199,6 +217,41 @@ class VModelTests(unittest.TestCase):
         )
         self.assertTrue(all(row["result"] == "unplayed" for row in zero_placeholder))
         self.assertEqual(list(to_dataframes({"matchups": []})["matchups"].columns), EXPECTED_TABLE_COLUMNS["matchups"])
+
+    def test_normalized_matchup_player_points_preserve_lineup_receipts(self) -> None:
+        """Encodes docs/data_contract.md: player attribution remains exact and future rows stay unplayed."""
+        roster_map = {1: {"team_name": "Alpha Team"}, 2: {"team_name": "Beta Team"}}
+        players = {
+            "p1": {"full_name": "Quarterback One", "position": "QB", "team": "AAA"},
+            "p2": {"full_name": "Receiver Two", "position": "WR", "team": "BBB"},
+        }
+        rows = normalize_matchup_player_points(
+            "2026",
+            "league",
+            {
+                1: [
+                    {"roster_id": 1, "matchup_id": 7, "points": 110, "players": ["p1"], "players_points": {"p1": 24.5}, "starters": ["p1"]},
+                    {"roster_id": 2, "matchup_id": 7, "points": 100, "players": ["p2"], "players_points": {"p2": 8}, "starters": []},
+                ],
+                2: [
+                    {"roster_id": 1, "matchup_id": 8, "points": 0, "players": ["p1"], "players_points": {"p1": 0}, "starters": ["p1"]},
+                    {"roster_id": 2, "matchup_id": 8, "points": 0, "players": ["p2"], "players_points": {"p2": 0}, "starters": ["p2"]},
+                ],
+            },
+            roster_map,
+            players,
+        )
+
+        quarterback = next(row for row in rows if row["player_id"] == "p1" and row["week"] == 1)
+        future = next(row for row in rows if row["player_id"] == "p1" and row["week"] == 2)
+        self.assertEqual(quarterback["player_name"], "Quarterback One")
+        self.assertEqual(quarterback["position"], "QB")
+        self.assertEqual(quarterback["opponent_roster_id"], 2)
+        self.assertEqual(quarterback["player_points"], 24.5)
+        self.assertTrue(quarterback["is_starter"])
+        self.assertEqual(quarterback["matchup_status"], "played")
+        self.assertEqual(future["matchup_status"], "unplayed")
+        self.assertEqual(list(to_dataframes({"matchup_player_points": []})["matchup_player_points"].columns), EXPECTED_TABLE_COLUMNS["matchup_player_points"])
 
     def test_league_standings_preserve_outcome_coverage_and_quiet_teams(self) -> None:
         """Encodes docs/data_contract.md: standings are derived from exact matchup evidence."""
@@ -843,6 +896,38 @@ class VModelTests(unittest.TestCase):
         self.assertIn("dollar market values, or cross-position price rankings", articles.load_prompt("market_watch.md"))
         self.assertIn("fit_coverage", articles.load_prompt("market_watch.md"))
 
+    def test_matchup_surface_carries_the_topline_desk_question(self) -> None:
+        """Design source: durable_newsroom_epic.md Slice 4; matchup receipts need an owner and question."""
+        with tempfile.TemporaryDirectory() as tmp:
+            processed_dir = Path(tmp) / "processed"
+            analysis_dir = Path(tmp) / "analysis"
+            processed_dir.mkdir()
+            analysis_dir.mkdir()
+            (processed_dir / "matchups.csv").write_text(
+                "season,league_id,week,roster_id,opponent_roster_id,opponent_team_name,points_for,points_against,result\n"
+                "2026,league-1,3,2,4,Rival Team,120.5,110.0,win\n",
+                encoding="utf-8",
+            )
+            (processed_dir / "teams.csv").write_text(
+                "season,league_id,roster_id,team_name\n2026,league-1,2,My Team\n",
+                encoding="utf-8",
+            )
+            (processed_dir / "league_standings.csv").write_text(
+                "season,league_id,roster_id,team_name,outcome_status,wins,losses,point_diff,points_for\n"
+                "2026,league-1,2,My Team,recorded,2,1,10.5,120.5\n",
+                encoding="utf-8",
+            )
+            html_path = build_browser_site(
+                Path(tmp) / "site",
+                processed_dir=processed_dir,
+                analysis_dir=analysis_dir,
+                league_id="league-1",
+                config={"current_season": "2026", "current_team": {"roster_id": 2, "team_name": "My Team"}},
+            )
+            html = Path(html_path).read_text(encoding="utf-8")
+        self.assertIn("matchup-attribution", html)
+        self.assertIn("Topline Tony", html)
+
     def test_topline_article_scope_carries_news_matchup_and_move_context(self) -> None:
         """Encodes docs/front_office_realization_epic.md's authored-publication evidence seam."""
         from src import articles
@@ -1064,7 +1149,10 @@ class VModelTests(unittest.TestCase):
                     self.assertIn("manager-outcome-receipt", html)
                     self.assertIn("league-standings", html)
                     self.assertIn("Scored Matchups", html)
+                    self.assertIn("Writer execution receipt", html)
+                    self.assertIn("renderEditionExecutionReceipt", html)
                     bundle = json.loads((paths.site_dir / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+                    self.assertIn("editionReceipt", bundle["analysis"])
                     self.assertEqual(bundle["leagueId"], league_id)
                     self.assertEqual(bundle["myTeamName"], details["team_name"])
                     self.assertEqual(bundle["reporterPersona"]["persona_id"], details["persona_id"])
@@ -1165,6 +1253,11 @@ class VModelTests(unittest.TestCase):
             self.assertIn("model_mode: automatic_llm", market_watch_text)
             self.assertIn("editor_mode: deterministic", market_watch_text)
             self.assertIn("source_receipt_json:", market_watch_text)
+            self.assertIn("evidence_manifest_schema: article_evidence_manifest_v1", market_watch_text)
+            manifest_line = next(line for line in market_watch_text.splitlines() if line.startswith("evidence_manifest_json: "))
+            manifest = json.loads(manifest_line.split(": ", 1)[1])
+            self.assertTrue(manifest)
+            self.assertNotIn("text", manifest[0])
 
     def test_targeted_writer_retry_skips_unselected_desks(self) -> None:
         from src import articles
@@ -1241,12 +1334,23 @@ class VModelTests(unittest.TestCase):
                 )
                 first = operator.generate_articles_workflow(context=context)
                 first_call_count = len(calls)
+                first_ledger = db.get_edition_run(first["edition_run_id"])
                 second = operator.generate_articles_workflow(context=context)
 
             self.assertEqual(first["state"], "complete")
             self.assertEqual(second["state"], "complete")
             self.assertEqual(first_call_count, len(calls))
             self.assertTrue(all(item["state"] in {"unchanged", "skipped"} for item in second["articles"].values()))
+            self.assertEqual(first_ledger["state"], "pending_publication")
+            self.assertEqual(first_ledger["stage"], "desk_complete")
+            self.assertEqual(len(first_ledger["jobs"]), len(first["articles"]))
+            self.assertTrue(all(job["state"] in {"published", "skipped"} for job in first_ledger["jobs"]))
+            execution_receipt = json.loads(
+                (analysis / "edition_runs" / f"{first['edition_run_id']}.receipt.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(execution_receipt["run_id"], first["edition_run_id"])
+            self.assertEqual(len(execution_receipt["jobs"]), len(first["articles"]))
+            self.assertTrue(any(job["duration_ms"] is not None for job in execution_receipt["jobs"]))
 
     def test_writer_plan_matches_reuse_after_a_multi_desk_run(self) -> None:
         """Design source: AGENTS.md; the no-cost plan must use the same reuse key as the real run."""
@@ -2382,6 +2486,8 @@ class VModelTests(unittest.TestCase):
         self.assertIn('id="player-page"', html)
         self.assertIn('id="team-page"', html)
         self.assertIn("function renderPlayerPage", html)
+        self.assertIn("matchup_player_points", html)
+        self.assertIn("Matchup receipts", html)
         self.assertIn("function playerHorizonMarkup", html)
         self.assertIn("Availability source", html)
         self.assertIn("historical availability unavailable", html)
@@ -2402,6 +2508,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("position-relative percentiles from 0–100, not dollar market values", html)
         self.assertIn("horizon_score_basis", html)
         self.assertIn("next_game_matchup_adjustment_status", html)
+        self.assertIn("Market quality", html)
         self.assertIn("factor descriptive only", html)
         self.assertIn("cross-position price anchor", html)
         self.assertIn('data-horizon-view="market_price"', html)
@@ -3810,7 +3917,7 @@ class VModelTests(unittest.TestCase):
                     "roster_id": 2,
                     "player_name": "Jayden Daniels",
                     "position": "QB",
-                    "nfl_team": "WAS",
+                "nfl_team": "WAS",
                     "roster_status": "starter",
                     "age": 25,
                     "years_exp": 2,

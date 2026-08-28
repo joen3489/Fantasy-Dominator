@@ -10,6 +10,62 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-27 - Resume the same edition and make the room queryable
+
+An interrupted writer run must not force a new refresh or a second paid call
+for desks that already succeeded. The authenticated resume action now reuses
+the existing `edition_run_id`, selects unfinished writer/editor jobs, and
+publishes only after the requested ledger reaches a truthful terminal state.
+Startup reconciliation remains non-spending: it marks abandoned work
+interrupted and waits for an explicit operator resume. The issue also persists
+`publication_edges` so the reader can show which desk extends, supports,
+disputes, or asks after another without pretending that editorial sequencing is
+source evidence.
+
+The six-desk lineup now has runtime information contracts (`evidence_scope`,
+`excluded_evidence`, and `required_disagreement`) in addition to personas. A
+new writer earns a call by owning a different manager question or evidence
+slice; a different tone alone is not a product capability.
+
+## 2026-08-27 - Make disagreement and market quality inspectable
+
+The writer/editor contract now carries a bounded `claim_positions` register.
+Each material position names its exact subject, decision window, stance, short
+summary, and cited evidence IDs. The issue compiler compares only matching
+subjects and windows, preserves competing reads without selecting a winner,
+and lets a high-severity Reality Check limit the resolution. This creates a
+real running conversation between desks instead of asking the UI to infer
+disagreement from similar prose.
+
+The Reality Check packet also records the market comparison basis, position,
+clock window, source count, confidence, and delta. Its issue-level market
+quality receipt distinguishes multi-source coverage from single-source
+calibration limits. This makes the market desk's output a review queue rather
+than a universal ranking, while leaving outcome-based market calibration as
+future work.
+
+Exact nested Sleeper `matchup_player_points` rows now produce a lineup receipt
+that reconciles to the aggregate matchup score when possible. Missing or
+placeholder rows remain partial/unplayed, and actionable injury checks cannot
+be skipped by a simultaneous market warning.
+
+## 2026-08-27 - Correlate durable jobs without inventing provider guarantees
+
+The durable newsroom ledger now stores a privacy-safe client request ID derived
+from the edition run, article, and phase. It remains stable when a desk is
+retried, while the provider response ID remains an independent per-attempt
+receipt. We intentionally do not send an unverified idempotency header; the
+internal ID improves recovery and cost investigation without overstating what
+the provider guarantees.
+
+## 2026-08-27 - Worker readiness must mean liveness, not schema shape
+
+Queue mode now records worker heartbeats in the durable application store.
+`worker_service_configured` means the queue mode and schema are present;
+`worker_queue_ready` additionally requires a recent heartbeat. This keeps
+`/healthz` and the live smoke gate from reporting that paid editions are being
+processed when only the web service has been deployed.
+
 ## 2026-08-26 - A fallback needs an honest byline
 
 The deterministic fallback was visibly labeled as fallback, but its assigned
@@ -2054,3 +2110,54 @@ current-role baseline PPG from conditional historical PPG, and counts only
 actual `injury_*` statuses as injury flags; neutral values such as `Active` do
 not inflate the injury count. Aggregate summaries must preserve the same
 availability boundary as their row-level evidence.
+
+## 2026-08-27 - Durable newsroom execution and information-first writers
+
+The next newsroom slice is a durable fan-out/fan-in edition workflow. The API
+will create an authenticated, exact-scope edition run; independent specialist
+desk jobs will consume one immutable validated evidence packet; each job will
+checkpoint its provider receipt and validation state; and a front-page synthesis
+will run after the specialist results. A deployment or worker restart must not
+force a completed desk to regenerate or allow an in-flight receipt to look
+published.
+
+The writer roster is being improved by information responsibility, not by adding
+more voices that restate the same ranking. The stable desks remain the current
+compatibility contract. A proposed Reality Check desk will expose source,
+availability, freshness, join, and market anomalies. `daily_brief` will migrate
+toward issue-level synthesis while Look-Ahead Lonnie owns the long-view evidence
+lane. The proposal and acceptance criteria live in
+`docs/durable_newsroom_epic.md`; no proposed desk is active until its packet,
+schema, entry path, and tests exist.
+
+## 2026-08-27 - Queue the newsroom before asking it to publish
+
+The durable newsroom now has a locally executable worker boundary. In
+`FRONT_OFFICE_EXECUTION_MODE=worker`, the authenticated API creates a queued
+edition receipt and returns without holding the web request open for refresh or
+Luna calls. `scripts/newsroom_worker.py` claims the edition and each desk phase
+with an exclusive lease, renews ownership, resumes expired work, and records
+cooperative cancellation, bounded retry exhaustion, and stale-worker safety.
+
+Independent specialist calls may fan out with a bounded cap, but evidence
+scoping, artifact persistence, and the `daily_brief` issue synthesis remain
+serialized. This preserves a real room conversation without allowing parallel
+writers to mutate shared context or publish a false success. The worker is
+compatible with Railway, but production still requires one worker on the same
+durable data root as the web service; the current SQLite design is not a claim
+that multiple workers are safe.
+
+## 2026-08-27 - Bind Reality Check to the printed article
+
+The deterministic Reality Check packet now covers the selected roster and the
+league actionable player universe. This closes the seam where a market or
+trade article could discuss a non-rostered player without inheriting a
+no-team, injury, or availability-conditioned limitation. Matched high-severity
+checks travel with writer evidence and article receipts; an actionable claim
+must be conditional or explicitly unavailable or it is held before reaching
+the printed facade.
+
+The issue-level newsroom now preserves counter-signals and open questions so
+different information desks become a running conversation rather than six
+tones restating one ranking. This remains editorial structure over
+deterministic evidence, with source receipts one click away.

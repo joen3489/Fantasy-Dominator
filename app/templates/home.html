@@ -436,6 +436,23 @@
       .writer-preview-footer a { color: var(--accent); font-size: 13px; font-weight: 900; text-decoration: none; }
       .writer-preview-footer span { color: var(--muted); font-size: 11px; }
       .writer-preview-empty { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+      .newsroom-conversation { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid #d6cba9; border-radius: 10px; background: #fbf8ed; }
+      .newsroom-conversation-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+      .newsroom-conversation-heading h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 25px; line-height: 1.05; }
+      .newsroom-conversation-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+      .conversation-feed { display: grid; gap: 8px; }
+      .conversation-card { display: grid; gap: 6px; padding: 11px 12px; border-left: 3px solid var(--gold); border-radius: 7px; background: rgba(255,255,255,.72); }
+      .conversation-card-top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+      .conversation-card-relation { color: #856a25; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+      .conversation-card-reporter { color: var(--ink); font-size: 12px; font-weight: 900; }
+      .conversation-card-caption { color: var(--muted); font-size: 11px; }
+      .conversation-card h3 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 18px; line-height: 1.08; }
+      .conversation-card h3 a { color: var(--ink); text-decoration: none; }
+      .conversation-card h3 a:hover { text-decoration: underline; }
+      .conversation-card blockquote { margin: 0; color: #465149; font-size: 13px; line-height: 1.4; }
+      .newsroom-claim-conflicts { margin-top: 12px; padding: 11px 12px; border-left: 3px solid #b0842b; border-radius: 8px; background: #fffaf0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .newsroom-claim-conflicts strong { color: var(--ink); }
+      .newsroom-claim-conflicts ul { margin: 6px 0 0; padding-left: 18px; }
       .empty-hero {
         display: grid;
         gap: 13px;
@@ -612,6 +629,31 @@
       .writer-status.error { color: var(--sell); }
       .writer-plan-output { margin: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px; background: #fbfcf8; color: var(--muted); white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
       .writer-plan-output.error { color: var(--sell); }
+      .writer-publication { display: grid; gap: 8px; margin-top: 2px; padding-top: 10px; border-top: 1px solid #d7c99e; }
+      .writer-publication-heading { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+      .writer-publication-heading strong { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+      .writer-publication-heading span { color: var(--muted); font-size: 11px; }
+      .writer-publication-summary { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+      .writer-publication-grid { display: grid; gap: 6px; }
+      .writer-publication-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(116px, .7fr) minmax(145px, 1fr); gap: 8px; align-items: center; padding: 8px 9px; background: #fbfcf8; border: 1px solid var(--line); border-radius: 7px; }
+      .writer-publication-desk { display: grid; gap: 2px; min-width: 0; }
+      .writer-publication-desk strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+      .writer-publication-desk small, .writer-publication-meta { color: var(--muted); font-size: 10px; line-height: 1.25; }
+      .writer-publication-status { display: grid; gap: 2px; font-size: 11px; font-weight: 800; }
+      .writer-publication-status.published { color: var(--buy); }
+      .writer-publication-status.fallback, .writer-publication-status.held { color: #70551b; }
+      .writer-publication-status.not_printed { color: var(--muted); }
+      .writer-publication-meta { overflow-wrap: anywhere; }
+      .writer-publication-link { justify-self: start; color: var(--accent); font-size: 12px; font-weight: 800; }
+      .writer-run-receipt { display: grid; gap: 9px; padding: 12px; border: 1px solid #d6cba9; border-radius: 8px; background: #fbf8ed; }
+      .writer-run-heading { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+      .writer-run-heading strong { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+      .writer-run-heading span { color: var(--muted); font-size: 11px; }
+      .writer-run-meta { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+      .writer-run-jobs { display: grid; gap: 5px; }
+      .writer-run-job { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(214,203,169,.7); font-size: 11px; }
+      .writer-run-job small { color: var(--muted); }
+      .writer-run-job-state { font-weight: 900; text-transform: capitalize; }
       .storage-panel { border-color: #c8d5ce; background: #f2f7f3; }
       .storage-panel summary { cursor: pointer; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
       .storage-panel p { margin: 8px 0 0; }
@@ -644,7 +686,11 @@
       .edition-card-receipt { color: var(--muted); font-size: 10px; line-height: 1.3; }
       .edition-card-footer { align-items: end; margin-top: auto; color: var(--muted); font-size: 11px; }
       .edition-card-footer strong { color: var(--ink); }
-      @media (max-width: 520px) { .writer-actions { grid-template-columns: 1fr; } }
+      @media (max-width: 520px) {
+        .writer-actions { grid-template-columns: 1fr; }
+        .writer-publication-row { grid-template-columns: 1fr 1fr; }
+        .writer-publication-desk { grid-column: 1 / -1; }
+      }
       .empty-feed {
         margin: 4px 2px;
         color: var(--muted);
@@ -700,6 +746,7 @@
             <div class="edition-meta"><span>{{ enabled_leagues|length }} active league editions</span><span>Evidence-backed briefs</span><span>Private by league</span><span>{{ (continuity or {}).label or "Workspace status unknown" }}</span></div>
             {% set featured_receipt = (featured_league.source_receipt or {}) %}
             {% set featured_content = (featured_league.content_status or {}) %}
+            {% set writer_ledger = featured_league.writer_publication_ledger or {} %}
             <div class="edition-proof" data-testid="edition-proof" aria-label="Edition provenance">
               <span>In focus: <strong>{{ featured_league.name or featured_league.league_id }}</strong></span>
               {% if featured_league.sleeper_team_name %}<span>Managing: <strong>{{ featured_league.sleeper_team_name }}</strong></span>{% endif %}
@@ -822,6 +869,48 @@
               <div class="writer-preview-footer"><a href="/league/{{ featured_league.league_id }}/#view-today">Open edition status →</a></div>
             {% endif %}
           </section>
+          {% if edition.newsroom_conversation %}
+            <section class="newsroom-conversation" aria-labelledby="newsroom-conversation-title" data-testid="newsroom-conversation">
+              <div class="newsroom-conversation-heading">
+                <h2 id="newsroom-conversation-title">The room is talking</h2>
+                <p>Each desk adds a different question to the same evidence.</p>
+              </div>
+              <div class="conversation-feed">
+                {% for voice in edition.newsroom_conversation %}
+                  {% set conversation_anchor = "view-today" if voice.article_key == "daily_brief" else "view-my-team" if voice.article_key == "team_report" else "view-league" if voice.article_key == "manager_intel" else "view-trade-desk" %}
+                  <article class="conversation-card" data-testid="conversation-card">
+                    <div class="conversation-card-top">
+                      <span class="conversation-card-relation">{{ voice.relation }}</span>
+                      <span class="conversation-card-reporter">{{ voice.reporter_name }}{% if voice.assigned_reporter_name and voice.assigned_reporter_name != voice.reporter_name %} · lens: {{ voice.assigned_reporter_name }}{% endif %}</span>
+                      <span class="conversation-card-caption">{{ voice.caption }}</span>
+                    </div>
+                    <h3><a href="/league/{{ featured_league.league_id }}/#{{ conversation_anchor }}">{{ voice.headline }}</a></h3>
+                    <blockquote>{{ voice.thesis }}</blockquote>
+                  </article>
+                {% endfor %}
+              </div>
+              {% if edition.claim_conflicts %}
+                <div class="newsroom-claim-conflicts" data-testid="newsroom-claim-conflicts">
+                  <strong>Claim register: competing reads</strong>
+                  <ul>
+                    {% for conflict in edition.claim_conflicts %}
+                      <li>
+                        <strong>{{ conflict.subject_label or conflict.subject_key }}</strong>
+                        · {{ (conflict.decision_window or "window")|replace("_", " ") }}
+                        · {{ (conflict.resolution_status or "unresolved")|replace("_", " ") }}:
+                        {{ conflict.resolution or "Keep both receipts visible; no winner selected." }}
+                        <ul>
+                          {% for claim in conflict.claims or [] %}
+                            <li>{{ claim.reporter_name or claim.article_key }} ({{ claim.stance or "unknown" }}): {{ claim.summary or "" }} · <a href="/league/{{ featured_league.league_id }}/#publication-{{ claim.article_key }}">receipt</a></li>
+                          {% endfor %}
+                        </ul>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+            </section>
+          {% endif %}
           <section class="article-shelf" aria-labelledby="article-shelf-title" data-testid="article-shelf">
             <div class="article-shelf-heading">
               <h2 id="article-shelf-title">The desk</h2>
@@ -834,36 +923,42 @@
                 {% endfor %}
               </div>
             {% endif %}
+            {% set article_receipt = (writer_ledger.by_key or {}).get("daily_brief") or {} %}
             <div class="article-shelf-grid">
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-today">
                 <span class="article-card-kicker">Daily GM Brief</span>
                 <span class="article-card-title">What matters today</span>
-                <span class="article-card-status">{% if "daily_brief" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
+              {% set article_receipt = (writer_ledger.by_key or {}).get("team_report") or {} %}
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-my-team">
                 <span class="article-card-kicker">Team Report</span>
                 <span class="article-card-title">Your roster, interpreted</span>
-                <span class="article-card-status">{% if "team_report" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
+              {% set article_receipt = (writer_ledger.by_key or {}).get("manager_intel") or {} %}
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-league">
                 <span class="article-card-kicker">Manager Intel</span>
                 <span class="article-card-title">Read the room</span>
-                <span class="article-card-status">{% if "manager_intel" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
+              {% set article_receipt = (writer_ledger.by_key or {}).get("market_watch") or {} %}
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
                 <span class="article-card-kicker">Market Watch</span>
                 <span class="article-card-title">Where value is moving</span>
-                <span class="article-card-status">{% if "market_watch" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
+              {% set article_receipt = (writer_ledger.by_key or {}).get("trade_desk") or {} %}
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
                 <span class="article-card-kicker">Trade Desk Read</span>
                 <span class="article-card-title">Who fits your plan</span>
-                <span class="article-card-status">{% if "trade_desk" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
+              {% set article_receipt = (writer_ledger.by_key or {}).get("horizon_watch") or {} %}
               <a class="article-card" href="/league/{{ featured_league.league_id }}/#view-trade-desk">
                 <span class="article-card-kicker">Market Clock Read</span>
                 <span class="article-card-title">How value changes with time</span>
-                <span class="article-card-status">{% if "horizon_watch" in (featured_content.generated_keys or []) %}API reporter{% else %}Evidence-led fallback{% endif %}</span>
+                <span class="article-card-status">{{ article_receipt.status_label or "Not printed" }}</span>
               </a>
             </div>
           </section>
@@ -992,7 +1087,8 @@
           <p class="writer-note" data-testid="writer-content-status">Selected league: {{ (featured_league.content_status or {}).label or "No writer receipt yet" }}.</p>
           {% set selected_writer_job = selected_operator_status.get("job", "") %}
           {% set selected_writer_state = selected_operator_status.get("state", "") %}
-          {% set selected_writer_terminal = selected_writer_job == "generate-insights" and selected_writer_state in ["complete", "partial", "failed"] %}
+          {% set selected_writer_terminal = selected_writer_job == "generate-insights" and selected_writer_state in ["complete", "partial", "failed", "cancelled"] %}
+          {% set selected_writer_active = selected_writer_job == "generate-insights" and selected_writer_state in ["queued", "running", "cancel_requested"] %}
           <div class="writer-readiness" data-testid="writer-readiness">
             <span>Provider: <strong>{{ writer_provider }}</strong></span>
             <span>Model: <strong>{{ writer_model }}</strong></span>
@@ -1000,8 +1096,55 @@
             <span>Timeout: <strong>{{ writer_timeout_seconds }}s</strong></span>
             <span>Desk review: <strong>{{ writer_editor_mode }}</strong></span>
             <span>API key: <strong>{{ "ready" if writer_api_configured else "missing" }}</strong></span>
+            {% if writer_execution_mode == "worker" %}
+              <span>Worker queue: <strong>{{ "online" if newsroom_worker_health.active else "offline" }}</strong></span>
+            {% endif %}
             <span>Operator gate: <strong>{{ "configured; browser key required" if operator_status and operator_status.operator_enabled else "not configured" }}</strong></span>
           </div>
+          {% set edition_run = selected_operator_status.get("edition_run") or {} %}
+          {% set edition_resume_state = edition_run.get("state", "")|lower %}
+          {% if edition_run %}
+            <section class="writer-run-receipt" data-testid="durable-edition-receipt" aria-labelledby="durable-edition-receipt-title">
+              <div class="writer-run-heading">
+                <strong id="durable-edition-receipt-title">Durable edition run</strong>
+                <span>{{ edition_run.get("state", "unknown")|capitalize }} · {{ edition_run.get("stage", "")|capitalize }}</span>
+              </div>
+              <p class="writer-run-meta">Run {{ edition_run.get("run_id", "")[:12] }} · {{ edition_run.get("completed_count", 0) }}/{{ edition_run.get("total_count", 0) }} desk jobs checkpointed{% if edition_run.get("last_heartbeat_at") %} · last heartbeat {{ edition_run.get("last_heartbeat_at") }}{% endif %}</p>
+              {% if edition_run.get("failure_message") %}<p class="writer-run-meta">{{ edition_run.get("failure_message") }}</p>{% endif %}
+              {% if edition_run.get("jobs") %}
+                <div class="writer-run-jobs" aria-label="Durable desk jobs">
+                  {% for job in edition_run.get("jobs") %}
+                    <div class="writer-run-job"><span><strong>{{ job.get("article_key") }}</strong> <small>{{ job.get("phase") }}</small></span><span class="writer-run-job-state">{{ job.get("state") }}</span></div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </section>
+          {% endif %}
+          <section class="writer-publication" data-testid="writer-publication-ledger" aria-labelledby="writer-publication-title">
+            <div class="writer-publication-heading">
+              <strong id="writer-publication-title">Printed newsroom</strong>
+              <span>{{ writer_ledger.published_count or 0 }}/{{ writer_ledger.rows|length or 6 }} Luna articles</span>
+            </div>
+            <p class="writer-publication-summary" data-testid="writer-publication-summary">{{ writer_ledger.summary or "No private publication receipt is available yet." }}{% if writer_ledger.last_generated_at_label %} Last article receipt: {{ writer_ledger.last_generated_at_label }}.{% endif %}</p>
+            <div class="writer-publication-grid" data-testid="writer-publication-rows">
+              {% for row in writer_ledger.rows or [] %}
+                <div class="writer-publication-row" data-testid="writer-publication-row" data-article-key="{{ row.key }}">
+                  <div class="writer-publication-desk">
+                    <strong>{{ row.title }}</strong>
+                    <small>Lens: {{ row.lens }}</small>
+                  </div>
+                  <div class="writer-publication-status {{ row.status }}">
+                    <span>{{ row.status_label }}</span>
+                    <small>{{ row.review_label }}</small>
+                  </div>
+                  <div class="writer-publication-meta">
+                    <strong>{{ row.byline }}</strong> · {{ row.model }}{% if row.generated_at_label %}<br>Receipt: {{ row.generated_at_label }}{% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <a class="writer-publication-link" href="/league/{{ featured_league.league_id }}/#view-data-room">Open the Data Room update ledger →</a>
+          </section>
           {% set writer_reconciliation = (featured_league.content_status or {}) %}
           {% if writer_reconciliation.last_generated_model %}
             <p class="writer-note" data-testid="writer-model-reconciliation">Previous writer model: <strong>{{ writer_reconciliation.last_generated_model }}</strong> · {{ writer_reconciliation.model_reconciliation }}{% if writer_reconciliation.model_mismatch_count %} ({{ writer_reconciliation.model_mismatch_count }} article{{ "s" if writer_reconciliation.model_mismatch_count != 1 else "" }}){% endif %}.</p>
@@ -1021,10 +1164,16 @@
             {% if writer_retry_keys %}
               <button class="refresh-button" type="button" data-writer-retry-button data-writer-retry-keys='{{ writer_retry_keys|tojson }}'>Retry failed desks</button>
             {% endif %}
+            {% if edition_run.get("run_id") and edition_resume_state in ["interrupted", "failed", "partial", "pending_publication"] %}
+              <button class="refresh-button" type="button" data-writer-resume-button data-writer-resume-run-id="{{ edition_run.get("run_id") }}">Resume this edition</button>
+            {% endif %}
+            {% if edition_run.get("run_id") and selected_writer_active %}
+              <button class="refresh-button" type="button" data-writer-cancel-button data-writer-cancel-run-id="{{ edition_run.get("run_id") }}">Cancel this edition</button>
+            {% endif %}
           </div>
           <pre class="writer-plan-output" data-writer-plan-output hidden role="status"></pre>
           <span class="writer-status{% if selected_writer_state == "failed" %} error{% endif %}" data-writer-status data-testid="writer-run-status" role="status">
-            {% if selected_writer_job == "generate-insights" and selected_writer_state == "running" %}
+            {% if selected_writer_job == "generate-insights" and selected_writer_state in ["queued", "running", "cancel_requested"] %}
               {{ selected_operator_status.get("message") or "Writer run is in progress." }}{% if selected_operator_status.get("total_count") is not none %} ({{ selected_operator_status.get("completed_count") or 0 }}/{{ selected_operator_status.get("total_count") }} desks complete){% endif %}
             {% elif selected_writer_terminal %}
               Last writer run: {{ selected_operator_status.get("message") or selected_writer_state|capitalize }}
@@ -1432,9 +1581,11 @@
         const writerButton = document.querySelector('[data-writer-button]');
         const writerAllButton = document.querySelector('[data-writer-all-button]');
         const writerRetryButton = document.querySelector('[data-writer-retry-button]');
+        const writerResumeButton = document.querySelector('[data-writer-resume-button]');
+        const writerCancelButton = document.querySelector('[data-writer-cancel-button]');
         const writerPlanButton = document.querySelector('[data-writer-plan-button]');
         const writerPlanOutput = document.querySelector('[data-writer-plan-output]');
-        if (writerButton || writerAllButton || writerRetryButton || writerPlanButton) {
+        if (writerButton || writerAllButton || writerRetryButton || writerResumeButton || writerCancelButton || writerPlanButton) {
           const writerStatus = document.querySelector('[data-writer-status]');
           const writerToken = document.querySelector('[data-writer-token]');
           const writerSleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -1530,11 +1681,20 @@
                   resetWriterButton(button, allEditions, retryKeys);
                   return;
                 }
-                if (status.state === 'running') {
+                if (status.state === 'queued' || status.state === 'running' || status.state === 'cancel_requested') {
                   const progress = status.total_count
                     ? ` · ${status.completed_count || 0}/${status.total_count} desks complete`
                     : '';
-                  writerStatus.textContent = (allEditions ? 'The reporters are writing every enabled edition' : (status.message || 'The reporters are writing this edition')) + progress;
+                  const durable = status.edition_run || {};
+                  const durableProgress = durable.run_id && durable.total_count
+                    ? ` · durable checkpoint ${durable.completed_count || 0}/${durable.total_count}`
+                    : '';
+                  const prefix = status.state === 'queued'
+                    ? 'Edition queued; waiting for the newsroom worker'
+                    : status.state === 'cancel_requested'
+                    ? 'Cancellation requested; finishing the active desk safely'
+                    : (allEditions ? 'The reporters are writing every enabled edition' : (status.message || 'The reporters are writing this edition'));
+                  writerStatus.textContent = prefix + progress + durableProgress;
                   continue;
                 }
                 if (status.state === 'complete' || status.state === 'partial') {
@@ -1547,6 +1707,11 @@
                   if (writerButton && writerButton !== button) resetWriterButton(writerButton);
                   if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
                   if (writerRetryButton && writerRetryButton !== button) resetWriterButton(writerRetryButton, false, JSON.parse(writerRetryButton.dataset.writerRetryKeys || '[]'));
+                  return;
+                }
+                if (status.state === 'cancelled') {
+                  writerStatus.textContent = status.message || 'Edition cancelled before publication.';
+                  resetWriterButton(button, allEditions, retryKeys);
                   return;
                 }
                 if (status.state === 'failed') {
@@ -1565,7 +1730,7 @@
             writerStatus.textContent = 'The writer is still running. Check the edition again in a moment.';
             resetWriterButton(button, allEditions, retryKeys);
           };
-          const startWriter = async (button, allEditions = false, retryKeys = []) => {
+          const startWriter = async (button, allEditions = false, retryKeys = [], resumeRunId = '') => {
             if (button.dataset.reload === 'true') {
               window.location.reload();
               return;
@@ -1582,19 +1747,25 @@
             button.disabled = true;
             if (writerButton) writerButton.disabled = true;
             if (writerAllButton) writerAllButton.disabled = true;
-            button.textContent = retryKeys.length
+            button.textContent = resumeRunId
+              ? 'Resuming edition'
+              : retryKeys.length
               ? 'Starting selected desks'
               : allEditions ? 'Starting all writers' : 'Starting writer';
             writerStatus.className = 'writer-status';
-            writerStatus.textContent = retryKeys.length
+            writerStatus.textContent = resumeRunId
+              ? 'Resuming from the durable desk ledger without rerunning completed calls'
+              : retryKeys.length
               ? 'Retrying the selected desks against the current evidence'
               : allEditions ? 'Refreshing facts and queueing every reporter desk' : 'Refreshing facts and queueing the reporters';
             const headers = {'content-type': 'application/json'};
             if (writerToken?.value) headers['x-front-office-token'] = writerToken.value;
             try {
-              const requestBody = allEditions ? {} : {league_id: leagueId};
-              if (retryKeys.length) requestBody.article_keys = retryKeys;
-              const response = await fetch('/api/operator/generate-insights', {
+              const requestBody = resumeRunId
+                ? {league_id: leagueId, run_id: resumeRunId}
+                : allEditions ? {} : {league_id: leagueId};
+              if (!resumeRunId && retryKeys.length) requestBody.article_keys = retryKeys;
+              const response = await fetch(resumeRunId ? '/api/operator/resume-edition' : '/api/operator/generate-insights', {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(requestBody),
@@ -1624,10 +1795,14 @@
                 if (writerAllButton && writerAllButton !== button) resetWriterButton(writerAllButton, true);
                 return;
               }
-              writerStatus.textContent = retryKeys.length
+              writerStatus.textContent = resumeRunId
+                ? 'Durable edition resume started. Watching the existing run.'
+                : retryKeys.length
                 ? 'Selected desk retry started. Watching for completion.'
                 : allEditions ? 'All-edition writer run started. Watching every league for completion.' : 'Writer run started. Watching the selected league for completion.';
-              button.textContent = retryKeys.length
+              button.textContent = resumeRunId
+                ? 'Edition resuming'
+                : retryKeys.length
                 ? 'Selected desks running'
                 : allEditions ? 'All writers running' : 'Writer running';
               void watchWriter(leagueId, button, allEditions, acceptedRunId, retryKeys);
@@ -1651,6 +1826,34 @@
               return;
             }
             startWriter(writerRetryButton, false, Array.isArray(retryKeys) ? retryKeys : []);
+          });
+          if (writerResumeButton) writerResumeButton.addEventListener('click', () => {
+            const runId = writerResumeButton.dataset.writerResumeRunId || '';
+            startWriter(writerResumeButton, false, [], runId);
+          });
+          if (writerCancelButton) writerCancelButton.addEventListener('click', async () => {
+            const leagueId = selectedWriterLeagueId();
+            const runId = writerCancelButton.dataset.writerCancelRunId || '';
+            if (!leagueId || !runId) return;
+            writerCancelButton.disabled = true;
+            writerStatus.className = 'writer-status';
+            writerStatus.textContent = 'Requesting newsroom cancellation…';
+            const headers = {'content-type': 'application/json'};
+            if (writerToken?.value) headers['x-front-office-token'] = writerToken.value;
+            try {
+              const response = await fetch('/api/operator/cancel-edition', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({league_id: leagueId, run_id: runId}),
+              });
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(payload.detail || 'edition cancellation failed (' + response.status + ')');
+              writerStatus.textContent = payload.message || 'Cancellation requested.';
+            } catch (error) {
+              writerCancelButton.disabled = false;
+              writerStatus.className = 'writer-status error';
+              writerStatus.textContent = error.message;
+            }
           });
           if (writerPlanButton) writerPlanButton.addEventListener('click', reviewWriterPlan);
         }

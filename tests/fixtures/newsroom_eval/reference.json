@@ -1,0 +1,126 @@
+{
+  "fixture_id": "front-office-regression-pack-v1",
+  "expected_article_keys": [
+    "team_report",
+    "market_watch",
+    "trade_desk",
+    "manager_intel",
+    "daily_brief",
+    "horizon_watch"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "player:hill:1",
+      "entity_type": "player",
+      "entity_id": "hill",
+      "player_name": "Tyreek Hill",
+      "name": "Tyreek Hill",
+      "current_availability_status": "no_current_nfl_team",
+      "availability_note": "No current NFL team; historical baseline is conditional on signing.",
+      "source_ids": ["sleeper:players"]
+    },
+    {
+      "evidence_id": "player:waiver:1",
+      "entity_type": "player",
+      "entity_id": "waiver",
+      "player_name": "Rookie Runner",
+      "name": "Rookie Runner",
+      "source_ids": ["sleeper:rosters", "usage:weekly"]
+    },
+    {
+      "evidence_id": "player:trade:1",
+      "entity_type": "player",
+      "entity_id": "trade",
+      "player_name": "Trade Target",
+      "name": "Trade Target",
+      "source_ids": ["sleeper:trades", "manager:history"]
+    },
+    {
+      "evidence_id": "manager:2:1",
+      "entity_type": "manager",
+      "entity_id": "2",
+      "name": "Rival Manager",
+      "source_ids": ["manager:history"]
+    },
+    {
+      "evidence_id": "player:horizon:1",
+      "entity_type": "player",
+      "entity_id": "horizon",
+      "player_name": "Young Receiver",
+      "name": "Young Receiver",
+      "source_ids": ["projection:season", "market:consensus"]
+    },
+    {
+      "evidence_id": "matchup:league:1",
+      "entity_type": "matchup",
+      "entity_id": "matchup-1",
+      "name": "Your Team vs Rival Team",
+      "source_ids": ["sleeper:matchups"]
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "reference-luna-max",
+      "label": "Reference roster with distinct information desks",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "max",
+      "outcome_observations": [],
+      "articles": [
+        {
+          "article_key": "team_report",
+          "reporter_id": "topline_tony",
+          "decision_lens": "next_game",
+          "required_evidence_ids": ["player:hill:1", "matchup:league:1"],
+          "required_source_ids": ["sleeper:players", "sleeper:matchups"],
+          "narrative_markdown": "## Cornerstones\nTyreek Hill has no current NFL team; his historical baseline is conditional if he signs.\n\n## Shop Candidates\nOpen the matchup receipt before making a weekly decision.",
+          "cited_evidence_ids": ["player:hill:1", "matchup:league:1"]
+        },
+        {
+          "article_key": "market_watch",
+          "reporter_id": "waiver_wire_waverly",
+          "decision_lens": "rest_of_season",
+          "required_evidence_ids": ["player:waiver:1"],
+          "required_source_ids": ["sleeper:rosters", "usage:weekly"],
+          "narrative_markdown": "## Buy-Low Targets\nRookie Runner is a market lead to investigate against role and usage.\n\n## Sell-High Windows\nPass if the role change does not hold.",
+          "cited_evidence_ids": ["player:waiver:1"]
+        },
+        {
+          "article_key": "trade_desk",
+          "reporter_id": "trade_desk_talia",
+          "decision_lens": "multi_window",
+          "required_evidence_ids": ["player:trade:1"],
+          "required_source_ids": ["sleeper:trades", "manager:history"],
+          "narrative_markdown": "## Best Fits\nTrade Target may fit a counterparty's observed needs; this is a conversation lead, not a trade instruction.\n\n## Steer Clear\nThe evidence does not establish manager intent.",
+          "cited_evidence_ids": ["player:trade:1"]
+        },
+        {
+          "article_key": "manager_intel",
+          "reporter_id": "dossier_dana",
+          "decision_lens": "multi_window",
+          "required_evidence_ids": ["manager:2:1"],
+          "required_source_ids": ["manager:history"],
+          "narrative_markdown": "## Contenders\nRival Manager's observed history is useful context, not proof of intent.\n\n## Rebuilders\nLook for a measured fit before opening a conversation.",
+          "cited_evidence_ids": ["manager:2:1"]
+        },
+        {
+          "article_key": "daily_brief",
+          "reporter_id": "look_ahead_lonnie",
+          "decision_lens": "dynasty_career",
+          "required_evidence_ids": ["player:horizon:1"],
+          "required_source_ids": ["projection:season", "market:consensus"],
+          "narrative_markdown": "## Target Theses\nYoung Receiver is a long-view question, not a certain outcome.\n\n## Sell Windows\nKeep the risk visible.\n\n## Manager Angles\nOpen the underlying receipt.",
+          "cited_evidence_ids": ["player:horizon:1"]
+        },
+        {
+          "article_key": "horizon_watch",
+          "reporter_id": "market_clock_morgan",
+          "decision_lens": "multi_window",
+          "required_evidence_ids": ["player:horizon:1"],
+          "required_source_ids": ["projection:season", "market:consensus"],
+          "narrative_markdown": "## This Week\nSeparate next-game utility from the rest of season.\n\n## Rest of Season\nThe production baseline is not recovery-adjusted.\n\n## Dynasty Window\nDynasty value is a separate window.\n\n## Market vs Clock\nCompare within position.\n\n## Contender vs Rebuilder\nFit depends on the manager's timeline.",
+          "cited_evidence_ids": ["player:horizon:1"]
+        }
+      ]
+    }
+  ]
+}

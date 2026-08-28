@@ -608,13 +608,24 @@ class FastAPIClerkAppTests(unittest.TestCase):
                 "data_root_configured": True,
                 "database_present": True,
                 "database_schema_ready": True,
-                "database_table_count": 9,
+                "database_table_count": 13,
                 "writer_api_configured": False,
                 "writer_provider": "openai",
                 "writer_model": "gpt-5.6-luna",
                 "writer_reasoning_effort": "max",
                 "writer_timeout_seconds": 120,
                 "writer_editor_mode": "deterministic",
+                "writer_execution_mode": "inline",
+                "worker_queue_ready": False,
+                "worker_service_configured": False,
+                "worker_health": {
+                    "heartbeat_schema_ready": True,
+                    "worker_count": 0,
+                    "active_worker_count": 0,
+                    "active": False,
+                    "last_heartbeat_at": "",
+                    "max_age_seconds": 300,
+                },
                 "writer_api_key_env": "OPENAI_API_KEY",
                 "operator_token_configured": False,
                 "scheduler_enabled": False,
@@ -636,6 +647,48 @@ class FastAPIClerkAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["writer_editor_mode"], "llm")
+
+    def test_healthz_does_not_claim_worker_ready_until_a_worker_heartbeat_exists(self) -> None:
+        """Design source: AGENTS.md and durable_newsroom_epic.md Slice 6; readiness must be truthful."""
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_EXECUTION_MODE": "worker"}, clear=False):
+            before = self.client.get("/healthz").json()
+            self.assertTrue(before["worker_service_configured"])
+            self.assertFalse(before["worker_queue_ready"])
+            self.assertFalse(before["worker_health"]["active"])
+
+            db.heartbeat_newsroom_worker("health-worker", state="idle")
+            after = self.client.get("/healthz").json()
+
+        self.assertTrue(after["worker_queue_ready"])
+        self.assertTrue(after["worker_health"]["active"])
+        self.assertEqual(after["worker_health"]["active_worker_count"], 1)
+
+    def test_home_surfaces_worker_liveness_when_queue_mode_is_enabled(self) -> None:
+        """Design source: durable_newsroom_epic.md Slice 6; the writer surface must expose queue state."""
+
+        token = self._token("worker-surface")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("worker-surface")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "worker-surface-league",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Worker Surface League",
+                "roster_id": 2,
+            },
+        )
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_EXECUTION_MODE": "worker"}, clear=False):
+            offline = self.client.get("/", cookies={"__session": token})
+            db.heartbeat_newsroom_worker("worker-surface", state="idle")
+            online = self.client.get("/", cookies={"__session": token})
+
+        self.assertIn("Worker queue:", offline.text)
+        self.assertIn("offline", offline.text)
+        self.assertIn("online", online.text)
 
     def test_valid_token_serves_home_and_auto_provisions_user(self) -> None:
         response = self.client.get("/", cookies={"__session": self._token("user_valid")})
@@ -706,6 +759,63 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertIn("Last writer run: The previous operator job was interrupted before completion; retry the run.", response.text)
         self.assertIn('data-testid="writer-interrupted-retry-note"', response.text)
         self.assertIn("reuses any valid article receipts", response.text)
+
+    def test_home_exposes_per_article_publication_receipts(self) -> None:
+        """Design source: AGENTS.md; the media facade must make publication state and evidence boundaries legible."""
+
+        token = self._token("user_writer_publication_ledger")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_writer_publication_ledger")
+        db.upsert_user_league(
+            user_id,
+            {"league_id": "publication-ledger", "season": "2026", "league_type": "dynasty", "name": "Publication Ledger", "roster_id": 1},
+        )
+        publication = {
+            "manifest_present": True,
+            "verified": True,
+            "bundle_revision": "bundle-revision-123456",
+            "article_receipts": {
+                "team_report": {
+                    "mode": "automatic_llm",
+                    "model": "gpt-5.6-luna",
+                    "reporter_name": "Topline Tony",
+                    "assigned_reporter_name": "Topline Tony",
+                    "generated_at": "2026-08-27T12:00:00+00:00",
+                    "editorial_review": {"status": "approved"},
+                },
+                "market_watch": {
+                    "mode": "deterministic_template",
+                    "reporter_name": "Waiver Wire Waverly",
+                    "assigned_reporter_name": "Waiver Wire Waverly",
+                    "generated_at": "2026-08-27T12:00:00+00:00",
+                },
+                "trade_desk": {
+                    "mode": "automatic_llm",
+                    "model": "gpt-5.6-luna",
+                    "reporter_name": "Trade Desk Talia",
+                    "assigned_reporter_name": "Trade Desk Talia",
+                    "generated_at": "2026-08-27T12:01:00+00:00",
+                    "editorial_review": {"status": "held"},
+                },
+            },
+        }
+        with patch("app.main._load_publication_receipt", return_value=publication):
+            response = self.client.get("/?league_id=publication-ledger", cookies={"__session": token})
+
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn('data-testid="writer-publication-ledger"', html)
+        self.assertIn('data-testid="writer-publication-summary"', html)
+        self.assertEqual(html.count('data-testid="writer-publication-row"'), 6)
+        self.assertIn("1/6 Luna articles printed", html)
+        self.assertIn("Evidence-led fallback", html)
+        self.assertIn("The Front Office", html)
+        self.assertIn("Luna article", html)
+        self.assertIn("Editor approved", html)
+        self.assertIn("Held by editor", html)
+        self.assertIn("Not printed", html)
+        self.assertIn("Open the Data Room update ledger", html)
+        self.assertNotIn("bundle_revision-123456", html)
 
     def test_home_surfaces_user_scoped_all_edition_writer_run(self) -> None:
         """Design source: AGENTS.md; aggregate runs must not disappear on a selected league page."""
@@ -944,6 +1054,137 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(generate.call_args.args[1], user_id)
         self.assertEqual(generate.call_args.kwargs["article_keys"], {"trade_desk", "manager_intel"})
 
+    def test_worker_mode_queues_and_cancels_a_durable_edition(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; API requests enqueue work and never hold the provider call."""
+
+        clerk_token = self._token("user_worker_queue_api")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_worker_queue_api")
+        league = db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "worker-queue-api",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Worker Queue API",
+                "roster_id": 1,
+            },
+        )
+
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret", "FRONT_OFFICE_EXECUTION_MODE": "worker"},
+            clear=False,
+        ), patch("app.main.front_operator.start_job") as start_job:
+            queued = self.client.post(
+                "/api/operator/generate-insights",
+                cookies={"__session": clerk_token},
+                headers={"x-front-office-token": "operator-secret"},
+                json={"league_id": league["league_id"], "article_keys": ["trade_desk"]},
+            )
+
+        self.assertEqual(queued.status_code, 200)
+        self.assertTrue(queued.json()["accepted"])
+        self.assertEqual(queued.json()["state"], "queued")
+        self.assertTrue(queued.json()["worker_execution"])
+        start_job.assert_not_called()
+        run_id = queued.json()["run_id"]
+        self.assertEqual(db.get_edition_run(run_id)["state"], "queued")
+
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret", "FRONT_OFFICE_EXECUTION_MODE": "worker"},
+            clear=False,
+        ):
+            cancelled = self.client.post(
+                "/api/operator/cancel-edition",
+                cookies={"__session": clerk_token},
+                headers={"x-front-office-token": "operator-secret"},
+                json={"league_id": league["league_id"], "run_id": run_id},
+            )
+
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(cancelled.json()["state"], "cancelled")
+        self.assertEqual(db.get_edition_run(run_id)["state"], "cancelled")
+
+    def test_worker_mode_resume_requeues_without_running_the_provider(self) -> None:
+        """Design source: AGENTS.md; a durable resume must keep the paid call in the worker."""
+
+        clerk_token = self._token("user_worker_resume_api")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_worker_resume_api")
+        league = db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "worker-resume-api",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Worker Resume API",
+                "roster_id": 1,
+            },
+        )
+        run = db.start_edition_run(
+            user_id,
+            league["league_id"],
+            "2026",
+            roster_id=1,
+            article_keys=["trade_desk"],
+            initial_state="queued",
+            initial_stage="queued",
+        )
+        db.update_edition_run(run["run_id"], state="interrupted", stage="interrupted")
+
+        with patch.dict(
+            os.environ,
+            {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret", "FRONT_OFFICE_EXECUTION_MODE": "worker"},
+            clear=False,
+        ), patch("app.main.front_operator.start_job") as start_job:
+            resumed = self.client.post(
+                "/api/operator/resume-edition",
+                cookies={"__session": clerk_token},
+                headers={"x-front-office-token": "operator-secret"},
+                json={"league_id": league["league_id"], "run_id": run["run_id"]},
+            )
+
+        self.assertEqual(resumed.status_code, 200)
+        self.assertEqual(resumed.json()["state"], "queued")
+        self.assertTrue(resumed.json()["worker_execution"])
+        start_job.assert_not_called()
+        self.assertEqual(db.get_edition_run(run["run_id"])["state"], "queued")
+
+    def test_resume_endpoint_reuses_the_existing_edition_run(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; restart recovery resumes the same run ID."""
+
+        clerk_token = self._token("user_resume_edition")
+        self.client.get("/", cookies={"__session": clerk_token})
+        user_id = self._user_id("user_resume_edition")
+        league = {"league_id": "resume-edition", "season": "2026", "league_type": "dynasty", "name": "Resume Edition", "roster_id": 1}
+        db.upsert_user_league(user_id, league)
+        run = db.start_edition_run(user_id, league["league_id"], league["season"], roster_id=1, article_keys=["team_report", "daily_brief"])
+        db.update_edition_run(run["run_id"], state="interrupted", stage="interrupted")
+
+        def run_job(action: str, callback: object, **kwargs: object) -> dict[str, object]:
+            del action, kwargs
+            return {"accepted": True, "result": callback()}
+
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            with patch("app.main._resume_insights_job", return_value={"state": "complete", "edition_run_id": run["run_id"]}) as resume, \
+                patch("app.main.front_operator.start_job", side_effect=run_job):
+                response = self.client.post(
+                    "/api/operator/resume-edition",
+                    cookies={"__session": clerk_token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"league_id": league["league_id"], "run_id": run["run_id"]},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["accepted"])
+        resume.assert_called_once()
+        resumed_league, resumed_user_id, resumed_run_id = resume.call_args.args
+        self.assertEqual(resumed_league["league_id"], league["league_id"])
+        self.assertEqual(resumed_user_id, user_id)
+        self.assertEqual(resumed_run_id, run["run_id"])
+
     def test_home_surfaces_retry_button_only_for_known_failed_desks(self) -> None:
         """Design source: AGENTS.md; a retry entry path must be backed by a concrete desk receipt."""
 
@@ -1038,7 +1279,8 @@ class FastAPIClerkAppTests(unittest.TestCase):
              patch("app.main._context_for_league", return_value=object()), \
              patch("app.main._private_paths", return_value=MagicMock()), \
              patch("app.main.front_operator.generate_articles_workflow", return_value=workflow), \
-             patch("app.main._rebuild_browser_job", return_value={"state": "complete"}):
+             patch("app.main._rebuild_browser_job", return_value={"state": "complete"}), \
+             patch("app.main.front_operator.write_job_progress"):
             result = app_main._generate_insights_job(league, 42)
 
         self.assertEqual(result["state"], "failed")

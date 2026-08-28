@@ -98,6 +98,11 @@ def validate_health_payload(payload: dict) -> tuple[list[str], list[str]]:
         errors.append("FRONT_OFFICE_OPERATOR_TOKEN is not configured for protected writes")
     if payload.get("scheduler_enabled") is not True:
         errors.append("FRONT_OFFICE_SCHEDULER is disabled")
+    if str(payload.get("writer_execution_mode") or "").lower() in {"worker", "queue"}:
+        if payload.get("worker_service_configured") is not True:
+            errors.append("worker execution mode is enabled but the worker queue is not configured")
+        elif payload.get("worker_queue_ready") is not True:
+            errors.append("worker execution mode is enabled but no recent newsroom worker heartbeat is present")
     if "deployment_ready" in payload and payload.get("deployment_ready") is not True:
         blockers = payload.get("deployment_blockers") or ["the deployment gate is not ready"]
         errors.append("deployment gate is not ready: " + "; ".join(str(blocker) for blocker in blockers))
@@ -382,6 +387,13 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
         )
         return
 
+    expected_revision = os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip()
+    if not expected_revision:
+        raise SystemExit(
+            "Authenticated smoke not done: FRONT_OFFICE_EXPECTED_REVISION is missing. "
+            "Set it to the exact commit deployed to Railway before accepting private production."
+        )
+
     response = _get(
         f"{base_url}/",
         cookies={"__session": token},
@@ -448,7 +460,7 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
             raise SystemExit(f"Authenticated smoke failed for {base_url}{league_link}: edition fact bundle was not JSON") from exc
         bundle_errors = validate_authenticated_edition(
             bundle_payload,
-            expected_revision=os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip(),
+            expected_revision=expected_revision,
             expected_league_id=league_id,
         )
         require_paid = os.environ.get("FRONT_OFFICE_REQUIRE_LLM_PUBLICATION", "").strip().lower() in {
@@ -480,7 +492,7 @@ def main(url: str = DEFAULT_URL, session_token: str | None = None) -> None:
             raise SystemExit(f"Authenticated smoke failed for {base_url}{league_link}: edition manifest was not JSON") from exc
         manifest_errors = validate_edition_manifest(
             manifest_payload,
-            expected_revision=os.environ.get("FRONT_OFFICE_EXPECTED_REVISION", "").strip(),
+            expected_revision=expected_revision,
         )
         if manifest_errors:
             raise SystemExit(

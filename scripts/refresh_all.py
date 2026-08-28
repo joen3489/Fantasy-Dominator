@@ -31,6 +31,7 @@ from src.normalize import (
     normalize_trades,
     normalize_waivers,
     normalize_matchups,
+    normalize_matchup_player_points,
     to_dataframes,
 )
 from src.pick_ownership import build_pick_ownership
@@ -76,6 +77,7 @@ CANONICAL_TABLE_KEYS: dict[str, tuple[str, ...]] = {
     "trades": ("season", "league_id", "week", "transaction_id"),
     "waivers": ("season", "league_id", "week", "transaction_id"),
     "matchups": ("season", "league_id", "week", "roster_id"),
+    "matchup_player_points": ("season", "league_id", "week", "matchup_id", "roster_id", "player_id"),
 }
 
 
@@ -250,6 +252,7 @@ def main(
         "trades": [],
         "waivers": [],
         "matchups": [],
+        "matchup_player_points": [],
     }
     current_my_roster_id = None
     matchup_source_statuses: list[str] = []
@@ -332,6 +335,9 @@ def main(
         all_tables["trades"].extend(normalize_trades(season, league_id, transactions_by_week, roster_map, players))
         all_tables["waivers"].extend(normalize_waivers(season, league_id, transactions_by_week, roster_map, players))
         all_tables["matchups"].extend(normalize_matchups(season, league_id, matchups_by_week, roster_map))
+        all_tables["matchup_player_points"].extend(
+            normalize_matchup_player_points(season, league_id, matchups_by_week, roster_map, players)
+        )
 
     if run_mode == "maintenance":
         all_tables = _merge_maintenance_canonical_tables(all_tables, processed_dir)
@@ -544,6 +550,7 @@ def main(
                 "historical_refresh_scope": "all_discovered_seasons" if run_mode == "bootstrap" else "preserved_from_prior_snapshot",
                 "matchups_status": ";".join(matchup_source_statuses) or "not_requested",
                 "matchup_rows": len(dataframes.get("matchups", pd.DataFrame())),
+                "matchup_player_points_rows": len(dataframes.get("matchup_player_points", pd.DataFrame())),
                 "source_scope": "Sleeper public API plus open/legal external sources",
                 "raw_cache_root": str((raw_dir or Path("data") / "raw").as_posix()),
                 "raw_external_cache_root": str((Path("data") / "raw_external").as_posix()),

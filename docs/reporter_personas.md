@@ -50,6 +50,23 @@ records the resolved reporter in front matter and in the per-league
 `content_artifacts` receipt. The browser issue exposes the lineup so the reader
 knows which lens is writing each section.
 
+## Information contracts, not tonal variants
+
+Each newsroom persona now carries three explicit fields in the runtime catalog:
+`evidence_scope`, `excluded_evidence`, and `required_disagreement`. The writer
+prompt includes these fields alongside the voice contract. They make the
+roster an information architecture: Tony owns the next-game pressure,
+Waverly owns the available-market and current-season lane, Talia owns
+counterparty fit, Morgan owns clock-versus-market comparisons, Lonnie owns
+future preparation, and Dana owns the slow manager/team dossier. Riley owns
+verification and can limit a claim, but is not another ranking desk.
+
+This distinction matters when one evidence packet contains all four decision
+windows. Shared facts are allowed; repeated answers are not. A new call should
+earn its cost by answering a different manager question or using a meaningfully
+different evidence slice. The UI should expose the assigned question and
+evidence receipt so a different byline cannot disguise duplicate analysis.
+
 ## 2026-08-26 market-clock editorial boundary
 
 The four-window scores are deterministic facts; the newsroom assigns the
@@ -98,6 +115,22 @@ Writers can disagree about emphasis and actionability; they cannot recalculate
 scores, collapse position-relative percentiles into a universal ranking, or
 describe a repricing lead as proven mispricing. Unchanged evidence fingerprints
 should reuse existing content rather than create four near-identical articles.
+
+## 2026-08-27 durable newsroom roster proposal
+
+The next execution epic is [`durable_newsroom_epic.md`](durable_newsroom_epic.md).
+It proposes an information-first expansion rather than adding personalities as
+tonal variants. The current six assignments remain the compatibility contract.
+`reality_check` is implemented as a deterministic source, availability,
+freshness, join, and market-limitation packet with an optional future LLM
+explanation. It is not a seventh paid article persona: its evidence is
+attached to relevant writer packets and the publication gate, then exposed in
+the Data Room and newsroom receipt.
+
+The same proposal also moves `daily_brief` toward an issue-level synthesis after
+the specialist desks. Look-Ahead Lonnie remains the owner of dynasty, career,
+schedule, and future-preparation evidence; the front-page synthesis should
+organize the room rather than repeat that evidence under another byline.
 
 ## Desk editor
 

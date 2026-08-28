@@ -584,6 +584,9 @@ class DeterministicArticleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             analysis_dir = Path(tmp)
             build_analysis_artifacts(analysis_dir, {}, {}, 2)
+            reality_check = json.loads((analysis_dir / "reality_check.json").read_text(encoding="utf-8"))
+            self.assertEqual(reality_check["schema_version"], "reality_check_v1")
+            self.assertEqual(reality_check["generation_mode"], "deterministic_template")
             for filename, reporter_id in expected.items():
                 text = (analysis_dir / filename).read_text(encoding="utf-8")
                 self.assertIn("reporter_persona: front_office", text)

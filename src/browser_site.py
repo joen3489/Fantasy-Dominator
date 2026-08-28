@@ -20,6 +20,7 @@ from .media_assets import build_media_manifest, materialize_media_assets, media_
 from .manager_profiles import build_manager_season_history
 from .economics import build_league_standings
 from .personas import reporter_lineup
+from .reality_check import build_reality_check_packet
 from .team_identity import resolve_team_name
 from .team_identity import historical_sleeper_team_names
 
@@ -46,6 +47,7 @@ def build_browser_site(
         "trades": _records(processed_dir / "trades.csv"),
         "waivers": _records(processed_dir / "waivers.csv"),
         "matchups": _records(processed_dir / "matchups.csv"),
+        "matchup_player_points": _records(processed_dir / "matchup_player_points.csv"),
         "drafts": _records(processed_dir / "drafts.csv"),
         "draft_picks": _records(processed_dir / "draft_picks.csv"),
         "refresh_metadata": _records(processed_dir / "refresh_metadata.csv"),
@@ -134,6 +136,25 @@ def build_browser_site(
         my_team_name,
     )
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
+    reality_check_packet = analysis.get("realityCheckPacket") if isinstance(analysis, Mapping) else {}
+    if not isinstance(reality_check_packet, Mapping) or not reality_check_packet.get("schema_version"):
+        reality_check_packet = build_reality_check_packet(
+            tables,
+            league_id=str(league_id or ""),
+            season=str(config.get("current_season") or ""),
+            roster_id=my_roster_id,
+        )
+        analysis["realityCheckPacket"] = reality_check_packet
+        try:
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            (analysis_dir / "reality_check.json").write_text(
+                json.dumps(reality_check_packet, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            # A reader rebuild can still carry the packet in its bundle when
+            # the preserved analysis directory is read-only.
+            pass
     analysis = upgrade_deterministic_article_receipts(
         analysis_dir,
         analysis,
@@ -218,6 +239,18 @@ def rebuild_browser_shell(
         my_team_name,
         writer_preferences,
     )
+    reality_check_path = analysis_dir / "reality_check.json" if analysis_dir else None
+    if reality_check_path and reality_check_path.is_file():
+        reality_check_packet = _json_document(reality_check_path)
+        if reality_check_packet:
+            analysis["realityCheckPacket"] = reality_check_packet
+    if not isinstance(analysis.get("realityCheckPacket"), Mapping) or not analysis.get("realityCheckPacket", {}).get("schema_version"):
+        analysis["realityCheckPacket"] = build_reality_check_packet(
+            tables,
+            league_id=current_league_id,
+            season=current_season,
+            roster_id=my_roster_id,
+        )
     analysis = _upgrade_manager_dossier_payload(analysis, tables)
     app_payload["analysis"] = analysis
     app_payload["teamLabelContract"] = "source_label_v1"
@@ -580,6 +613,9 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "managerDossierItems": _json_items(analysis_dir / "manager_dossiers.json"),
         "managerDossierReceipt": _json_receipt(analysis_dir / "manager_dossiers.json"),
         "playerDossierItems": _json_items(analysis_dir / "player_dossiers.json"),
+        "realityCheckPacket": _json_document(analysis_dir / "reality_check.json"),
+        "editionPacket": _json_document(analysis_dir / "edition_packet.json"),
+        "editionReceipt": _json_document(analysis_dir / "edition_receipt.json"),
         "contextPackets": _json_items(analysis_dir / "analysis_context_packets.json"),
         "validation": _json_items(analysis_dir / "analysis_validation.json"),
         "dailyGmBrief": _text_or_empty(analysis_dir / "daily_gm_brief.md"),
@@ -612,12 +648,28 @@ def _front_matter_field(path: Path, key: str) -> str:
 
 
 def _front_matter_json(path: Path, key: str) -> dict[str, Any]:
+    payload = _front_matter_json_value(path, key)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _front_matter_json_value(path: Path, key: str) -> Any:
     raw = _front_matter_field(path, key)
     if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def _json_document(path: Path) -> dict[str, Any]:
+    """Load a structured derived artifact without flattening its receipt."""
+
+    if not path.is_file():
         return {}
     try:
-        payload = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
 
@@ -642,6 +694,8 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             content_hash = ""
         structured = _front_matter_json(path, "article_payload_json")
         source_receipt = _front_matter_json(path, "source_receipt_json")
+        evidence_manifest = _front_matter_json_value(path, "evidence_manifest_json")
+        evidence_manifest = evidence_manifest if isinstance(evidence_manifest, list) else []
         if not source_receipt and structured.get("source_ids"):
             # Older LLM articles embedded their source IDs in the structured
             # story but omitted the dedicated receipt line. Preserve the
@@ -674,6 +728,9 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
             "evidence_fingerprint": _front_matter_field(path, "evidence_fingerprint"),
             "fallback_reason": _front_matter_field(path, "fallback_reason"),
             "source_receipt": source_receipt,
+            "evidence_manifest_schema": _front_matter_field(path, "evidence_manifest_schema"),
+            "evidence_manifest": evidence_manifest,
+            "evidence_boundary_available": bool(evidence_manifest),
             "content_hash": content_hash,
             "structured": structured,
             "editorial_review": editorial_review,
@@ -1344,6 +1401,33 @@ def _page(
       color: #34403b;
       line-height: 1.35;
     }}
+    .inline-reporter-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 2px;
+      border: 1px solid #c8d2c5;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--accent);
+      background: #eef4ee;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .02em;
+    }}
+    .inline-reporter-chip small {{
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }}
+    .lens-receipt {{
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }}
     .brief-card-evidence {{
       color: var(--muted);
       font-size: 13px;
@@ -1695,7 +1779,7 @@ def _page(
       <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly. Click a manager card to open their page.</p>
       <div id="manager-grid"></div>
       <div class="grid">
-        <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-dossier"></div></div>
+        <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-lens"></div><div id="active-manager-dossier"></div></div>
         <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
       </div>
       <div class="panel"><h3>Personal Trade Profiles</h3><p class="note">Your private notes shape reporter emphasis; they are never presented as observed league evidence.</p><div id="manager-trade-profiles"></div></div>
@@ -1946,6 +2030,21 @@ def _page(
       <p class="note">Freshness tells us when the bundle was built. This receipt tells us whether historical player rows can be joined to canonical Sleeper players before a dossier or story relies on them.</p>
       <div id="data-quality-receipt-body"><p class="note">No historical identity receipt is available yet.</p></div>
     </div>
+    <div class="panel article-panel reality-check-receipt" id="reality-check-receipt">
+      <h3>Reality Check packet</h3>
+      <p class="note">This deterministic packet is the editorial floor: current availability, identity, projection inputs, market calibration, and source limitations are checked before a writer's interpretation is trusted.</p>
+      <div id="reality-check-receipt-body"><p class="note">No Reality Check packet is available yet.</p></div>
+    </div>
+    <div class="panel article-panel edition-packet-receipt" id="edition-packet-receipt">
+      <h3>Immutable edition packet</h3>
+      <p class="note">One newsroom run uses one frozen, exact-scope evidence receipt. If inputs change during a restart, the run is held instead of printing a mixed edition.</p>
+      <div id="edition-packet-receipt-body"><p class="note">No immutable edition packet is available yet.</p></div>
+    </div>
+    <div class="panel article-panel edition-execution-receipt" id="edition-execution-receipt">
+      <h3>Writer execution receipt</h3>
+      <p class="note">This is the call ledger for the selected edition: which desks ran, how many attempts they used, and whether the provider returned timing or usage telemetry.</p>
+      <div id="edition-execution-receipt-body"><p class="note">No writer execution receipt is available yet.</p></div>
+    </div>
     <div id="operator-mode" class="view-block">
       <h2>Data Room</h2>
       <h3>Operator Mode</h3>
@@ -2073,6 +2172,7 @@ def _page(
     const profileTagColumns = ['entity_name', 'tag', 'score', 'confidence', 'evidence', 'risk'];
     const playerDossierColumns = ['player_name', 'position', 'team_name', 'roster_status', {{ field: 'availability_scope', label: 'Availability source' }}, 'current_availability_status', 'market_value', {{ field: 'projected_ppg', label: 'Baseline PPG (availability-aware)' }}, 'projection_confidence', 'availability_note', 'signal_label', 'breakout_score', 'sell_score', 'news_impact', 'transaction_count', 'last_transaction'];
     const playerHistoryColumns = ['player_name', 'event_type', 'season', 'week', 'team_name', 'counterparty', 'direction', 'identity_method', 'evidence'];
+    const matchupPlayerColumns = ['week', 'team_name', 'opponent_team_name', 'is_starter', 'player_points', 'matchup_status', 'evidence'];
     async function init() {{
       try {{
         app = await fetchJson(manifest.bundlePath);
@@ -2299,7 +2399,7 @@ def _page(
 
     function ensureTables() {{
       [
-        'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers', 'matchups', 'league_standings',
+        'teams', 'players', 'roster_players', 'manager_profiles', 'pick_ownership', 'trades', 'waivers', 'matchups', 'matchup_player_points', 'league_standings',
         'draft_picks', 'refresh_metadata', 'player_usage_weekly', 'nfl_schedule', 'nfl_team_defense_factors', 'market_value_sources', 'market_consensus_values',
         'player_market_values', 'pick_market_values', 'team_asset_inventory', 'manager_event_log', 'manager_season_history', 'team_needs_matrix', 'manager_behavior_signals',
         'manager_valuation_profiles', 'manager_transaction_preferences', 'liquidity_scores', 'asset_market_gaps', 'opportunity_board', 'counterparty_trade_edges', 'counterparty_asset_interest', 'source_freshness', 'news_events',
@@ -2591,7 +2691,8 @@ def _page(
         category: categoryFor('dynasty_cycle', row.dynasty_cycle),
         entityHash: `team-${{num(row.roster_id)}}`,
         chips: [label(row.dynasty_cycle || ''), row.trade_temperature, row.pick_posture],
-        summary: row.likely_needs ? `Needs: ${{row.likely_needs}}` : ''
+        summary: row.likely_needs ? `Needs: ${{row.likely_needs}}` : '',
+        reporterKey: 'manager_intel'
       }})).join('')}}</div>`;
     }}
 
@@ -2600,7 +2701,15 @@ def _page(
       if (!rows.length) return '<p class="note">No team rows are available for the current league snapshot.</p>';
       const recorded = rows.filter(row => ['recorded', 'partial'].includes(String(row.outcome_status || ''))).length;
       const coverage = `${{recorded}} of ${{rows.length}} teams have scored matchup evidence for ${{escapeHtml(String(app.currentSeason || 'the current season'))}}.`;
-      return `<p class="note"><strong>Outcome coverage:</strong> ${{coverage}} Results come from exact Sleeper matchup rows; teams without scored rows remain <em>not recorded</em>.</p>${{table(rows, leagueStandingsColumns)}}`;
+      const matchupRows = scopedCurrentRows(tables.matchups || [])
+        .filter(row => Number(row.roster_id) === state.teamId)
+        .slice()
+        .sort((left, right) => (Number(right.week) || 0) - (Number(left.week) || 0));
+      const matchup = matchupRows[0] || null;
+      const matchupRead = matchup
+        ? `${{escapeHtml(matchup.team_name || app.myTeamName || 'Your team')}} vs ${{escapeHtml(matchup.opponent_team_name || `Roster ${{matchup.opponent_roster_id || 'unknown'}}`)}} · week ${{escapeHtml(String(matchup.week || 'unknown'))}} · ${{escapeHtml(String(matchup.result || 'not recorded'))}} · ${{escapeHtml(String(matchup.points_for || 'n/a'))}}–${{escapeHtml(String(matchup.points_against || 'n/a'))}}`
+        : 'No exact current-season matchup receipt is available for the selected roster.';
+      return `<p class="note"><strong>Outcome coverage:</strong> ${{coverage}} Results come from exact Sleeper matchup rows; teams without scored rows remain <em>not recorded</em>.</p><p class="note" data-testid="matchup-attribution"><span class="tag">Topline Tony · Weekly matchup desk</span> <strong>Question:</strong> what actually happened this week, and what stakes should the manager investigate next? ${{matchupRead}} Open My Team for the selected roster's evidence-backed read.</p>${{table(rows, leagueStandingsColumns)}}`;
     }}
 
     function currentLeagueStandings() {{
@@ -2636,7 +2745,8 @@ def _page(
         rank: index + 1,
         playerId: row.player_id,
         entityHash: `player-${{row.player_id}}`,
-        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '', playerAvailabilityLabel(row)]
+        chips: [row.position, row.team_name, row.market_value ? `market ${{row.market_value}}` : '', row.projected_ppg !== undefined && row.projected_ppg !== '' ? projectionPpgText(row, row.projected_ppg) : '', playerAvailabilityLabel(row)],
+        reporterKey: 'market_watch'
       }})).join('')}}</div>`;
     }}
 
@@ -2788,6 +2898,7 @@ def _page(
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
       document.getElementById('manager-grid').innerHTML = managerGridCards();
       document.getElementById('player-browser').innerHTML = playerBrowserCards();
+      document.getElementById('active-manager-lens').innerHTML = reporterLensReceipt('manager_intel');
       document.getElementById('active-manager-dossier').innerHTML = activeManagerDossier();
       document.getElementById('manager-tag-cards').innerHTML = profileTagCards(filteredManagerTags().slice(0, 16), false);
       document.getElementById('manager-trade-profiles').innerHTML = managerTradeProfileCards();
@@ -2812,6 +2923,9 @@ def _page(
       document.getElementById('operator-generation-plan-panel').innerHTML = writerPlanPanel();
       renderDataRoomQuestions();
       renderDataQualityReceipt();
+      renderRealityCheckReceipt();
+      renderEditionPacketReceipt();
+      renderEditionExecutionReceipt();
       document.getElementById('diagnostics-panel').innerHTML = diagnostics();
       document.getElementById('draft-table').innerHTML = table(applySearch(tables.draft_picks), draftColumns);
       renderDraftRoom();
@@ -2933,6 +3047,7 @@ def _page(
         category: categoryFor('scenario_label', row.scenario_label),
         rank: index + 1,
         playerId: row.player_id,
+        reporterKey: 'trade_desk',
         chips: [
           row.scenario_label,
           row.position,
@@ -2962,6 +3077,7 @@ def _page(
       const rows = articleEntries.map(([key, item]) => ({{
         article: item?.title || key,
         reporter: item?.reporter?.name || item?.reporter?.persona_id || '',
+        effort: item?.reasoning_effort || plan.reasoning_effort || '',
         state: item?.state || 'unknown',
         decision: item?.decision || '',
         evidence: item?.evidence_count ?? 0,
@@ -2969,7 +3085,7 @@ def _page(
         reason: item?.reason || ''
       }}));
       const summary = `${{counts.generate || 0}} generation call(s) · ${{counts.reuse || 0}} reuse(s) · ${{counts.skipped || 0}} evidence-limited · ${{counts.blocked || 0}} blocked`;
-      return `<div class="panel article-panel" data-testid="writer-generation-plan"><h3>Writer plan <span class="tag">no provider call</span></h3><p class="note">${{escapeHtml(plan.message || summary)}}</p><p class="note">No provider request was made for this preview. Each desk is checked against its scoped evidence fingerprint, publication receipt, reporter, content hash, and configured model. “Generate” means a new article is eligible; it does not claim that a call has happened.</p>${{rows.length ? table(rows, ['article', 'reporter', 'state', 'decision', 'evidence', 'sources', 'reason']) : '<p class="note">No article plan rows are available.</p>'}}</div>`;
+      return `<div class="panel article-panel" data-testid="writer-generation-plan"><h3>Writer plan <span class="tag">no provider call</span></h3><p class="note">${{escapeHtml(plan.message || summary)}}</p><p class="note">No provider request was made for this preview. Each desk is checked against its scoped evidence fingerprint, publication receipt, reporter, content hash, configured model, and reasoning effort. “Generate” means a new article is eligible; it does not claim that a call has happened.</p>${{rows.length ? table(rows, ['article', 'reporter', 'effort', 'state', 'decision', 'evidence', 'sources', 'reason']) : '<p class="note">No article plan rows are available.</p>'}}</div>`;
     }}
 
     function operatorPanel() {{
@@ -3338,12 +3454,20 @@ def _page(
       return definitions[state.horizonView] || definitions.all;
     }}
 
+    function marketEvidenceLabel(row) {{
+      const count = horizonScoreValue(row.market_source_count);
+      const confidence = row.market_source_confidence || 'confidence unavailable';
+      if (count === '1') return `single-source price anchor · ${{confidence}} confidence`;
+      if (count === 'n/a') return 'market receipt unavailable';
+      return `${{count}}-source price anchor · ${{confidence}} confidence`;
+    }}
+
     function horizonMarketViewMarkup(row) {{
       const view = state.horizonView || 'all';
       const marketAnchor = `market value ${{horizonScoreValue(row.market_value)}} · market percentile ${{horizonScoreValue(row.market_percentile)}}`;
       const opponent = row.next_game_opponent ? `vs ${{row.next_game_opponent}} (${{row.next_game_home_away || 'game'}})` : 'opponent unavailable';
       if (view === 'market_price') {{
-        return `<div class="horizon-market-primary"><div><strong>Cross-position market price</strong><p>${{escapeHtml(marketAnchor)}} · ${{escapeHtml(row.market_source_confidence || 'confidence unavailable')}} consensus from ${{escapeHtml(horizonScoreValue(row.market_source_count))}} source(s)</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.market_value))}}<small>market value</small></div></div><p class="brief-card-evidence"><strong>Clock context:</strong> this week ${{escapeHtml(horizonScoreValue(row.next_game_market_score))}} · rest of season ${{escapeHtml(horizonScoreValue(row.rest_of_season_market_score))}} · dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_market_score))}} · career window ${{escapeHtml(horizonScoreValue(row.career_projection_score))}}. These are position-relative percentiles, not additional prices.</p>`;
+        return `<div class="horizon-market-primary"><div><strong>Cross-position market price</strong><p>${{escapeHtml(marketAnchor)}} · ${{escapeHtml(marketEvidenceLabel(row))}}</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.market_value))}}<small>market value</small></div></div><p class="brief-card-evidence"><strong>Clock context:</strong> this week ${{escapeHtml(horizonScoreValue(row.next_game_market_score))}} · rest of season ${{escapeHtml(horizonScoreValue(row.rest_of_season_market_score))}} · dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_market_score))}} · career window ${{escapeHtml(horizonScoreValue(row.career_projection_score))}}. These are position-relative percentiles, not additional prices.</p>`;
       }}
       if (view === 'this_week') {{
         return `<div class="horizon-market-primary"><div><strong>This week's utility</strong><p>${{escapeHtml(opponent)}} · expected ${{escapeHtml(horizonScoreValue(row.next_game_expected_points))}} points vs baseline ${{escapeHtml(horizonScoreValue(row.next_game_baseline_points))}} · ${{escapeHtml(row.next_game_status || 'availability unavailable')}}</p></div><div class="horizon-market-primary-score">${{escapeHtml(horizonScoreValue(row.next_game_market_score))}}<small>position percentile</small></div></div><p class="brief-card-evidence"><strong>Clock vs market:</strong> ${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}} points of percentile difference · ${{escapeHtml(marketAnchor)}}. Matchup factor ${{escapeHtml(horizonScoreValue(row.next_game_matchup_factor))}} (${{escapeHtml(row.next_game_matchup_adjustment_status || 'unavailable')}}).</p>`;
@@ -3377,7 +3501,7 @@ def _page(
       const marketValueLabel = row.market_value !== undefined && row.market_value !== null && row.market_value !== ''
         ? `market value ${{horizonScoreValue(row.market_value)}}`
         : 'market value unavailable';
-      const marketReceiptLabel = `${{horizonScoreValue(row.market_source_count)}} source(s) · ${{horizonScoreValue(row.market_disagreement_score)}} disagreement · ${{row.market_source_confidence || 'confidence unavailable'}}`;
+      const marketReceiptLabel = `${{marketEvidenceLabel(row)}} · ${{horizonScoreValue(row.market_disagreement_score)}} disagreement`;
       const marketRead = state.horizonView === 'all'
         ? `<p class="brief-card-evidence"><strong>Market read:</strong> ${{escapeHtml(opponent)}} · matchup factor ${{escapeHtml(horizonScoreValue(row.next_game_matchup_factor))}} (${{escapeHtml(row.next_game_matchup_adjustment_status || 'unavailable')}}) · ${{escapeHtml(marketValueLabel)}} is the cross-position price anchor · position-relative percentiles are not dollar values · market evidence ${{escapeHtml(marketReceiptLabel)}} · clock minus position-market deltas: next ${{escapeHtml(horizonScoreValue(row.next_game_minus_market_delta))}}, ROS ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_market_delta))}}, dynasty ${{escapeHtml(horizonScoreValue(row.dynasty_minus_market_delta))}}, career ${{escapeHtml(horizonScoreValue(row.career_minus_market_delta))}} · rest of season ${{escapeHtml(rosGamesLabel)}}, production baseline not recovery-adjusted · clock shifts: ROS minus next ${{escapeHtml(horizonScoreValue(row.rest_of_season_minus_next_game_delta))}}, dynasty minus ROS ${{escapeHtml(horizonScoreValue(row.dynasty_minus_rest_of_season_delta))}}, career minus dynasty ${{escapeHtml(horizonScoreValue(row.career_minus_dynasty_delta))}} · ${{escapeHtml(label(horizonTeamLens()))}} lens ${{escapeHtml(horizonScoreValue(horizonTeamFit(row)))}} · spread ${{escapeHtml(horizonScoreValue(row.rebuilder_contender_spread))}}.</p>`
         : `<p class="brief-card-evidence"><strong>Evidence receipt:</strong> ${{escapeHtml(marketValueLabel)}} · market evidence ${{escapeHtml(marketReceiptLabel)}} · source trace remains in the drawer below.</p>`;
@@ -3385,6 +3509,7 @@ def _page(
       return `<article class="horizon-market-card${{focusedClass}}" data-testid="horizon-market-row">
         <div class="brief-card-top"><strong>${{index + 1}}. ${{title}}</strong><span class="tag">${{escapeHtml(lane)}}</span></div>
          <div class="brief-card-meta"><span class="brief-chip">${{escapeHtml(row.position || 'position unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.confidence || 'confidence unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.current_availability_status || 'availability status unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.next_game_status || 'next game status unavailable')}}</span><span class="brief-chip">${{escapeHtml(row.horizon_model_version || 'model version unavailable')}}</span><span class="brief-chip">fit coverage ${{escapeHtml(row.fit_coverage || 'n/a')}}</span><span class="brief-chip">${{escapeHtml(marketValueLabel)}}</span><span class="brief-chip">${{escapeHtml(marketReceiptLabel)}}</span></div>
+         ${{reporterLensMarkup('horizon_watch')}}
         ${{horizonMarketViewMarkup(row)}}
          ${{marketRead}}
         <details class="evidence-drawer"><summary>Horizon evidence receipt</summary><p class="brief-card-evidence">${{escapeHtml(evidence)}}</p><p class="note"><strong>Risk:</strong> ${{escapeHtml(risk)}} · source trace: ${{escapeHtml(trace)}}</p></details>
@@ -3677,6 +3802,80 @@ def _page(
       node.innerHTML = `<div class="tile-row">${{entityTile('History rows', rows)}}${{entityTile('Resolved joins', resolved)}}${{entityTile('Unresolved rows', unresolved)}}${{entityTile('Resolved rate', `${{Math.round(Number(receipt.resolved_rate || 0) * 100)}}%`)}}</div><p class="brief-card-evidence"><strong>Status:</strong> ${{escapeHtml(statusLabel)}} · <strong>Trade direction:</strong> ${{escapeHtml(directionStatus)}}.</p><p class="brief-card-evidence"><strong>Identity methods:</strong> ${{escapeHtml(methods)}}</p><p class="note">${{escapeHtml(limitation)}}</p>${{errors.length ? `<details class="evidence-drawer"><summary>Contract warnings</summary><ul class="article-list">${{errors.map(error => `<li>${{escapeHtml(error)}}</li>`).join('')}}</ul></details>` : ''}}`;
     }}
 
+    function renderRealityCheckReceipt() {{
+      const node = document.getElementById('reality-check-receipt-body');
+      if (!node) return;
+      const packet = analysis.realityCheckPacket || {{}};
+      const checks = Array.isArray(packet.checks) ? packet.checks : [];
+      if (!packet.schema_version && !checks.length) {{
+        node.innerHTML = '<p class="note">No Reality Check packet is available yet. Build or rebuild the analysis before treating the newsroom as current.</p>';
+        return;
+      }}
+      const counts = packet.severity_counts || {{}};
+      const status = String(packet.status || 'unknown');
+      const statusLabel = status === 'clear' ? 'Clear' : status === 'warning' ? 'Warnings present' : label(status);
+      const scope = [packet.league_id ? `league ${{packet.league_id}}` : '', packet.season ? `season ${{packet.season}}` : '', packet.roster_id !== undefined && packet.roster_id !== null ? `roster ${{packet.roster_id}}` : ''].filter(Boolean).join(' · ') || 'scope not recorded';
+      const checkMarkup = checks.slice(0, 24).map(check => {{
+        const severity = String(check.severity || 'info').toLowerCase();
+        const entityId = String(check.entity_id || '');
+        const entityName = String(check.entity_name || entityId || 'Scoped evidence');
+        const entity = check.entity_type === 'player' && entityId
+          ? `<a class="entity-link" href="#player-${{escapeHtml(entityId)}}">${{escapeHtml(entityName)}}</a>`
+          : escapeHtml(entityName);
+        const evidence = [...(Array.isArray(check.evidence_ids) ? check.evidence_ids : []), check.source_trace || ''].filter(Boolean).join(' · ');
+        return `<li class="reality-check-item"><div><span class="brief-chip cat-${{escapeHtml(severity)}}">${{escapeHtml(severity)}}</span> <strong>${{escapeHtml(check.title || check.check_id || 'Reality Check')}}</strong> · ${{entity}}</div><p class="note">${{escapeHtml(check.detail || 'No detail recorded.')}}</p>${{evidence ? `<p class="brief-card-evidence"><strong>Evidence:</strong> ${{escapeHtml(evidence)}}</p>` : ''}}</li>`;
+      }}).join('');
+      const marketQuality = packet.market_quality || {{}};
+      node.innerHTML = `<div class="tile-row">${{entityTile('Packet status', statusLabel)}}${{entityTile('Checks', checks.length)}}${{entityTile('High', counts.high || 0)}}${{entityTile('Medium', counts.medium || 0)}}${{entityTile('Roster players', packet.roster_rows_checked || packet.roster_player_count || 0)}}${{entityTile('Actionable rows', packet.actionable_player_rows_checked || 0)}}${{entityTile('Dossiers', packet.dossier_rows_checked || packet.dossier_player_count || 0)}}${{entityTile('Market quality', marketQuality.status || 'not recorded')}}</div><p class="brief-card-evidence"><strong>Scope:</strong> ${{escapeHtml(scope)}} · <strong>Generated:</strong> ${{escapeHtml(String(packet.generated_at || 'not recorded'))}} · <strong>Fingerprint:</strong> ${{escapeHtml(String(packet.fingerprint || 'not recorded'))}}</p><p class="note">${{escapeHtml(packet.summary || 'The packet records deterministic checks that writers should inherit rather than override.')}} ${{escapeHtml(marketQuality.basis || '')}}</p>${{checks.length ? `<details class="evidence-drawer" open><summary>Open ${{checks.length}} deterministic checks</summary><ul class="article-list reality-check-list">${{checkMarkup}}</ul></details>` : '<p class="note">No failing or limited checks were recorded for this scope.</p>'}}`;
+    }}
+
+    function renderEditionPacketReceipt() {{
+      const node = document.getElementById('edition-packet-receipt-body');
+      if (!node) return;
+      const packet = analysis.editionPacket && typeof analysis.editionPacket === 'object' ? analysis.editionPacket : {{}};
+      if (!packet.schema_version) {{
+        node.innerHTML = '<p class="note">No immutable edition packet has been recorded yet. A paid run will freeze its exact evidence inputs before the first desk call.</p>';
+        return;
+      }}
+      const scope = packet.scope && typeof packet.scope === 'object' ? packet.scope : {{}};
+      const files = packet.input_files && typeof packet.input_files === 'object' ? packet.input_files : {{}};
+      const fileCount = Object.values(files).reduce((total, rows) => total + (Array.isArray(rows) ? rows.length : 0), 0);
+      const missing = Object.values(files).flatMap(rows => Array.isArray(rows) ? rows.filter(row => row.status !== 'present') : []);
+      const sourceRows = Array.isArray(packet.source_freshness) ? packet.source_freshness : [];
+      node.innerHTML = `<div class="tile-row">${{entityTile('Packet', packet.schema_version)}}${{entityTile('Inputs hashed', fileCount)}}${{entityTile('Missing inputs', missing.length)}}${{entityTile('Sources', sourceRows.length)}}${{entityTile('Run', String(packet.run_id || 'unbound').slice(0, 12))}}</div><p class="brief-card-evidence"><strong>Scope:</strong> ${{escapeHtml([scope.league_id ? `league ${{scope.league_id}}` : '', scope.season ? `season ${{scope.season}}` : '', scope.roster_id !== undefined && scope.roster_id !== null ? `roster ${{scope.roster_id}}` : ''].filter(Boolean).join(' · ') || 'not recorded')}} · <strong>Fingerprint:</strong> ${{escapeHtml(String(packet.edition_fingerprint || 'not recorded'))}}</p><p class="note">This run-scoped receipt freezes the deterministic file inputs before paid desk work. A resume refuses to mix a changed workspace with completed articles.</p>${{missing.length ? `<details class="evidence-drawer"><summary>Input limitations</summary><ul class="article-list">${{missing.slice(0, 12).map(row => `<li>${{escapeHtml(row.file || 'input')}} · ${{escapeHtml(row.status || 'unavailable')}}</li>`).join('')}}</ul></details>` : '<p class="note">All named packet inputs were present when the edition was frozen.</p>'}}`;
+    }}
+
+    function renderEditionExecutionReceipt() {{
+      const node = document.getElementById('edition-execution-receipt-body');
+      if (!node) return;
+      const receipt = analysis.editionReceipt && typeof analysis.editionReceipt === 'object' ? analysis.editionReceipt : {{}};
+      const jobs = Array.isArray(receipt.jobs) ? receipt.jobs : [];
+      if (!receipt.schema_version && !jobs.length) {{
+        node.innerHTML = '<p class="note">No writer execution receipt is available yet. The durable ledger will appear after an edition run starts.</p>';
+        return;
+      }}
+      const finished = jobs.filter(job => job.completed_at || ['published', 'reused', 'reviewed', 'held', 'failed', 'cancelled', 'dead_letter'].includes(String(job.state || '').toLowerCase())).length;
+      const durations = jobs.map(job => Number(job.duration_ms)).filter(value => Number.isFinite(value) && value >= 0);
+      const usageTotal = jobs.reduce((total, job) => total + Number((job.usage || {{}}).total_tokens || 0), 0);
+      const stateLabel = String(receipt.state || 'unknown').replace(/_/g, ' ');
+      const jobMarkup = jobs.slice(0, 24).map(job => {{
+        const usage = job.usage && (job.usage.total_tokens || job.usage.input_tokens || job.usage.output_tokens)
+          ? ` · ${{escapeHtml(String(job.usage.total_tokens || 0))}} tokens`
+          : '';
+        const effort = job.reasoning_effort ? ` · ${{escapeHtml(String(job.reasoning_effort))}} effort` : '';
+        const cached = Number(job.cached_tokens || 0) > 0
+          ? ` · ${{escapeHtml(String(job.cached_tokens))}} cached`
+          : job.prompt_cache_key_present ? ' · cache requested' : '';
+        const duration = job.duration_ms !== null && job.duration_ms !== undefined && job.duration_ms !== ''
+          ? ` · ${{escapeHtml(String(job.duration_ms))}} ms`
+          : '';
+        const request = job.provider_request_id ? ` · request ${{escapeHtml(String(job.provider_request_id).slice(0, 12))}}` : '';
+        const client = job.client_request_id ? ` · client ${{escapeHtml(String(job.client_request_id).slice(0, 12))}}` : '';
+        return `<li><strong>${{escapeHtml(job.article_key || 'desk')}}</strong> · ${{escapeHtml(job.phase || 'writer')}} · <span class="tag">${{escapeHtml(job.state || 'unknown')}}</span> · attempt ${{escapeHtml(String(job.attempt || 0))}}${{effort}}${{cached}}${{duration}}${{usage}}${{client}}${{request}}</li>`;
+      }}).join('');
+      node.innerHTML = `<div class="tile-row">${{entityTile('Run', String(receipt.run_id || 'unbound').slice(0, 12))}}${{entityTile('State', stateLabel)}}${{entityTile('Jobs', jobs.length)}}${{entityTile('Finished', finished)}}${{entityTile('Timed', durations.length)}}${{entityTile('Tokens', usageTotal || 'not recorded')}}</div><p class="brief-card-evidence"><strong>Schema:</strong> ${{escapeHtml(receipt.schema_version || 'unversioned')}} · <strong>Stage:</strong> ${{escapeHtml(receipt.stage || 'unknown')}} · <strong>Recorded:</strong> ${{escapeHtml(receipt.generated_at || 'not recorded')}}</p>${{jobMarkup ? `<details class="evidence-drawer" open><summary>Open call ledger</summary><ul class="article-list">${{jobMarkup}}</ul></details>` : '<p class="note">The run exists, but no desk job rows have been checkpointed yet.</p>'}}`;
+    }}
+
     function renderLearningLedger(summary) {{
       const node = document.getElementById('learning-ledger-body');
       if (!node) return;
@@ -3959,6 +4158,7 @@ def _page(
       const counts = app.tableCounts || manifest.tableCounts || {{}};
       const historyQuality = (app.dataQuality || {{}}).player_history_identity || {{}};
       const identity = app.identityReceipt || {{}};
+      const realityCheck = analysis.realityCheckPacket || {{}};
       return table([
         {{ item: 'Generated at', value: metadata.generated_at || 'unknown' }},
         {{ item: 'Current season', value: metadata.current_season || app.currentSeason || '' }},
@@ -3978,6 +4178,7 @@ def _page(
         {{ item: 'Player market rows', value: tables.player_market_values.length }},
         {{ item: 'Pick market rows', value: tables.pick_market_values.length }},
         {{ item: 'Usage rows', value: counts.player_usage_weekly || tables.player_usage_weekly.length }},
+        {{ item: 'Matchup player receipt rows', value: metadata.matchup_player_points_rows || tables.matchup_player_points.length }},
         {{ item: 'Economic asset rows', value: tables.team_asset_inventory.length }},
         {{ item: 'News event rows', value: tables.news_events.length }},
         {{ item: 'News impact rows', value: tables.league_news_impact.length }},
@@ -4002,6 +4203,7 @@ def _page(
         {{ item: 'Analysis artifacts', value: metadata.analysis_artifacts_status || analysis.status || 'missing' }},
         {{ item: 'Analysis generated at', value: metadata.analysis_generated_at || 'unknown' }},
         {{ item: 'Analysis context packets', value: metadata.analysis_context_packet_count || (analysis.contextPackets || []).length }},
+        {{ item: 'Reality Check packet', value: `${{realityCheck.status || 'not recorded'}} · ${{(realityCheck.checks || []).length}} checks · ${{realityCheck.fingerprint ? String(realityCheck.fingerprint).slice(0, 12) : 'unbound'}}` }},
         {{ item: 'Target thesis rows', value: metadata.target_thesis_count || (analysis.targetTheses || []).length }},
         {{ item: 'Sell thesis rows', value: metadata.sell_thesis_count || (analysis.sellTheses || []).length }},
         {{ item: 'Trade thesis rows', value: metadata.trade_thesis_count || (analysis.tradeTheses || []).length }},
@@ -4017,6 +4219,7 @@ def _page(
         category: categoryFor('item_type', row.item_type),
         rank: index + 1,
         playerId: row.entity_type === 'player' ? row.entity_id : null,
+        reporterKey: 'team_report',
         entityHash: row.entity_type === 'player' ? `player-${{row.entity_id}}` : (row.entity_type === 'manager' ? `team-${{num(row.entity_id)}}` : ''),
         chips: [
           row.team_name,
@@ -4035,6 +4238,7 @@ def _page(
         category: categoryFor('edge_type', row.edge_type),
         rank: index + 1,
         playerId: row.player_id,
+        reporterKey: 'trade_desk',
         chips: [
           row.edge_type,
           row.position,
@@ -4058,6 +4262,7 @@ def _page(
         category: bucket,
         rank: index + 1,
         playerId: row.player_id,
+        reporterKey: 'market_watch',
         entityHash: row.player_id ? `player-${{row.player_id}}` : '',
         chips: [
           mode,
@@ -4078,6 +4283,7 @@ def _page(
         category: categoryFor('conversation_fit_label', row.conversation_fit_label),
         rank: index + 1,
         playerId: row.asset_id,
+        reporterKey: 'trade_desk',
         entityHash: row.asset_id ? `player-${{row.asset_id}}` : '',
         chips: [
           row.position,
@@ -4135,6 +4341,7 @@ def _page(
         category: bucket,
         rank: index + 1,
         playerId: row.player_id,
+        reporterKey: 'market_watch',
         entityHash: row.player_id ? `player-${{row.player_id}}` : '',
         chips: [
           row.position,
@@ -4396,7 +4603,8 @@ def _page(
           row.confidence ? `confidence ${{row.confidence}}` : ''
         ],
         summary: row.risk || 'Evidence-backed tag.',
-        evidence: row.evidence || 'No evidence provided.'
+        evidence: row.evidence || 'No evidence provided.',
+        reporterKey: isPlayer ? 'market_watch' : 'manager_intel'
       }})).join('')}}</div>`;
     }}
 
@@ -4425,7 +4633,8 @@ def _page(
         ],
         summary: insightFor('player', row.player_id).one_line_read || `Signal: ${{row.signal_label || 'none'}}. News: ${{row.news_impact || 'none'}}.`,
         watchouts: insightFor('player', row.player_id).watchouts || 'Player tags are prompts for review, not outcome guarantees.',
-        evidence: `Market: ${{row.market_value || 'unknown'}}. ${{projectionPpgText(row, row.projected_ppg)}}. Availability: ${{row.availability_note || 'not recorded'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`
+        evidence: `Market: ${{row.market_value || 'unknown'}}. ${{projectionPpgText(row, row.projected_ppg)}}. Availability: ${{row.availability_note || 'not recorded'}}. League transactions: ${{row.transaction_count || 0}}. Last transaction: ${{row.last_transaction || 'none'}}.`,
+        reporterKey: 'market_watch'
       }})).join('')}}</div>`;
     }}
 
@@ -4533,6 +4742,30 @@ def _page(
       </div>`;
     }}
 
+    function reporterLensMarkup(articleKey, prefix = 'Lens') {{
+      const key = String(articleKey || '').trim();
+      if (!key) return '';
+      const article = (editorial.publication_articles || []).find(row => String(row.key || '') === key) || {{}};
+      const lineup = (editorial.reporter_lineup || []).find(row => String(row.article_key || '') === key) || {{}};
+      const persona = article.assigned_reporter_persona || lineup || {{}};
+      const name = String(persona.name || article.assigned_reporter_name || 'The Front Office').trim();
+      const question = String(persona.question || '').trim();
+      const lens = String(persona.decision_lens || '').replace(/_/g, ' ').trim();
+      const title = question ? `${{name}} asks: ${{question}}` : `${{name}}${{lens ? ` · ${{lens}}` : ''}}`;
+      return `<span class="inline-reporter-chip" title="${{escapeHtml(title)}}"><small>${{escapeHtml(prefix)}}</small>${{escapeHtml(name)}}</span>`;
+    }}
+
+    function reporterLensReceipt(articleKey) {{
+      const key = String(articleKey || '').trim();
+      if (!key) return '';
+      const article = (editorial.publication_articles || []).find(row => String(row.key || '') === key) || {{}};
+      const lineup = (editorial.reporter_lineup || []).find(row => String(row.article_key || '') === key) || {{}};
+      const persona = article.assigned_reporter_persona || lineup || {{}};
+      if (!persona.name) return '';
+      const scope = String(persona.question || persona.evidence_scope || '').trim();
+      return `<p class="lens-receipt">${{reporterLensMarkup(key, 'Desk')}}${{scope ? ` <span>${{escapeHtml(scope)}}</span>` : ''}}</p>`;
+    }}
+
     function briefCard(card) {{
       const bucket = card.category || 'info';
       const rankNum = Number(card.rank);
@@ -4556,11 +4789,13 @@ def _page(
 
       const titleText = escapeHtml(card.title || 'Untitled');
       const titleHtml = card.entityHash ? `<a class="entity-link" href="#${{escapeHtml(String(card.entityHash))}}">${{titleText}}</a>` : titleText;
+      const lensMarkup = card.reporterKey ? reporterLensMarkup(card.reporterKey) : '';
       return `<article class="brief-card cat-${{bucket}}">
         ${{mediaBlock}}
         <div class="brief-card-body">
           <div class="brief-card-title">${{titleHtml}}</div>
           <div class="brief-card-meta">${{chips.map(chip => `<span class="brief-chip">${{escapeHtml(chip)}}</span>`).join('')}}</div>
+          ${{lensMarkup}}
           ${{summary ? `<div class="brief-card-summary">${{escapeHtml(summary)}}</div>` : ''}}
           ${{watchouts}}
           ${{details ? `<details class="evidence-drawer"><summary>Evidence</summary><div class="brief-card-evidence">${{escapeHtml(details)}}</div></details>` : ''}}
@@ -4852,6 +5087,11 @@ def _page(
       const historyName = dossier.player_name || signal.player_name || rosterRow.player_name || '';
       const normalizedHistoryName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const history = (tables.player_transaction_history || []).filter(row => String(row.player_id || '') === id || (!String(row.player_id || '') && normalizedHistoryName(row.player_name) === normalizedHistoryName(historyName))).slice(0, 20);
+      const matchupReceipts = scopedCurrentRows(tables.matchup_player_points || [])
+        .filter(row => String(row.player_id || '') === id)
+        .slice()
+        .sort((left, right) => ((Number(right.week) || 0) - (Number(left.week) || 0)) || ((Number(right.player_points) || 0) - (Number(left.player_points) || 0)))
+        .slice(0, 12);
       const compactTrace = value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean).map(item => item.replace(/^https?:\\/\\//, '').split('/').slice(0, 2).join('/')).filter(Boolean).slice(0, 3).join(' · ');
       const fullTraces = [...new Set([marketTrace, dossier.source_trace, signal.source_trace, opp.source_trace, ...newsRows.map(row => row.source_trace)].flatMap(value => String(value || '').split(/[;|]/).map(item => item.trim()).filter(Boolean)))];
       const ownerScope = ownerId && Number(app.myRosterId) === ownerId ? 'Your roster' : ownerId ? 'Opponent roster' : 'Unrostered';
@@ -4921,6 +5161,7 @@ def _page(
           ${{entityTile(playerMetricLabel('Sell', dossier), signal.sell_score ?? '', 'score')}}
         </div>
         ${{playerPacket}}
+        ${{reporterLensReceipt('market_watch')}}
         ${{playerHorizonMarkup(horizon)}}
         ${{isAvailableMarket ? '<p class="note" data-testid="available-player-boundary"><strong>Available-market boundary:</strong> This player is identity-resolved and absent from the selected league roster snapshot. Confirm current waiver/free-agent eligibility and news before acting; this page is research, not a claim receipt.</p>' : ''}}
         ${{tags.length ? `<div class="brief-card-meta">${{tags.map(row => `<span class="brief-chip cat-chip-${{categoryFor('tag', row.tag)}}">${{escapeHtml(row.tag)}}</span>`).join('')}}</div>` : ''}}
@@ -4928,9 +5169,11 @@ def _page(
         ${{newsRows.length ? `<h3>News</h3><div class="brief-list">${{newsRows.map(row => briefCard({{
           title: `${{row.impact_type ? label(row.impact_type) : 'News'}}`,
           category: 'info',
+          reporterKey: String(row.impact_type || '').toLowerCase().includes('waiver') ? 'market_watch' : 'topline_tony',
           chips: [row.source, row.published_at],
           evidence: row.evidence || ''
         }})).join('')}}</div>` : ''}}
+        ${{matchupReceipts.length ? `<details class="data-drawer" open><summary>Matchup receipts (${{matchupReceipts.length}})</summary><p class="note">Exact Sleeper player points nested inside the league matchup receipt. Future or placeholder 0–0 rows remain labeled unplayed.</p>${{table(matchupReceipts, matchupPlayerColumns)}}</details>` : '<p class="note">No player-level matchup receipts are available for this player in the selected league snapshot.</p>'}}
         ${{history.length ? `<details class="data-drawer"><summary>Transaction history (${{history.length}})</summary>${{table(history, playerHistoryColumns)}}</details>` : ''}}
       `;
     }}
@@ -5030,8 +5273,9 @@ def _page(
           ${{entityTile('FAAB Aggression', behavior.faab_aggression_score ?? '', 'score')}}
           ${{entityTile('Future 1sts Owned', picks.length)}}
         </div>
+        ${{reporterLensReceipt('manager_intel')}}
           ${{dossier.dossier_id ? `<div class="panel article-panel"><h3>Manager dossier</h3><p class="article-p">${{escapeHtml(dossier.analysis_text || '')}}</p><div class="tile-row">${{entityTile('Seasons', dossier.sample_size?.seasons ?? '')}}${{entityTile('Observed Trades', dossier.sample_size?.trades ?? '')}}${{entityTile('Waiver Claims', dossier.sample_size?.waiver_claims ?? '')}}${{entityTile('Observed Events', dossier.sample_size?.observed_events ?? '')}}${{entityTile('Active Seasons', dossier.sample_size?.seasons_with_activity ?? '')}}${{entityTile('Scored Matchups', dossier.outcome_summary?.status === 'not_recorded' ? 'n/a' : (dossier.outcome_summary?.scored_matchups ?? dossier.outcome_summary?.played ?? 0))}}${{entityTile('Outcome record', dossier.outcome_summary?.record || 'not recorded')}}${{entityTile('Roster Assets', dossier.roster_construction?.asset_count ?? '')}}${{entityTile('Market Value', dossier.roster_construction?.market_value_total ?? '')}}</div><p class="note"><strong>Observed behavior:</strong> ${{escapeHtml((dossier.behavior_observations || []).map(row => `${{row.label}}: ${{row.value}}`).join(' · '))}}</p>${{dossier.outcome_summary ? `<p class="note" data-testid="manager-outcome-receipt"><strong>Season outcomes:</strong> ${{escapeHtml(dossier.outcome_summary.narrative || 'Not recorded')}} · ${{escapeHtml(dossier.outcome_summary.evidence || 'outcome evidence not recorded')}}</p>` : ''}}${{trajectoryMarkup}}${{repeated.players_acquired?.length || repeated.players_sold?.length || repeated.trade_partners?.length ? `<details class="evidence-drawer"><summary>Repeated behavior</summary>${{repeated.players_acquired?.length ? `<p class="brief-card-evidence"><strong>Acquired repeatedly:</strong> ${{escapeHtml(repeated.players_acquired.join('; '))}}</p>` : ''}}${{repeated.players_sold?.length ? `<p class="brief-card-evidence"><strong>Sold repeatedly:</strong> ${{escapeHtml(repeated.players_sold.join('; '))}}</p>` : ''}}${{repeated.trade_partners?.length ? `<p class="brief-card-evidence"><strong>Frequent partners:</strong> ${{escapeHtml(repeated.trade_partners.map(row => typeof row === 'string' ? row : `${{row.name}} (${{row.count || 0}})`).join('; '))}}</p>` : ''}}</details>` : ''}}${{dossierHistory.length ? `<details class="evidence-drawer"><summary>Season-by-season history</summary><div class="brief-list">${{dossierHistory.map(row => `<p class="brief-card-evidence"><strong>${{escapeHtml(String(row.season))}}</strong> · ${{escapeHtml(row.team_name || 'historical team name unavailable')}} · ${{escapeHtml(String(row.trades || 0))}} trades · ${{escapeHtml(String(row.waiver_claims || 0))}} waivers${{row.roster_player_count ? ` · ${{escapeHtml(String(row.roster_player_count))}} roster players` : ''}}${{row.active_weeks ? ` · active weeks: ${{escapeHtml(String(row.active_weeks))}}` : ''}}${{row.peak_transaction_week ? ` · peak week: ${{escapeHtml(String(row.peak_transaction_week))}}` : ''}}${{row.trade_partners ? ` · partners: ${{escapeHtml(String(row.trade_partners))}}` : ''}}${{row.outcome_status === 'recorded' ? ` · record ${{escapeHtml(`${{row.wins || 0}}-${{row.losses || 0}}-${{row.ties || 0}}`)}} · ${{escapeHtml(String(row.points_for || 0))}} for / ${{escapeHtml(String(row.points_against || 0))}} against` : row.outcome_status === 'partial' ? ' · matchup outcome partial' : ''}}</p>`).join('')}}</div></details>` : ''}}${{transactionTimeline}}${{managerTradeFitMarkup(dossier)}}${{dossierQuestions.length ? `<details class="evidence-drawer"><summary>Questions worth asking</summary><ul class="article-list">${{dossierQuestions.map(row => `<li>${{escapeHtml(row)}}</li>`).join('')}}</ul></details>` : ''}}<p class="note">${{escapeHtml((dossier.unknowns || []).join(' '))}}</p></div>` : ''}}
-        ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3><p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
+        ${{thesis.analysis_text ? `<div class="panel article-panel"><h3>Trade Angle</h3>${{reporterLensReceipt('trade_desk')}}<p class="article-p">${{escapeHtml(thesis.analysis_text)}}</p></div>` : ''}}
         ${{counterpartyInterest}}
         ${{tradePacket}}
         ${{edges.length ? `<h3>Where Values Disagree</h3><div class="brief-list">${{edges.map((row, index) => briefCard({{

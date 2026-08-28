@@ -10,6 +10,12 @@ Desk, and Manager Intel. Older dated checkpoints below may report five desks or
 `0/5` because they predate `horizon_watch`; those counts remain historical and
 are not current production status.
 
+Next execution epic (2026-08-27): [Durable Newsroom and Editorial Intelligence](durable_newsroom_epic.md)
+extends this realization plan. It preserves the six stable article keys while
+making the run restartable, turning `daily_brief` into an issue-level synthesis,
+and adding a proposed Reality Check information desk. The target roster is not
+active code until its evidence scopes and entry-path tests land.
+
 ## 2026-08-26 career-window presentation amendment
 
 The player dossier now gives the bounded five-year career-window score its own

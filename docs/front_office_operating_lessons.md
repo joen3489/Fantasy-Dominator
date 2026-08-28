@@ -1,6 +1,6 @@
 # Front Office operating lessons
 
-Last reviewed: 2026-08-26
+Last reviewed: 2026-08-27
 
 This is the short, durable memory for Fantasy Dominator. It exists so future
 work does not rediscover the same product and development lessons in chat.
@@ -15,13 +15,40 @@ Four-Window Market Read and are not current status claims.
 ## 2026-08-26 - A running writer needs more than a spinner
 
 The durable operator receipt is part of the product contract, not merely a
-debug aid. Refresh, six provider calls, optional editor calls, and browser
+debug aid. Refresh, six specialist desk calls, optional per-desk editor calls,
+and browser
 rebuild can exceed a short browser watch window or be interrupted by a daemon
 restart. Preserve the run ID, stage, model, timeout, active desk, and safe
 per-desk states. If a wrapper fails, carry that checkpoint into the terminal
 failure so the reader can distinguish no progress, partial work, and a
 published issue. The reader must remain deterministic fallback until the
 manifest and article receipts prove that copy is current.
+
+The 2026-08-27 newsroom slice adds a second durable layer: `edition_runs`
+describe the league-scoped run and `edition_jobs` describe each writer/editor
+phase. They retain state, attempt count, evidence fingerprint, model,
+provider request ID, usage, and timing without storing prompts or prose in the
+operator status surface. A completed desk pass remains `pending_publication`
+until the private browser bundle rebuild succeeds; this prevents a successful
+LLM response from being mistaken for printed content.
+
+The same slice also makes recovery an explicit same-run action. An interrupted
+or failed edition exposes **Resume this edition**, which selects unfinished
+writer/editor jobs from the durable ledger and avoids a second refresh once
+jobs exist. Startup reconciliation marks abandoned in-flight work interrupted
+but does not silently spend on paid calls. The issue persists a
+`publication_edges` graph and the reader renders that graph as a bounded
+conversation rail; arrows describe editorial sequencing, not new evidence.
+
+The newsroom catalog now carries information contracts in addition to voices:
+each desk declares what evidence it owns, what it must not own, and which
+counter-signal it must surface. This is the guardrail against six personalities
+repeating the same answer.
+
+Each durable desk phase also has a stable, privacy-safe internal client request
+ID that survives retries; the provider response ID is recorded separately when
+available. The client ID is only a trace correlation value, not a claim that
+the provider deduplicated a request.
 
 ## Product model
 
@@ -199,6 +226,23 @@ Before adding a feature or “cleaning up” an old artifact:
     liquidity, and action rows; show the resulting alignment and evidence.
     Missing joins must say `not_scored`, never be filled with a generic value
     tag or a name-based match.
+
+18. **A disagreement needs a claim receipt.** Do not infer that two article
+    bodies disagree by comparing prose. Material positions should name the
+    exact subject, decision window, stance, and supporting evidence IDs. Group
+    only same-subject/same-window positions; keep unresolved reads visible and
+    let a high-severity Reality Check limit the resolution.
+
+19. **Market outliers need a comparison basis.** A clock score is a
+    position-relative percentile, while market value is the cross-position
+    price anchor. Every market warning should retain source count, confidence,
+    position, clock window, and delta. With single-source data, expose a
+    calibration-limited research lead rather than a confident mispricing call.
+
+20. **Attribution precedes matchup storytelling.** Aggregate points establish
+    the team result; nested Sleeper player-point rows establish who supplied
+    it. Reconcile the two when complete, and publish partial/unplayed states
+    when rows are missing or placeholders rather than inventing a lineup read.
 
 ## Current open boundary
 
@@ -729,3 +773,51 @@ This is an intentional fail-closed state: configured model and editor mode are
 not evidence that paid copy was generated. The next acceptance action is one
 selected-edition run followed by the strict six-article receipt check; do not
 deploy or restart while that run is active.
+
+## 2026-08-27 - A held draft should cost one editor pass, not a second writer pass
+
+The writer and editor are separate durable phases. If a writer draft is still
+valid for the same evidence fingerprint, reporter, model, and editor policy,
+an editor failure or hold should rehydrate that draft and retry only the
+editor. The writer plan must say `editor_review` so the operator can see that
+the next paid action is a repair pass rather than a full regeneration.
+
+The same rule applies to the user interface: reporter identity is useful only
+when it travels with the question the card is answering. Market Clock Morgan
+belongs on clock-versus-market cards, Trade Desk Talia on counterparty-fit
+cards, Dossier Dana on manager history, and Waiver Wire Waverly on available
+market cards. A byline without an information contract is decoration.
+
+The deterministic Reality Check packet is the shared floor beneath those
+voices. It must be persisted, scoped to the exact league/season/roster, and
+visible in the Data Room with evidence IDs and source traces. It is a source
+limitation receipt, not a seventh opinion writer.
+
+## 2026-08-27 - Queue before provider work
+
+The newsroom API and provider execution are now separable. Worker mode creates
+one durable exact-scope edition and returns its run ID; a worker claims that
+run, claims each desk phase, and only then spends on the provider. Bounded
+specialist fan-out is safe only after deterministic evidence scoping; file
+writes, receipts, and the front-page synthesis stay serialized.
+
+Leases must be owner-conditional at every mutation seam. A stale worker may not
+interrupt or complete work that a replacement worker reclaimed. Cancellation
+must be cooperative for an active provider call, and retry exhaustion must be
+visible as dead letter rather than becoming an infinite paid retry loop. The
+current SQLite deployment remains single-worker until shared-volume semantics
+are proven.
+
+## 2026-08-27 - Reality Check is a publication boundary, not another byline
+
+The Reality Check packet now covers both the selected roster and the league's
+actionable player universe. A market, waiver, horizon, or trade desk cannot
+avoid a current-availability limitation merely because the player is not on
+our roster. Matched high-severity checks are attached beside writer evidence,
+validated before publication, and persisted in the article receipt. The reader
+can still see a caveated research lead; unsupported current action is held.
+
+The newsroom conversation also carries counter-signals and open questions at
+the issue level. This is the intended role of the roster: different desks
+answer different decisions, while the editor and deterministic receipts keep
+the voices from becoming six tonal copies of one unsupported rank.

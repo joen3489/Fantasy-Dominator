@@ -15,13 +15,148 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .availability import baseline_ppg_text, current_availability_status
 from .horizons import HORIZON_SCORE_BASIS
 from .utils import PROCESSED_DIR, PROJECT_ROOT, load_config
 
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
+EVIDENCE_MANIFEST_SCHEMA_VERSION = "article_evidence_manifest_v1"
+
+# The manifest is deliberately narrower than the writer packet.  It lets a
+# later evaluator prove that a cited ID belonged to the frozen packet and run
+# the high-risk availability checks without copying prompt prose, raw rows, or
+# private host paths into a publication artifact.
+_EVIDENCE_MANIFEST_FIELDS = (
+    "evidence_id",
+    "entity_type",
+    "entity_id",
+    "name",
+    "player_name",
+    "source_ids",
+    "source_count",
+    "source_quality",
+    "source_trace",
+    "freshness",
+    "checked_at",
+    "confidence",
+    "confidence_basis",
+    "calculation",
+    "league_id",
+    "season",
+    "roster_id",
+    "position",
+    "market_value",
+    "projected_ppg",
+    "current_availability_status",
+    "availability_scope",
+    "availability_note",
+    "availability_status",
+    "injury_status",
+    "next_game_status",
+    "next_game_market_score",
+    "next_game_baseline_points",
+    "next_game_expected_points",
+    "next_game_opponent",
+    "next_game_matchup_factor",
+    "next_game_matchup_validation_status",
+    "next_game_matchup_validation_games",
+    "next_game_matchup_validation_mae_delta",
+    "next_game_matchup_adjustment_status",
+    "rest_of_season_market_score",
+    "rest_of_season_games",
+    "rest_of_season_bye_weeks",
+    "rest_of_season_baseline_points",
+    "rest_of_season_ppg",
+    "rest_of_season_basis",
+    "dynasty_market_score",
+    "dynasty_status",
+    "career_projection_score",
+    "career_projection_status",
+    "contender_fit_score",
+    "rebuilder_fit_score",
+    "horizon_model_version",
+    "horizon_score_basis",
+    "horizon_market_value",
+    "horizon_market_percentile",
+    "fit_basis",
+    "value_lane",
+    "horizon_lane",
+    "horizon_risk",
+    "opponent_roster_id",
+    "result",
+    "points_for",
+    "points_against",
+    "margin",
+    "event_type",
+    "scope",
+    "impact_type",
+    "related_player_id",
+    "side",
+    "news_direction",
+    "news_impact",
+    "news_event_count",
+    "identity_status",
+    "target_manager_roster_id",
+    "target_manager_name",
+    "team_name",
+    "manager_name",
+    "reality_check",
+)
+
+
+def build_evidence_manifest(packets: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Return a bounded, privacy-safe receipt for the exact writer packet.
+
+    This is a proof artifact, not a second copy of the evidence room.  Text,
+    claim candidates, supporting raw rows, and prompt context are intentionally
+    excluded.  Stable IDs plus the fields needed by the publication boundary
+    checks are retained so a published article can be audited later.
+    """
+
+    manifest: list[dict[str, Any]] = []
+    for packet in packets or []:
+        if not isinstance(packet, Mapping):
+            continue
+        evidence_id = str(packet.get("evidence_id") or "").strip()
+        if not evidence_id:
+            continue
+        item: dict[str, Any] = {"evidence_id": evidence_id}
+        for field in _EVIDENCE_MANIFEST_FIELDS:
+            if field == "evidence_id" or field not in packet:
+                continue
+            value = packet.get(field)
+            if value in (None, "", [], {}):
+                continue
+            item[field] = _manifest_value(value)
+        entity_type = str(item.get("entity_type") or packet.get("entity_type") or "")
+        if entity_type in {"player", "conditional_player"} and not item.get("player_name"):
+            item["player_name"] = item.get("name") or packet.get("name") or ""
+        if "source_ids" in item:
+            item["source_ids"] = _source_ids(item["source_ids"])
+        manifest.append(item)
+    return manifest
+
+
+def _manifest_value(value: Any, depth: int = 0) -> Any:
+    """Bound nested receipts and redact obvious host-path values."""
+
+    if isinstance(value, str):
+        if re.search(r"(?:[A-Za-z]:[\\/]|/(?:Users|home|private)/|\\\\)", value):
+            return "[redacted-path]"
+        return value if len(value) <= 800 else value[:797].rstrip() + "..."
+    if isinstance(value, Mapping):
+        if depth >= 2:
+            return {"status": str(value.get("status") or "recorded")} if value else {}
+        return {
+            str(key): _manifest_value(item, depth + 1)
+            for key, item in list(value.items())[:16]
+            if str(key) not in {"text", "claim_candidates", "supporting_rows", "permitted_interpretation"}
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_manifest_value(item, depth + 1) for item in list(value)[:24]]
+    return value
 
 
 @dataclass
@@ -31,6 +166,7 @@ class ArticleContext:
     analysis_dir: Path
     active_roster_id: int | None
     section_outputs: dict[str, str] = field(default_factory=dict)
+    prior_section_outputs: dict[str, str] = field(default_factory=dict)
     claimed_players: set[str] = field(default_factory=set)
     claimed_player_source_ids: dict[str, list[str]] = field(default_factory=dict)
     processed_dir: Path = PROCESSED_DIR
@@ -148,6 +284,25 @@ def _load_items(analysis_dir: Path, filename: str) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def _load_article_front_matter(analysis_dir: Path, article_key: str, field: str) -> dict[str, Any]:
+    """Load one structured article receipt for synthesis without parsing its prose."""
+
+    filename = "daily_gm_brief.md" if article_key == "daily_brief" else f"{article_key}.md"
+    path = analysis_dir / filename
+    if not path.exists():
+        return {}
+    prefix = f"{field}:"
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith(prefix):
+                continue
+            payload = json.loads(line.split(":", 1)[1].strip())
+            return payload if isinstance(payload, dict) else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
 def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str, **extra: Any) -> dict[str, Any]:
     """Build the canonical evidence packet passed to every writer.
 
@@ -175,7 +330,13 @@ def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str
         or "unknown"
     )
     confidence = str(extra.get("confidence") or "unknown")
-    quality = "multi_source" if source_count > 1 else ("single_source" if source_count == 1 else "unattributed")
+    editorial_only = bool(extra.get("editorial_only"))
+    quality = (
+        "editorial_context"
+        if editorial_only
+        else "multi_source" if source_count > 1 else ("single_source" if source_count == 1 else "unattributed")
+    )
+    claim_candidates = [] if editorial_only else [str(text)] if str(text).strip() else []
     packet = {
         "evidence_id": f"{entity_type}:{entity_id}:{index}",
         "entity_type": entity_type,
@@ -186,7 +347,7 @@ def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str
         # validation must not depend on every scope remembering a second key.
         "player_name": name if entity_type in {"player", "conditional_player"} else "",
         "text": text,
-        "claim_candidates": [str(text)] if str(text).strip() else [],
+        "claim_candidates": claim_candidates,
         "supporting_rows": [{
             "row_id": f"{entity_type}:{entity_id}:{index}",
             "entity_type": entity_type,
@@ -205,6 +366,11 @@ def _evidence(entity_type: str, entity_id: Any, index: int, name: str, text: str
         ],
         **{key: value for key, value in extra.items() if value not in (None, "") and key not in {"source_id", "source_ids", "source_trace", "source", "source_count", "freshness", "checked_at", "generated_at"}},
     }
+    if editorial_only:
+        packet["permitted_interpretation"] = [
+            "Use this only to understand the editorial room and avoid repeating a peer's framing.",
+            "Do not treat the prose as source evidence or introduce a new factual claim from it.",
+        ]
     packet["source_receipt"] = {
         "source_ids": source_ids,
         "source_count": max(0, source_count),
@@ -442,6 +608,126 @@ def _scope_team_report(ctx: ArticleContext) -> list[dict[str, Any]]:
                 checked_at=row.get("season", ""),
             )
         )
+        next_index += 1
+
+    # The aggregate matchup receipt says who won; the nested Sleeper player
+    # receipt says who actually supplied the points. Keep this bounded to the
+    # selected roster and played rows so a future 0-0 placeholder cannot become
+    # a false performance claim in Topline Tony's packet.
+    matchup_player_points = _load_processed_csv("matchup_player_points.csv", ctx.processed_dir)
+    matchup_player_rows = [
+        row for row in matchup_player_points
+        if _as_int(row.get("roster_id")) == ctx.active_roster_id
+        and _same_optional_league(row.get("league_id"), ctx.league_id)
+        and _same_season(row.get("season"), ctx.season, matchup_player_points)
+        and str(row.get("matchup_status") or "").lower() == "played"
+    ]
+    for row in sorted(
+        matchup_player_rows,
+        key=lambda item: (_as_int(item.get("week")) or 0, _as_float(item.get("player_points")) or 0),
+        reverse=True,
+    )[:12]:
+        player_id = str(row.get("player_id") or "unknown")
+        evidence_id = f"{row.get('season', '')}:{row.get('week', '')}:{row.get('matchup_id', next_index)}:{row.get('roster_id', '')}:{player_id}"
+        text = (
+            f"Week {row.get('week', 'n/a')} vs {row.get('opponent_team_name', 'opponent')}: "
+            f"{row.get('player_name') or player_id} scored {row.get('player_points', 'n/a')} points "
+            f"as {'a starter' if _is_true(row.get('is_starter')) else 'a non-starter'}; "
+            f"team result={row.get('matchup_status', 'not recorded')}."
+        )
+        rows.append(
+            _evidence(
+                "matchup_player",
+                evidence_id,
+                next_index,
+                str(row.get("player_name") or player_id),
+                text,
+                player_name=str(row.get("player_name") or player_id),
+                player_id=player_id,
+                opponent_roster_id=row.get("opponent_roster_id", ""),
+                matchup_status=row.get("matchup_status", ""),
+                player_points=row.get("player_points", ""),
+                is_starter=row.get("is_starter", ""),
+                league_id=row.get("league_id", ctx.league_id),
+                season=row.get("season", ctx.season),
+                source_trace=row.get("source_trace", ""),
+                checked_at=row.get("season", ""),
+            )
+        )
+        next_index += 1
+
+    # Give Topline Tony one reconciled lineup-level receipt in addition to the
+    # individual player rows. This lets the writer explain who supplied a
+    # result without summing a partial or future placeholder matchup in prose.
+    latest_matchup = max(
+        matchup_rows,
+        key=lambda item: (_as_int(item.get("week")) or 0, str(item.get("matchup_id") or "")),
+        default=None,
+    )
+    if latest_matchup:
+        latest_id = str(latest_matchup.get("matchup_id") or "").strip()
+        latest_players = [
+            row for row in matchup_player_points
+            if _as_int(row.get("roster_id")) == ctx.active_roster_id
+            and _same_optional_league(row.get("league_id"), ctx.league_id)
+            and _same_season(row.get("season"), ctx.season, matchup_player_points)
+            and str(row.get("matchup_id") or "").strip() == latest_id
+        ]
+        played = [row for row in latest_players if str(row.get("matchup_status") or "").lower() == "played"]
+        known = [row for row in played if str(row.get("player_points") or "").strip()]
+        if played:
+            starter_total = sum(_as_float(row.get("player_points")) or 0.0 for row in known if _is_true(row.get("is_starter")))
+            nonstarter_total = sum(_as_float(row.get("player_points")) or 0.0 for row in known if not _is_true(row.get("is_starter")))
+            known_total = starter_total + nonstarter_total
+            aggregate_total = _as_float(latest_matchup.get("points_for"))
+            reconciliation = (
+                f"reconciles to team total {latest_matchup.get('points_for')}"
+                if aggregate_total is not None and len(known) == len(played) and abs(known_total - aggregate_total) <= 0.1
+                else "partial player-point coverage; aggregate team total remains authoritative"
+            )
+            top_names = ", ".join(
+                f"{row.get('player_name') or row.get('player_id')} ({row.get('player_points')})"
+                for row in sorted(known, key=lambda item: _as_float(item.get("player_points")) or 0.0, reverse=True)[:5]
+            ) or "no named contributors"
+            rows.append(
+                _evidence(
+                    "lineup",
+                    f"{latest_matchup.get('season', ctx.season)}:{latest_matchup.get('week', '')}:{latest_id}",
+                    next_index,
+                    f"Week {latest_matchup.get('week', 'n/a')} lineup attribution",
+                    (
+                        f"Exact Sleeper player-point receipt for week {latest_matchup.get('week', 'n/a')} vs "
+                        f"{latest_matchup.get('opponent_team_name', 'opponent')}: starters supplied {starter_total:.2f}, "
+                        f"non-starters supplied {nonstarter_total:.2f}, top contributors {top_names}; {reconciliation}."
+                    ),
+                    league_id=latest_matchup.get("league_id", ctx.league_id),
+                    season=latest_matchup.get("season", ctx.season),
+                    matchup_id=latest_id,
+                    matchup_status="played",
+                    player_rows=len(played),
+                    known_player_rows=len(known),
+                    starter_points=round(starter_total, 2),
+                    nonstarter_points=round(nonstarter_total, 2),
+                    source_trace="matchup_player_points;matchups",
+                    checked_at=latest_matchup.get("season", ctx.season),
+                )
+            )
+        else:
+            rows.append(
+                _evidence(
+                    "lineup",
+                    f"{latest_matchup.get('season', ctx.season)}:{latest_matchup.get('week', '')}:{latest_id}",
+                    next_index,
+                    f"Week {latest_matchup.get('week', 'n/a')} lineup attribution",
+                    "The selected matchup is unplayed or has no exact nested player-point rows; no player contribution is asserted.",
+                    league_id=latest_matchup.get("league_id", ctx.league_id),
+                    season=latest_matchup.get("season", ctx.season),
+                    matchup_id=latest_id,
+                    matchup_status="unplayed",
+                    source_trace="matchup_player_points;matchups",
+                    checked_at=latest_matchup.get("season", ctx.season),
+                )
+            )
         next_index += 1
 
     # A beat reporter should see what actually moved, but never receive another league's
@@ -1208,7 +1494,29 @@ def _scope_daily_brief(ctx: ArticleContext) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for index, (key, text) in enumerate(ctx.section_outputs.items(), start=1):
         if text.strip():
-            rows.append(_evidence("section", key, index, key.replace("_", " ").title(), text.strip()))
+            source_receipt = _load_article_front_matter(ctx.analysis_dir, key, "source_receipt_json")
+            article_payload = _load_article_front_matter(ctx.analysis_dir, key, "article_payload_json")
+            rows.append(
+                _evidence(
+                    "section",
+                    key,
+                    index,
+                    key.replace("_", " ").title(),
+                    text.strip(),
+                    source_ids=source_receipt.get("source_ids") or [],
+                    source_count=source_receipt.get("source_count") or len(source_receipt.get("source_ids") or []),
+                    freshness=source_receipt.get("freshness") or "article receipt",
+                    editorial_only=True,
+                    calculation="Synthesis context from a completed desk article; the desk prose is editorial context, while source IDs preserve its underlying receipt.",
+                    article_key=key,
+                    desk=key,
+                    reporter_name=article_payload.get("reporter_name") or "",
+                    room_move=article_payload.get("room_move") or "",
+                    room_question=article_payload.get("room_question") or "",
+                    reply_to=article_payload.get("reply_to") or "",
+                    counter_evidence=article_payload.get("counter_evidence") or "",
+                )
+            )
     base = len(rows)
     for filename, entity_type in (("target_theses.json", "player"), ("sell_theses.json", "player"), ("trade_theses.json", "manager")):
         for offset, item in enumerate(_load_items(ctx.analysis_dir, filename)[:5], start=1):
@@ -1264,6 +1572,10 @@ def _as_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _is_true(value: Any) -> bool:
+    return value is True or str(value).strip().lower() in {"1", "true", "yes", "y"}
 
 
 def _rest_of_season_context(row: dict[str, Any]) -> str:

@@ -52,6 +52,7 @@ class ToggleLeagueBody(BaseModel):
 class OperatorBody(BaseModel):
     league_id: str | None = None
     article_keys: list[str] = Field(default_factory=list)
+    run_id: str | None = None
 
 
 class TeamProfileBody(BaseModel):
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
         deployment_gate = _production_gate()
         writer_config = writer_api_configuration()
         writer_editor_mode = front_operator.editorial_review_mode()
+        worker_health = db.newsroom_worker_health()
         return {
             "ok": True,
             "revision": _deployment_revision(),
@@ -152,6 +154,16 @@ def create_app() -> FastAPI:
             "writer_reasoning_effort": writer_config["reasoning_effort"],
             "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
             "writer_editor_mode": writer_editor_mode,
+            "writer_execution_mode": "worker" if _worker_execution_enabled() else "inline",
+            "worker_queue_ready": bool(
+                _worker_execution_enabled()
+                and storage.get("database_schema_ready")
+                and worker_health.get("active")
+            ),
+            "worker_service_configured": bool(
+                _worker_execution_enabled() and storage.get("database_schema_ready")
+            ),
+            "worker_health": worker_health,
             "writer_api_key_env": writer_config["api_key_env"],
             "operator_token_configured": bool(os.environ.get("FRONT_OFFICE_OPERATOR_TOKEN", "").strip()),
             "scheduler_enabled": scheduler_enabled,
@@ -210,6 +222,7 @@ def create_app() -> FastAPI:
         attention_items = [_attention_view(item) for item in _load_attention_safe(user_id)]
         writer_config = writer_api_configuration()
         writer_editor_mode = front_operator.editorial_review_mode()
+        newsroom_worker_health = db.newsroom_worker_health()
         user_operator_status = _operator_status_for_user(user_id)
         selected_operator_status = next(
             (
@@ -258,6 +271,8 @@ def create_app() -> FastAPI:
                 "writer_reasoning_effort": writer_config["reasoning_effort"],
                 "writer_timeout_seconds": writer_config.get("timeout_seconds", 120),
                 "writer_editor_mode": writer_editor_mode,
+                "writer_execution_mode": "worker" if _worker_execution_enabled() else "inline",
+                "newsroom_worker_health": newsroom_worker_health,
                 "writer_api_key_env": writer_config["api_key_env"],
                 "writer_retry_keys": writer_retry_keys,
                 "source_revision": _deployment_revision(),
@@ -627,7 +642,7 @@ def create_app() -> FastAPI:
         body: OperatorBody | None = None,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
-        if action not in {"refresh", "generate-insights", "rebuild-browser"}:
+        if action not in {"refresh", "generate-insights", "rebuild-browser", "resume-edition", "cancel-edition"}:
             raise HTTPException(status_code=404, detail="operator action not found")
         _require_operator_access(request)
         article_keys = _validated_writer_article_keys(body.article_keys if body else None)
@@ -638,6 +653,36 @@ def create_app() -> FastAPI:
         league = _owned_enabled_league(user, body.league_id if body else None) if body and body.league_id else None
         user_id = int(user["id"])
         paths = _private_paths(user_id, str(league["league_id"])) if league else _operator_paths_for_user(user_id)
+        if action == "resume-edition":
+            if league is None or not body or not str(body.run_id or "").strip():
+                raise HTTPException(status_code=400, detail="resuming an edition requires league_id and run_id")
+            edition_run = db.get_edition_run(str(body.run_id))
+            if not edition_run or int(edition_run.get("user_id") or -1) != user_id or str(edition_run.get("league_id") or "") != str(league.get("league_id") or ""):
+                raise HTTPException(status_code=404, detail="edition run not found for this league")
+            if str(edition_run.get("state") or "").lower() == "complete":
+                raise HTTPException(status_code=409, detail="edition run is already complete")
+            if _worker_execution_enabled():
+                queued = db.update_edition_run(
+                    str(body.run_id),
+                    state="queued",
+                    stage="queued",
+                    failure_class="",
+                    failure_message="",
+                )
+                return _queued_worker_receipt(queued or edition_run, message="Edition resume queued for the newsroom worker.")
+            return front_operator.start_job(
+                "resume-edition",
+                lambda: _resume_insights_job(league, user_id, str(body.run_id)),
+                paths=paths,
+            )
+        if action == "cancel-edition":
+            if league is None or not body or not str(body.run_id or "").strip():
+                raise HTTPException(status_code=400, detail="cancelling an edition requires league_id and run_id")
+            edition_run = db.get_edition_run(str(body.run_id))
+            if not edition_run or int(edition_run.get("user_id") or -1) != user_id or str(edition_run.get("league_id") or "") != str(league.get("league_id") or ""):
+                raise HTTPException(status_code=404, detail="edition run not found for this league")
+            cancelled = db.request_edition_cancellation(str(body.run_id))
+            return _queued_worker_receipt(cancelled or edition_run, message="Edition cancellation requested.")
         if action == "refresh":
             return front_operator.start_job(
                 "refresh",
@@ -645,6 +690,10 @@ def create_app() -> FastAPI:
                 paths=paths,
             )
         if action == "generate-insights":
+            if _worker_execution_enabled():
+                if league is None:
+                    return _enqueue_worker_editions(user_id, article_keys=article_keys or None)
+                return _enqueue_worker_edition(user_id, league, article_keys=article_keys or None)
             if article_keys:
                 writer_job = lambda: _generate_insights_job(league, user_id, article_keys=article_keys)
             else:
@@ -1375,6 +1424,83 @@ def _context_for_league(user_id: int, league: dict[str, Any]):
     )
 
 
+def _worker_execution_enabled() -> bool:
+    """Return whether paid newsroom runs should be handed to the worker."""
+
+    return os.environ.get("FRONT_OFFICE_EXECUTION_MODE", "inline").strip().lower() in {
+        "worker",
+        "queue",
+    }
+
+
+def _queued_worker_receipt(run: dict[str, Any], *, message: str) -> dict[str, Any]:
+    run_id = str(run.get("run_id") or "")
+    return {
+        "accepted": bool(run_id),
+        "state": str(run.get("state") or "queued"),
+        "job": "generate-insights",
+        "message": message,
+        "run_id": run_id,
+        "edition_run_id": run_id,
+        "stage": str(run.get("stage") or "queued"),
+        "total_count": int(run.get("total_count") or 0),
+        "completed_count": int(run.get("completed_count") or 0),
+        "worker_execution": True,
+    }
+
+
+def _enqueue_worker_edition(
+    user_id: int,
+    league: dict[str, Any],
+    *,
+    article_keys: set[str] | None = None,
+) -> dict[str, Any]:
+    """Create one queued, durable edition without starting provider work in the API."""
+
+    league_id = str(league.get("league_id") or "")
+    existing = db.latest_edition_run(user_id, league_id)
+    if existing and str(existing.get("state") or "").lower() in {"queued", "running", "cancel_requested"}:
+        return _queued_worker_receipt(existing, message="This league already has a queued newsroom run.") | {"accepted": False}
+    context = _context_for_league(user_id, league)
+    run_id = front_operator.begin_edition_run(
+        context,
+        article_keys=article_keys,
+        initial_state="queued",
+        initial_stage="queued",
+        metadata={"execution_mode": "worker", "queue_name": "edition_runs"},
+    )
+    run = db.get_edition_run(run_id) if run_id else None
+    if not run:
+        raise HTTPException(status_code=503, detail="The durable newsroom queue is unavailable.")
+    return _queued_worker_receipt(run, message="Edition queued for the newsroom worker.")
+
+
+def _enqueue_worker_editions(
+    user_id: int,
+    *,
+    article_keys: set[str] | None = None,
+) -> dict[str, Any]:
+    """Queue every enabled league and return a user-safe aggregate receipt."""
+
+    queued: list[dict[str, Any]] = []
+    for league in db.list_user_leagues(user_id):
+        if not int(league.get("enabled")):
+            continue
+        queued.append(_enqueue_worker_edition(user_id, league, article_keys=article_keys))
+    if not queued:
+        return {"accepted": False, "state": "idle", "job": "generate-insights", "message": "No enabled league editions are available."}
+    accepted = any(bool(item.get("accepted")) for item in queued)
+    return {
+        "accepted": accepted,
+        "state": "queued" if accepted else "running",
+        "job": "generate-insights",
+        "message": "Enabled league editions queued for the newsroom worker." if accepted else "Enabled league editions already have queued newsroom runs.",
+        "run_id": str(next((item.get("run_id") for item in queued if item.get("run_id")), "")),
+        "queued_runs": queued,
+        "worker_execution": True,
+    }
+
+
 def _refresh_job(league: dict[str, Any] | None, user_id: int) -> dict[str, Any]:
     from scripts.refresh_all import main as refresh_all
 
@@ -1406,10 +1532,101 @@ def _refresh_and_rebuild_league(league: dict[str, Any], user_id: int) -> dict[st
     return result | {"bundle": rebuilt}
 
 
+def _publish_edition_bundle(
+    league: dict[str, Any],
+    user_id: int,
+    article_result: dict[str, Any],
+    worker_id: str = "",
+) -> dict[str, Any]:
+    """Checkpoint the publication seam after desk work and fail the run if it breaks."""
+
+    run_id = str(article_result.get("edition_run_id") or "")
+    if run_id:
+        if front_operator._edition_run_cancelled(run_id):
+            front_operator._close_cancelled_edition(run_id, worker_id)
+            article_result["state"] = "cancelled"
+            article_result["message"] = "The edition was cancelled before publication."
+            return {"state": "cancelled", "message": article_result["message"], "edition_run_id": run_id}
+        if worker_id and not front_operator._edition_run_heartbeat(run_id, worker_id):
+            raise front_operator.EditionLeaseLost("The newsroom worker lost its edition lease before publication.")
+        updated = db.update_edition_run(
+            run_id,
+            state="publishing",
+            stage="publishing",
+            worker_id=worker_id or None,
+        )
+        if worker_id and not updated:
+            raise front_operator.EditionLeaseLost("The newsroom worker lost its edition lease before publication.")
+    try:
+        rebuilt = _rebuild_browser_job(league, user_id)
+    except Exception as exc:  # noqa: BLE001 - durable failure is recorded before the wrapper re-raises.
+        if run_id:
+            db.update_edition_run(
+                run_id,
+                state="failed",
+                stage="publishing",
+                failure_class=type(exc).__name__,
+                failure_message="The reader bundle could not be rebuilt after desk work.",
+                worker_id=worker_id or None,
+            )
+        raise
+    if run_id:
+        publication = _load_publication_receipt(user_id, league)
+        issue = _load_editorial_issue(user_id, league)
+        db.replace_publication_edges(
+            run_id,
+            issue.get("newsroom_edges") if isinstance(issue, dict) else [],
+        )
+        result_state = _edition_run_publication_state(run_id, fallback=str(article_result.get("state") or "partial"))
+        db.update_edition_run(
+            run_id,
+            state=result_state,
+            stage="complete",
+            bundle_revision=str(publication.get("bundle_revision") or ""),
+            complete=True,
+            worker_id=worker_id or None,
+        )
+        # The immutable packet remains unchanged; update the separate
+        # execution receipt after publication so the reader and evaluator can
+        # see the terminal run/job state and timing.
+        front_operator.write_edition_execution_receipt(run_id)
+    return rebuilt
+
+
+def _edition_run_publication_state(run_id: str, *, fallback: str = "partial") -> str:
+    """Derive terminal run state from every requested writer job, not this retry's subset."""
+
+    run = db.get_edition_run(str(run_id))
+    if not run:
+        return fallback
+    requested = {
+        str(value).strip()
+        for value in (run.get("requested_article_keys") or [])
+        if str(value).strip()
+    } or set(_WRITER_ARTICLE_KEYS)
+    writer_jobs = {
+        str(job.get("article_key") or ""): str(job.get("state") or "").lower()
+        for job in (run.get("jobs") or [])
+        if isinstance(job, dict) and str(job.get("phase") or "writer") == "writer"
+    }
+    successful = {key for key, state in writer_jobs.items() if state in {"published", "reused", "skipped"}}
+    held_or_failed = {
+        key for key, state in writer_jobs.items() if state in {"held", "failed", "interrupted", "running", "dead_letter", "cancelled"}
+    }
+    if requested.issubset(successful):
+        return "complete"
+    if successful or held_or_failed:
+        return "partial"
+    return "failed"
+
+
 def _generate_insights_job(
     league: dict[str, Any] | None,
     user_id: int,
     article_keys: set[str] | None = None,
+    edition_run_id_override: str = "",
+    skip_refresh: bool = False,
+    worker_id: str = "",
 ) -> dict[str, Any]:
     if article_keys and league is None:
         raise ValueError("Targeted writer retry requires a selected league.")
@@ -1431,14 +1648,22 @@ def _generate_insights_job(
             )
             paths = _private_paths(user_id, str(row["league_id"]))
             context = _context_for_league(user_id, row)
-            article_result = front_operator.generate_articles_workflow(paths, context)
+            edition_run_id = front_operator.begin_edition_run(
+                context,
+            )
+            article_result = front_operator.generate_articles_workflow(
+                paths,
+                context,
+                edition_run_id=edition_run_id,
+                worker_id=worker_id,
+            )
             front_operator.write_job_progress(
                 stage="publishing",
                 message=f"Publishing the refreshed reader bundle for {row.get('name') or row.get('league_id') or 'the selected league'}.",
                 league_id=str(row.get("league_id") or ""),
                 league_name=str(row.get("name") or ""),
             )
-            _rebuild_browser_job(row, user_id)
+            _publish_edition_bundle(row, user_id, article_result, worker_id=worker_id)
             results[str(row["league_id"])] = article_result
         states = [str(result.get("state") or "").lower() for result in results.values()]
         if states and all(state == "failed" for state in states):
@@ -1462,9 +1687,51 @@ def _generate_insights_job(
         league_id=str(league.get("league_id") or ""),
         league_name=str(league.get("name") or ""),
     )
-    _refresh_job(league, user_id)
     paths = _private_paths(user_id, str(league["league_id"]))
     context = _context_for_league(user_id, league)
+    edition_run_id = str(edition_run_id_override or "") or front_operator.begin_edition_run(
+        context,
+        article_keys=article_keys,
+    )
+    if edition_run_id and front_operator._edition_run_cancelled(edition_run_id):
+        front_operator._close_cancelled_edition(edition_run_id, worker_id)
+        return {
+            "state": "cancelled",
+            "message": "The edition was cancelled before its source refresh began.",
+            "edition_run_id": edition_run_id,
+            "articles": {},
+        }
+    if not skip_refresh:
+        try:
+            _refresh_job(league, user_id)
+        except Exception as exc:  # noqa: BLE001 - keep the durable run truthful when refresh blocks publication.
+            if edition_run_id:
+                db.update_edition_run(
+                    edition_run_id,
+                    state="failed",
+                    stage="refreshing",
+                    failure_class=type(exc).__name__,
+                    failure_message="The source refresh failed before desk calls began.",
+                    worker_id=worker_id or None,
+            )
+            raise
+        if edition_run_id and front_operator._edition_run_cancelled(edition_run_id):
+            front_operator._close_cancelled_edition(edition_run_id, worker_id)
+            return {
+                "state": "cancelled",
+                "message": "The edition was cancelled after refresh and before desk calls began.",
+                "edition_run_id": edition_run_id,
+                "articles": {},
+            }
+    elif edition_run_id:
+        db.update_edition_run(
+            edition_run_id,
+            state="running",
+            stage="writing",
+            failure_class="",
+            failure_message="",
+            worker_id=worker_id or None,
+        )
     writer_scope = (
         f"Writing {len(article_keys)} selected reporter desks"
         if article_keys
@@ -1476,20 +1743,86 @@ def _generate_insights_job(
         league_id=str(league.get("league_id") or ""),
         league_name=str(league.get("name") or ""),
     )
-    result = front_operator.generate_articles_workflow(paths, context, article_keys=article_keys)
+    result = front_operator.generate_articles_workflow(
+        paths,
+        context,
+        article_keys=article_keys,
+        edition_run_id=edition_run_id,
+        worker_id=worker_id,
+    )
+    if str(result.get("state") or "").lower() in {"cancelled", "dead_letter", "blocked"}:
+        return result
     front_operator.write_job_progress(
         stage="publishing",
         message=f"Publishing the reader bundle for {league.get('name') or league.get('league_id') or 'the selected league'}.",
         league_id=str(league.get("league_id") or ""),
         league_name=str(league.get("name") or ""),
     )
-    _rebuild_browser_job(league, user_id)
+    _publish_edition_bundle(league, user_id, result, worker_id=worker_id)
     # Keep the workflow's diagnostic message and per-article results. A generic
     # success-sounding message used to hide missing-key, provider, and
     # validation failures behind the phrase "writers run".
     return result | {
         "message": result.get("message") or "League refreshed, writers run, and browser bundle rebuilt."
     }
+
+
+def _resume_insights_job(
+    league: dict[str, Any],
+    user_id: int,
+    edition_run_id: str,
+    worker_id: str = "",
+) -> dict[str, Any]:
+    """Resume one interrupted edition from its durable job ledger.
+
+    Refresh is skipped when the run already has desk jobs: the existing private
+    evidence workspace is the run's frozen working set, so a resume cannot turn
+    a process restart into a new evidence packet and a cascade of paid calls.
+    A run that died before its first desk job is the exception and must refresh
+    before it can safely enter the writer workflow.
+    """
+
+    run = db.get_edition_run(str(edition_run_id))
+    if not run:
+        raise ValueError("The requested edition run was not found.")
+    if int(run.get("user_id") or -1) != int(user_id) or str(run.get("league_id") or "") != str(league.get("league_id") or ""):
+        raise ValueError("The requested edition run is not owned by this league and user.")
+    if str(run.get("state") or "").lower() == "complete":
+        raise ValueError("The requested edition run is already complete.")
+
+    jobs = run.get("jobs") if isinstance(run.get("jobs"), list) else []
+    retry_keys = front_operator.edition_resume_article_keys(run, _WRITER_ARTICLE_ORDER)
+    if not retry_keys and jobs:
+        # All desk jobs are terminal successes; a prior process may have died
+        # between desk completion and browser publication. Repair only that seam.
+        db.update_edition_run(
+            str(edition_run_id),
+            state="publishing",
+            stage="publishing",
+            failure_class="",
+            failure_message="",
+        )
+        result = {"state": "complete", "message": "Resuming publication for the completed desk work.", "edition_run_id": str(edition_run_id)}
+        _publish_edition_bundle(league, user_id, result)
+        return result
+
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    skip_refresh = bool(jobs) and str(metadata.get("resume_stage") or "").lower() not in {"refreshing", "queued"}
+    db.update_edition_run(
+        str(edition_run_id),
+        state="running",
+        stage="refreshing" if not skip_refresh else "writing",
+        failure_class="",
+        failure_message="",
+    )
+    return _generate_insights_job(
+        league,
+        user_id,
+        article_keys=retry_keys or None,
+        edition_run_id_override=str(edition_run_id),
+        skip_refresh=skip_refresh,
+        worker_id=worker_id,
+    )
 
 
 def _rebuild_browser_job(
@@ -1756,6 +2089,7 @@ def _league_view(row: dict[str, Any], user_id: int | None = None) -> dict[str, A
     view["source_receipt"] = _source_receipt_view(view["editorial"])
     publication_receipt = _load_publication_receipt(user_id, view) if user_id is not None else {}
     view["publication_receipt"] = publication_receipt
+    view["writer_publication_ledger"] = _writer_publication_ledger_view(view)
     view["writer_preview"] = (
         _load_writer_preview(user_id, view)
         if user_id is not None
@@ -1810,6 +2144,113 @@ def _load_publication_receipt(user_id: int, league: dict[str, Any]) -> dict[str,
         "verified": isinstance(receipts, dict),
         "article_receipts": receipts if isinstance(receipts, dict) else {},
         "bundle_revision": str(payload.get("bundleRevision") or ""),
+    }
+
+
+def _writer_publication_ledger_view(league: dict[str, Any]) -> dict[str, Any]:
+    """Build the small, safe newsroom receipt shown on the headquarters.
+
+    The manifest is the publication seam. A database row or a running operator
+    receipt can describe work in progress, but neither proves that the reader
+    bundle contains that article. Keep this view driven by the private manifest
+    and make fallback, held, and missing articles explicit.
+    """
+
+    publication = league.get("publication_receipt") if isinstance(league, dict) else {}
+    publication = publication if isinstance(publication, dict) else {}
+    receipts = publication.get("article_receipts")
+    receipts = receipts if isinstance(receipts, dict) else {}
+    rows: list[dict[str, Any]] = []
+    for article in articles.ARTICLES:
+        receipt = receipts.get(article.key)
+        receipt = receipt if isinstance(receipt, dict) else {}
+        mode = str(receipt.get("mode") or receipt.get("model_mode") or "").strip().lower()
+        editorial_review = receipt.get("editorial_review")
+        editorial_review = editorial_review if isinstance(editorial_review, dict) else {}
+        review_status = str(editorial_review.get("status") or "").strip().lower()
+        assigned = str(receipt.get("assigned_reporter_name") or "").strip()
+        default_reporter = persona_metadata({"persona_id": article.reporter_id})
+        generated_at = str(receipt.get("generated_at") or "").strip()
+
+        if mode == "automatic_llm" and review_status not in {"held", "failed"}:
+            status = "published"
+            status_label = "Luna article"
+            byline = str(receipt.get("reporter_name") or default_reporter["name"])
+            detail = str(receipt.get("model") or "gpt-5.6-luna")
+            review_label = "Editor approved" if review_status == "approved" else "Desk review not recorded"
+        elif mode == "automatic_llm" and review_status in {"held", "failed"}:
+            status = "held"
+            status_label = "Held by editor"
+            byline = str(receipt.get("reporter_name") or default_reporter["name"])
+            detail = "Draft exists; publication is blocked"
+            review_label = "Editor held"
+        elif mode == "deterministic_template":
+            status = "fallback"
+            status_label = "Evidence-led fallback"
+            # The fallback is deterministic copy, even when an older receipt
+            # still carries the assigned reporter's name in its front matter.
+            byline = "The Front Office"
+            detail = "Validated evidence only"
+            review_label = "Not applicable"
+        else:
+            status = "not_printed"
+            status_label = "Not printed"
+            byline = "Not assigned"
+            detail = "No private publication receipt"
+            review_label = "Not applicable"
+
+        rows.append(
+            {
+                "key": article.key,
+                "title": article.title,
+                "lens": assigned or default_reporter["name"],
+                "status": status,
+                "status_label": status_label,
+                "byline": byline,
+                "model": detail,
+                "review_label": review_label,
+                "generated_at": generated_at,
+                "generated_at_label": generated_at.replace("T", " ").replace("+00:00", " UTC") if generated_at else "",
+            }
+        )
+
+    published_count = sum(row["status"] == "published" for row in rows)
+    fallback_count = sum(row["status"] == "fallback" for row in rows)
+    held_count = sum(row["status"] == "held" for row in rows)
+    missing_count = sum(row["status"] == "not_printed" for row in rows)
+    if not publication.get("manifest_present") or not publication.get("verified"):
+        summary = (
+            "No private publication receipt is available yet. The evidence-led read may still be visible, "
+            "but a Luna writer run has not been confirmed printed for this league."
+        )
+    elif held_count or missing_count:
+        summary = (
+            f"{published_count}/6 Luna articles printed; {held_count} held by the editor and "
+            f"{missing_count} not printed. The last good bundle remains the reader's source."
+        )
+    elif fallback_count == len(rows):
+        summary = "No Luna articles are in the private bundle; all six desks are evidence-led fallbacks."
+    else:
+        summary = f"{published_count}/6 Luna articles are in the current private reader bundle."
+
+    generated_times = [row["generated_at"] for row in rows if row["generated_at"]]
+    return {
+        "rows": rows,
+        "by_key": {row["key"]: row for row in rows},
+        "summary": summary,
+        "published_count": published_count,
+        "fallback_count": fallback_count,
+        "held_count": held_count,
+        "missing_count": missing_count,
+        "last_generated_at": max(generated_times, default=""),
+        "last_generated_at_label": max(
+            (row["generated_at_label"] for row in rows if row["generated_at_label"]),
+            default="",
+        ),
+        "bundle_revision": str(publication.get("bundle_revision") or ""),
+        "bundle_revision_short": str(publication.get("bundle_revision") or "")[:12],
+        "manifest_present": bool(publication.get("manifest_present")),
+        "verified": bool(publication.get("verified")),
     }
 
 
@@ -2165,6 +2606,49 @@ def _writer_retry_keys(status_payload: dict[str, Any]) -> list[str]:
     return [key for key in _WRITER_ARTICLE_ORDER if key in retryable]
 
 
+def _merge_durable_worker_status(
+    status_payload: dict[str, Any],
+    edition_run: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Make a queued worker run visible even when this API process is idle."""
+
+    if not isinstance(edition_run, dict) or not edition_run.get("run_id"):
+        return status_payload
+    run_state = str(edition_run.get("state") or "").strip().lower()
+    if run_state in {"pending_publication", "publishing"}:
+        run_state = "running"
+    if run_state == "interrupted":
+        visible_state = "failed"
+    elif run_state in {"queued", "running", "cancel_requested", "cancelled", "complete", "failed"}:
+        visible_state = run_state
+    else:
+        return status_payload
+    current_state = str(status_payload.get("state") or "idle").strip().lower()
+    # An active inline request remains authoritative while it owns the JSON
+    # receipt; otherwise the durable worker ledger is the only live status.
+    if current_state == "running" and not status_payload.get("worker_execution") and not status_payload.get("edition_run_id"):
+        return status_payload | {"edition_run": edition_run}
+    if current_state == "running" and status_payload.get("edition_run_id") not in {None, "", edition_run.get("run_id")}:
+        return status_payload | {"edition_run": edition_run}
+    return status_payload | {
+        "state": visible_state,
+        "job": "generate-insights",
+        "message": (
+            "Edition queued for the newsroom worker."
+            if visible_state == "queued"
+            else str(edition_run.get("failure_message") or status_payload.get("message") or "Edition worker status updated.")
+        ),
+        "run_id": str(edition_run.get("run_id") or status_payload.get("run_id") or ""),
+        "edition_run_id": str(edition_run.get("run_id") or ""),
+        "stage": str(edition_run.get("stage") or status_payload.get("stage") or ""),
+        "completed_count": int(edition_run.get("completed_count") or 0),
+        "total_count": int(edition_run.get("total_count") or 0),
+        "updated_at": str(edition_run.get("updated_at") or status_payload.get("updated_at") or ""),
+        "worker_execution": True,
+        "edition_run": edition_run,
+    }
+
+
 def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None) -> dict[str, Any]:
     if league is not None:
         status = _safe_operator_status(
@@ -2182,6 +2666,8 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             current_bundle_revision=str(publication_receipt.get("bundle_revision") or ""),
             expected_model=writer_config.get("model", ""),
         )
+        edition_run = db.latest_edition_run(user_id, str(league["league_id"]))
+        status = _merge_durable_worker_status(status, edition_run)
         return status | {
             "league_id": str(league["league_id"]),
             "league_name": league.get("name", ""),
@@ -2194,6 +2680,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "writer_api_key_env": writer_config["api_key_env"],
             "publication_receipt": publication_receipt,
             "content_status": content_status,
+            "edition_run": edition_run or {},
             "reader_bundle": _reader_bundle_receipt(user_id, league),
         }
 
@@ -2204,9 +2691,15 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
     for league in db.list_user_leagues(user_id):
         if not int(league.get("enabled")):
             continue
+        league_status = _safe_operator_status(front_operator.status(_private_paths(user_id, str(league["league_id"]))))
+        edition_run = db.latest_edition_run(user_id, str(league["league_id"])) or {}
         statuses.append(
-            _safe_operator_status(front_operator.status(_private_paths(user_id, str(league["league_id"]))))
-            | {"league_id": str(league["league_id"]), "league_name": league.get("name", "")}
+            _merge_durable_worker_status(league_status, edition_run)
+            | {
+                "league_id": str(league["league_id"]),
+                "league_name": league.get("name", ""),
+                "edition_run": edition_run,
+            }
         )
     if not statuses:
         return {
@@ -2216,8 +2709,10 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
             "operator_enabled": bool(aggregate_status.get("operator_enabled", front_operator.operator_enabled())),
         }
     all_statuses = [aggregate_status, *statuses]
-    if any(item.get("state") == "running" for item in all_statuses):
+    if any(item.get("state") in {"running", "queued", "cancel_requested"} for item in all_statuses):
         state = "running"
+    elif any(item.get("state") == "cancelled" for item in all_statuses):
+        state = "cancelled"
     elif any(item.get("state") == "failed" for item in all_statuses):
         state = "failed"
     elif any(item.get("state") == "complete" for item in all_statuses):
@@ -2227,7 +2722,7 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
     summary = {
         "state": state,
         "aggregate_state": aggregate_status.get("state", ""),
-        "job": aggregate_status.get("job", ""),
+        "job": aggregate_status.get("job", "") or ("generate-insights" if any(item.get("job") == "generate-insights" for item in statuses) else ""),
         "message": aggregate_status.get("message", ""),
         "leagues": statuses,
         "updated_at": max(item.get("updated_at", "") for item in all_statuses),
@@ -2253,6 +2748,12 @@ def _operator_status_for_user(user_id: int, league: dict[str, Any] | None = None
     ):
         if field in aggregate_status:
             summary[field] = aggregate_status[field]
+    if summary.get("job") != "generate-insights":
+        worker_item = next((item for item in statuses if item.get("job") == "generate-insights"), None)
+        if worker_item:
+            for field in ("run_id", "edition_run_id", "stage", "completed_count", "total_count", "worker_execution"):
+                if field in worker_item:
+                    summary[field] = worker_item[field]
     return summary
 
 

@@ -10,8 +10,10 @@ from typing import Any, Iterable, Mapping, Sequence
 import pandas as pd
 
 from .availability import baseline_ppg_text, current_availability_status
+from .articles import build_evidence_manifest
 from .manager_preferences import HORIZON_FIELD_LABELS
 from .personas import DEFAULT_PERSONA_ID, front_office_metadata, normalize_writer_preferences, persona_metadata
+from .reality_check import build_reality_check_packet
 from .utils import ANALYSIS_DIR
 
 
@@ -44,6 +46,13 @@ def build_analysis_artifacts(
     previous_manager_items = _load_prior_items(analysis_dir / "manager_dossiers.json")
     manager_dossier_items = build_manager_dossier_items(dataframes, generated_at, previous_manager_items)
     player_dossier_items = build_player_dossier_items(dataframes, generated_at)
+    reality_check_packet = build_reality_check_packet(
+        {name: _rows(frame) for name, frame in dataframes.items()},
+        league_id=active_league_id,
+        season=current_season,
+        roster_id=active_roster_id,
+        generated_at=generated_at,
+    )
     validations = validate_analysis_artifacts(target_theses, sell_theses, trade_theses)
 
     artifacts = {
@@ -61,6 +70,7 @@ def build_analysis_artifacts(
         ),
         "player_dossiers.json": _json_artifact("player_dossiers", player_dossier_items, generated_at, active_roster_id, active_team_name),
         "analysis_validation.json": _json_artifact("analysis_validation", validations, generated_at, active_roster_id, active_team_name),
+        "reality_check.json": reality_check_packet,
     }
     for filename, payload in artifacts.items():
         _write_json(analysis_dir / filename, payload)
@@ -198,6 +208,8 @@ def build_analysis_artifacts(
         "manager_dossier_count": len(manager_dossier_items),
         "manager_dossier_receipt": _dossier_receipt(manager_dossier_items),
         "player_dossier_count": len(player_dossier_items),
+        "reality_check_count": len(reality_check_packet.get("checks") or []),
+        "reality_check_status": reality_check_packet.get("status") or "unknown",
         "validation_error_count": len(validations["errors"]),
         "source_tables": _source_tables(),
     }
@@ -222,6 +234,7 @@ def _decorate_deterministic_article(
     reporter = front_office_metadata(article_key)
     text = _neutralize_fallback_body(text, assigned_reporter["name"])
     evidence_ids = _deterministic_evidence_ids(article_key, evidence_rows)
+    evidence_manifest = _deterministic_evidence_manifest(article_key, evidence_rows)
     source_ids = _deterministic_source_ids(evidence_rows, source_tables)
     related_entities = _deterministic_related_entities(evidence_rows)
     confidence = _deterministic_confidence(evidence_rows)
@@ -263,6 +276,8 @@ def _decorate_deterministic_article(
         "source_count": len(source_ids),
         "source_quality": source_quality,
         "source_tables": source_tables,
+        "evidence_manifest_schema": "article_evidence_manifest_v1",
+        "evidence_manifest_count": len(evidence_manifest),
     }
     source_receipt = {
         "source_ids": source_ids,
@@ -281,6 +296,7 @@ def _decorate_deterministic_article(
         "fallback_reason": "No current LLM artifact; deterministic fallback from validated evidence.",
         "article_payload_json": json.dumps(structured, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
         "source_receipt_json": json.dumps(source_receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        "evidence_manifest_json": json.dumps(evidence_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
     }
     return _replace_front_matter_fields(text, fields)
 
@@ -643,14 +659,18 @@ def _front_matter_text_field(text: str, key: str) -> str:
 
 
 def _front_matter_json_text(text: str, key: str) -> dict[str, Any]:
+    payload = _front_matter_json_value(text, key)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _front_matter_json_value(text: str, key: str) -> Any:
     raw = _front_matter_text_field(text, key)
     if not raw:
-        return {}
+        return None
     try:
-        payload = json.loads(raw)
+        return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return None
 
 
 def _article_receipt_from_text(
@@ -663,6 +683,11 @@ def _article_receipt_from_text(
     editorial_review = _front_matter_json_text(text, "editorial_review_json") or receipt.get("editorial_review") or {}
     if not isinstance(editorial_review, Mapping):
         editorial_review = {}
+    evidence_manifest = _front_matter_json_value(text, "evidence_manifest_json")
+    if not isinstance(evidence_manifest, list):
+        evidence_manifest = receipt.get("evidence_manifest") or []
+    if not isinstance(evidence_manifest, list):
+        evidence_manifest = []
     raw_reporter_id = _front_matter_text_field(text, "reporter_persona") or receipt.get("reporter_id") or ""
     raw_reporter_name = _front_matter_text_field(text, "reporter_name") or receipt.get("reporter_name") or ""
     assigned_reporter_id = (
@@ -696,6 +721,9 @@ def _article_receipt_from_text(
             "evidence_fingerprint": _front_matter_text_field(text, "evidence_fingerprint") or receipt.get("evidence_fingerprint") or "",
             "fallback_reason": _front_matter_text_field(text, "fallback_reason") or receipt.get("fallback_reason") or "",
             "source_receipt": _front_matter_json_text(text, "source_receipt_json") or receipt.get("source_receipt") or {},
+            "evidence_manifest_schema": _front_matter_text_field(text, "evidence_manifest_schema") or receipt.get("evidence_manifest_schema") or "",
+            "evidence_manifest": evidence_manifest,
+            "evidence_boundary_available": bool(evidence_manifest),
             "content_hash": hashlib.sha256(str(text).encode("utf-8")).hexdigest(),
             "structured": _front_matter_json_text(text, "article_payload_json") or receipt.get("structured") or {},
             "editorial_review": editorial_review,
@@ -718,7 +746,7 @@ def _deterministic_source_ids(rows: list[dict[str, Any]], source_tables: list[st
     return values[:16]
 
 
-def _deterministic_evidence_ids(article_key: str, rows: list[dict[str, Any]]) -> list[str]:
+def _deterministic_evidence_entries(article_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Assign canonical evidence identities to the exact rows behind a fallback read."""
 
     selected_rows = rows
@@ -742,7 +770,7 @@ def _deterministic_evidence_ids(article_key: str, rows: list[dict[str, Any]]) ->
             if row not in selected_context:
                 selected_context.append(row)
         selected_rows = player_rows[:18] + selected_context[:6]
-    evidence_ids: list[str] = []
+    entries: list[dict[str, Any]] = []
     for index, row in enumerate(selected_rows, start=1):
         if not isinstance(row, dict):
             continue
@@ -760,9 +788,40 @@ def _deterministic_evidence_ids(article_key: str, rows: list[dict[str, Any]]) ->
             entity_id = row.get("player_id")
         entity_id = _stable_entity_id(entity_id, index)
         evidence_id = f"{entity_type}:{entity_id}:{index}"
-        if evidence_id not in evidence_ids:
-            evidence_ids.append(evidence_id)
-    return evidence_ids[:24]
+        if evidence_id in {str(entry.get("evidence_id")) for entry in entries}:
+            continue
+        name = str(
+            row.get("_article_name")
+            or row.get("player_name")
+            or row.get("target_manager_name")
+            or row.get("team_name")
+            or row.get("name")
+            or ""
+        ).strip()
+        entry = dict(row)
+        entry.update(
+            {
+                "evidence_id": evidence_id,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "name": name,
+                "player_name": name if entity_type in {"player", "conditional_player"} else "",
+                "source_ids": _deterministic_source_ids([row], []),
+                "source_count": len(_deterministic_source_ids([row], [])),
+            }
+        )
+        entries.append(entry)
+    return entries[:24]
+
+
+def _deterministic_evidence_ids(article_key: str, rows: list[dict[str, Any]]) -> list[str]:
+    return [str(entry["evidence_id"]) for entry in _deterministic_evidence_entries(article_key, rows)]
+
+
+def _deterministic_evidence_manifest(article_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Persist only auditable fields from deterministic fallback rows."""
+
+    return build_evidence_manifest(_deterministic_evidence_entries(article_key, rows))
 
 
 def _stable_entity_id(value: Any, fallback: int) -> str:
@@ -2985,7 +3044,7 @@ def build_player_dossier_items(dataframes: dict[str, pd.DataFrame], generated_at
                 "horizon_model_version": player.get("horizon_model_version", ""),
                 "horizon_score_basis": player.get("horizon_score_basis", ""),
                 "availability_scope": player.get("availability_scope", ""),
-                "risk": "medium: deterministic player tag and horizon context, not a guaranteed outcome; horizon scores are position-relative, not cross-position prices",
+                "risk": "medium: deterministic player tag and horizon context, not an assured outcome; horizon scores are position-relative, not cross-position prices",
                 "confidence": player.get("projection_confidence", "low"),
                 "source_trace": ";".join(
                     value
