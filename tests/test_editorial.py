@@ -2,11 +2,67 @@ from __future__ import annotations
 
 import unittest
 
-from src.editorial import _newsroom_claim_conflicts, _newsroom_conversation, build_editorial_issue
+from src.editorial import (
+    _newsroom_claim_conflicts,
+    _newsroom_conversation,
+    build_editorial_issue,
+    review_publication_article,
+)
 from src.editorial_ui import inject_editorial_facade
 
 
 class EditorialIssueTests(unittest.TestCase):
+    def test_deterministic_codex_review_receipt_is_idempotent(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md publication seam."""
+
+        receipt = {
+            "structured": {
+                "headline": "A grounded roster read",
+                "thesis": "The validated packet supports the recommendation.",
+                "what_changed": "The selected league evidence changed.",
+                "action": "Inspect the target and current alternative.",
+                "evidence_ids": ["player:1:1"],
+                "source_ids": ["source:stats"],
+            }
+        }
+        first_review = review_publication_article(
+            "team_report",
+            "## Cornerstones\nA grounded roster read.",
+            receipt,
+            "codex_task",
+        )
+        rebuilt_review = review_publication_article(
+            "team_report",
+            "## Cornerstones\nA grounded roster read.",
+            {**receipt, "editorial_review": first_review},
+            "codex_task",
+        )
+
+        self.assertEqual(first_review["mode"], "deterministic")
+        self.assertEqual(first_review["status"], "approved")
+        self.assertEqual(rebuilt_review["status"], "approved")
+        self.assertEqual(rebuilt_review["errors"], [])
+
+    def test_issue_counts_current_canonical_profiles_for_the_reader(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md canonical profile surface."""
+
+        issue = build_editorial_issue(
+            {"refresh_metadata": [{"generated_at": "2026-08-28T12:00:00+00:00", "current_season": "2026"}]},
+            {
+                "canonicalEntityProfiles": [
+                    {"entity_key": "player:1", "status": "current"},
+                    {"entity_key": "manager:2", "status": "current"},
+                    {"entity_key": "player:3", "status": "historical"},
+                ]
+            },
+            league_id="league-1",
+            my_roster_id=2,
+            my_team_name="My Team",
+        )
+
+        self.assertEqual(issue["signal_summary"]["canonical_profiles"], 2)
+        self.assertIn("2 Codex profiles", issue["question_prompts"][2]["answer"])
+
     def test_team_pulse_separates_current_role_and_conditional_history_baselines(self) -> None:
         """Design source: AGENTS.md and docs/data_contract.md availability boundary."""
         issue = build_editorial_issue(

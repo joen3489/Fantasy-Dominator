@@ -187,7 +187,7 @@ def _validate_publication_receipts(payload: dict) -> list[str]:
             errors.append(f"edition bundle is missing publication receipt: {article_key}")
             continue
         mode = str(receipt.get("mode") or "").strip().lower()
-        if mode not in {"deterministic_template", "automatic_llm"}:
+        if mode not in {"deterministic_template", "automatic_llm", "codex_task"}:
             errors.append(f"publication receipt {article_key} has unknown mode {mode!r}")
             continue
         structured = receipt.get("structured") if isinstance(receipt.get("structured"), dict) else {}

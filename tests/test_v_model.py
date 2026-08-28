@@ -237,6 +237,9 @@ class VModelTests(unittest.TestCase):
                     {"roster_id": 1, "matchup_id": 8, "points": 0, "players": ["p1"], "players_points": {"p1": 0}, "starters": ["p1"]},
                     {"roster_id": 2, "matchup_id": 8, "points": 0, "players": ["p2"], "players_points": {"p2": 0}, "starters": ["p2"]},
                 ],
+                3: [
+                    {"roster_id": 1, "matchup_id": None, "points": 24.5, "players": ["p1"], "players_points": {"p1": 24.5}, "starters": ["p1"]},
+                ],
             },
             roster_map,
             players,
@@ -244,6 +247,7 @@ class VModelTests(unittest.TestCase):
 
         quarterback = next(row for row in rows if row["player_id"] == "p1" and row["week"] == 1)
         future = next(row for row in rows if row["player_id"] == "p1" and row["week"] == 2)
+        unpaired_scored = next(row for row in rows if row["player_id"] == "p1" and row["week"] == 3)
         self.assertEqual(quarterback["player_name"], "Quarterback One")
         self.assertEqual(quarterback["position"], "QB")
         self.assertEqual(quarterback["opponent_roster_id"], 2)
@@ -251,6 +255,8 @@ class VModelTests(unittest.TestCase):
         self.assertTrue(quarterback["is_starter"])
         self.assertEqual(quarterback["matchup_status"], "played")
         self.assertEqual(future["matchup_status"], "unplayed")
+        self.assertEqual(unpaired_scored["matchup_status"], "played")
+        self.assertEqual(unpaired_scored["opponent_roster_id"], "")
         self.assertEqual(list(to_dataframes({"matchup_player_points": []})["matchup_player_points"].columns), EXPECTED_TABLE_COLUMNS["matchup_player_points"])
 
     def test_league_standings_preserve_outcome_coverage_and_quiet_teams(self) -> None:
@@ -471,11 +477,215 @@ class VModelTests(unittest.TestCase):
             "STATUS_PATH": status_dir / "operator_status.json",
             "INSIGHT_PACKET_PATH": inbox / "front_office_insight_packet.json",
             "INSIGHT_OUTPUT_PATH": outbox / "front_office_insight_cards.json",
+            "CODEX_EDITORIAL_PACKET_PATH": inbox / "codex_editorial_packet.json",
+            "CODEX_EDITORIAL_IMPORT_RECEIPT_PATH": status_dir / "codex_editorial_import.json",
             "VALIDATED_INSIGHTS_PATH": analysis / "validated_insight_cards.json",
             "INSIGHT_VALIDATION_PATH": analysis / "insight_card_validation.json",
             "DAILY_GM_BRIEF_PATH": analysis / "daily_gm_brief.md",
             "DAILY_GM_BRIEF_VALIDATION_PATH": analysis / "daily_gm_brief_validation.json",
         }
+
+    def _verified_editorial_context(self):
+        from src.context import FantasyContext
+
+        return FantasyContext(
+            user_id="17",
+            league_id="league-17",
+            season="2026",
+            roster_id=4,
+            league_name="Test League",
+            team_name="Fourth and Long",
+            sleeper_user_id="sleeper-17",
+            identity_status="verified_roster_match",
+            identity_checked_at="2026-08-28T12:00:00+00:00",
+        )
+
+    def _codex_writer_output(self, evidence_id: str = "player:101:1") -> dict:
+        return {
+            "headline": "A real waiver decision",
+            "dek": "The available role is worth a claim, with one clear risk.",
+            "lede": "The league-specific evidence puts Player One at the top of this queue.",
+            "thesis": "Add Player One if the current bench alternative remains unchanged.",
+            "what_changed": "The deterministic opportunity score moved into the actionable tier.",
+            "counter_evidence": "The projection sample remains limited.",
+            "action": "Place a claim only if Player One is still available.",
+            "risk": "The role could contract before the next game.",
+            "confidence": "medium",
+            "claim_positions": [],
+            "related_entities": ["101"],
+            "visual_brief": "",
+            "room_move": "",
+            "reply_to": "",
+            "room_question": "",
+            "narrative_markdown": (
+                "## Best Fits\nPlayer One is the roster-specific add to consider now.\n\n"
+                "## Steer Clear\nDo not escalate if the availability receipt changes."
+            ),
+            "cited_evidence_ids": [evidence_id],
+        }
+
+    def test_codex_editorial_packet_is_scope_bound_and_stable(self) -> None:
+        from src.articles import Article
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            evidence = {
+                "evidence_id": "player:101:1",
+                "entity_type": "player",
+                "entity_id": "101",
+                "player_id": "101",
+                "name": "Player One",
+                "source_ids": ["sleeper_players", "projection_consensus"],
+                "claim_candidates": ["Player One has an actionable opportunity score."],
+            }
+            article = Article(
+                "trade_desk",
+                "Trade Desk Read",
+                "unused.md",
+                ("## Best Fits", "## Steer Clear"),
+                lambda ctx: [dict(evidence)],
+                "trade-desk-read",
+            )
+            with patch.multiple(operator, **dirs), patch.object(operator.articles, "ARTICLES", [article]), patch.object(
+                operator.articles, "load_prompt", return_value="Write only from the evidence."
+            ):
+                first = operator.build_codex_editorial_packet(
+                    context=self._verified_editorial_context(),
+                    article_keys={"trade_desk"},
+                )
+                second = operator.build_codex_editorial_packet(
+                    context=self._verified_editorial_context(),
+                    article_keys={"trade_desk"},
+                    persist=False,
+                )
+
+            self.assertEqual(first["state"], "complete")
+            self.assertEqual(first["scope"]["roster_id"], 4)
+            self.assertEqual(first["scope"]["league_id"], "league-17")
+            self.assertEqual(first["articles"][0]["evidence"][0]["evidence_id"], "player:101:1")
+            self.assertEqual(first["articles"][0]["output_tool"]["name"], "emit_article")
+            self.assertEqual(first["packet_fingerprint"], second["packet_fingerprint"])
+            self.assertTrue(dirs["CODEX_EDITORIAL_PACKET_PATH"].is_file())
+
+            unverified = self._verified_editorial_context().__class__(
+                **{**self._verified_editorial_context().__dict__, "identity_status": "unverified"}
+            )
+            with self.assertRaisesRegex(ValueError, "not verified"):
+                operator.build_codex_editorial_packet(context=unverified, article_keys={"trade_desk"})
+
+    def test_codex_editorial_import_validates_then_writes_atomically(self) -> None:
+        from src.articles import Article
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            evidence = {
+                "evidence_id": "player:101:1",
+                "entity_type": "player",
+                "entity_id": "101",
+                "player_id": "101",
+                "name": "Player One",
+                "source_ids": ["sleeper_players", "projection_consensus"],
+                "claim_candidates": ["Player One has an actionable opportunity score."],
+            }
+            article = Article(
+                "trade_desk",
+                "Trade Desk Read",
+                "unused.md",
+                ("## Best Fits", "## Steer Clear"),
+                lambda ctx: [dict(evidence)],
+                "trade-desk-read",
+            )
+            with patch.multiple(operator, **dirs), patch.object(operator.articles, "ARTICLES", [article]), patch.object(
+                operator.articles, "load_prompt", return_value="Write only from the evidence."
+            ), patch.object(operator, "_record_article_artifact") as record_artifact:
+                packet = operator.build_codex_editorial_packet(
+                    context=self._verified_editorial_context(),
+                    article_keys={"trade_desk"},
+                )
+                result = operator.import_codex_editorial_output(
+                    {
+                        "packet_fingerprint": packet["packet_fingerprint"],
+                        "model": "gpt-5.6-luna",
+                        "articles": {
+                            "trade_desk": {
+                                "evidence_fingerprint": packet["articles"][0]["evidence_fingerprint"],
+                                "output": self._codex_writer_output(),
+                            }
+                        },
+                    },
+                    context=self._verified_editorial_context(),
+                )
+
+            self.assertEqual(result["state"], "complete")
+            article_text = (dirs["ANALYSIS_DIR"] / "trade_desk.md").read_text(encoding="utf-8")
+            self.assertIn("model_mode: codex_task", article_text)
+            self.assertIn("# A real waiver decision", article_text)
+            self.assertEqual(record_artifact.call_args.kwargs["writer_mode"], "codex_task")
+            receipt = json.loads(dirs["CODEX_EDITORIAL_IMPORT_RECEIPT_PATH"].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["written_article_keys"], ["trade_desk"])
+
+    def test_codex_editorial_import_rejects_invalid_or_stale_packets_without_writing(self) -> None:
+        from src.articles import Article
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = self._operator_dirs(Path(tmp))
+            state = {"score": 70}
+
+            def scope(ctx):
+                return [{
+                    "evidence_id": "player:101:1",
+                    "entity_type": "player",
+                    "entity_id": "101",
+                    "player_id": "101",
+                    "name": "Player One",
+                    "score": state["score"],
+                    "source_ids": ["sleeper_players"],
+                }]
+
+            article = Article(
+                "trade_desk",
+                "Trade Desk Read",
+                "unused.md",
+                ("## Best Fits", "## Steer Clear"),
+                scope,
+                "trade-desk-read",
+            )
+            with patch.multiple(operator, **dirs), patch.object(operator.articles, "ARTICLES", [article]), patch.object(
+                operator.articles, "load_prompt", return_value="Write only from the evidence."
+            ), patch.object(operator, "_record_article_artifact"):
+                packet = operator.build_codex_editorial_packet(
+                    context=self._verified_editorial_context(),
+                    article_keys={"trade_desk"},
+                )
+                invalid = operator.import_codex_editorial_output(
+                    {
+                        "packet_fingerprint": packet["packet_fingerprint"],
+                        "articles": {
+                            "trade_desk": {
+                                "evidence_fingerprint": packet["articles"][0]["evidence_fingerprint"],
+                                "output": self._codex_writer_output("unknown:evidence"),
+                            }
+                        },
+                    },
+                    context=self._verified_editorial_context(),
+                )
+                self.assertEqual(invalid["state"], "rejected")
+                self.assertFalse((dirs["ANALYSIS_DIR"] / "trade_desk.md").exists())
+
+                state["score"] = 91
+                with self.assertRaisesRegex(ValueError, "changed after export"):
+                    operator.import_codex_editorial_output(
+                        {
+                            "packet_fingerprint": packet["packet_fingerprint"],
+                            "articles": {
+                                "trade_desk": {
+                                    "evidence_fingerprint": packet["articles"][0]["evidence_fingerprint"],
+                                    "output": self._codex_writer_output(),
+                                }
+                            },
+                        },
+                        context=self._verified_editorial_context(),
+                    )
 
     def _seed_dossiers(self, analysis_dir: Path) -> None:
         (analysis_dir / "manager_dossiers.json").write_text(
@@ -2309,11 +2519,22 @@ class VModelTests(unittest.TestCase):
     def test_browser_surface_contains_workflow_and_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             processed = Path(tmp) / "processed"
+            analysis = Path(tmp) / "analysis"
             site = Path(tmp) / "site"
             processed.mkdir()
+            analysis.mkdir()
             self._write_minimal_processed_tables(processed)
+            for filename, title in {
+                "daily_gm_brief.md": "Daily GM Brief",
+                "team_report.md": "Your Team Report",
+                "market_watch.md": "Market Watch",
+                "horizon_watch.md": "Horizon Watch",
+                "trade_desk.md": "Trade Desk",
+                "manager_intel.md": "Manager Intel",
+            }.items():
+                (analysis / filename).write_text(f"# {title}\n\nNo current move is supported.\n", encoding="utf-8")
 
-            output = build_browser_site(site, processed)
+            output = build_browser_site(site, processed, analysis_dir=analysis)
             html = output.read_text(encoding="utf-8")
             manifest = json.loads((site / "data" / "manifest.json").read_text(encoding="utf-8"))
             bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
@@ -2331,12 +2552,26 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Data Room", html)
         self.assertIn("Sleeper user ID", html)
         self.assertIn("const identity = app.identityReceipt", html)
-        self.assertIn("Team Overview", html)
+        self.assertIn("Team identity", html)
+        self.assertIn("Start with the roster thesis", html)
+        self.assertIn("Open roster, strategy, picks, and counterparty evidence", html)
+        self.assertLess(html.index('id="team-report"'), html.index('id="decision-board"'))
         self.assertIn("Today's Board", html)
         self.assertIn("brief-card", html)
         self.assertIn("brief-list", html)
         self.assertIn("today-priority-board", html)
         self.assertIn("function priorityCards", html)
+        self.assertIn("reverse().slice(0, 3)", html)
+        self.assertIn("Three highest-priority decision lenses", html)
+        self.assertIn("Waivers &amp; Draft", html)
+        self.assertIn("Five names to investigate now", html)
+        self.assertIn("canonicalEntityProfile('player', row.player_id)", html)
+        self.assertIn("Codex: ${profile.recommended_action}", html)
+        self.assertIn("Open draft targets, fades, and pick leverage", html)
+        self.assertIn('id="trade-action-board"', html)
+        self.assertIn("Five counterparties worth opening first", html)
+        self.assertIn("Open the full trade research room", html)
+        self.assertIn('data-testid="canonical-entity-profile"', html)
         self.assertNotIn("Buy-Low Targets", html)
         # Today's Board collapsed into one deduplicated ranked list (Sprint 14) --
         # these sub-headings and their per-type render functions no longer exist.
@@ -2344,7 +2579,7 @@ class VModelTests(unittest.TestCase):
         self.assertNotIn("today-sell-window", html)
         self.assertNotIn("function actionCards", html)
         self.assertNotIn("function opportunityCards", html)
-        self.assertIn("Roster Value Board", html)
+        self.assertIn("Full roster value board", html)
         self.assertIn("Strategy alignment", html)
         self.assertIn("function strategyRosterRows", html)
         self.assertIn("team_needs_matrix", html)
@@ -2400,7 +2635,6 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Analyst Brief", html)
         self.assertIn("Target Theses", html)
         self.assertIn("Sell Theses", html)
-        self.assertIn("Trade Theses", html)
         self.assertIn("Recommendation outcome", html)
         self.assertIn("Manager-fit outcome", html)
         self.assertIn("manager-fit:", html)
@@ -2556,7 +2790,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("sameIdentifier(row.league_id, leagueId)", html)
         self.assertIn("scopedCurrentLeagueNews().filter(row => String(row.player_id", html)
         self.assertIn("scopedCurrentRows(tables.manager_event_log || []).filter(row => Number(row.roster_id) === state.teamId)", html)
-        self.assertIn(".side-rail .section-nav { display: flex;", html)
+        self.assertIn(".side-rail .section-nav { display: grid; grid-template-columns: repeat(4", html)
         self.assertIn("function publicationListItemMarkup", html)
         self.assertIn("news-market-edge-table", html)
         self.assertIn("function filteredNewsMarketEdges", html)
@@ -2571,7 +2805,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("League Impact", html)
         self.assertIn("Watchlist / Waiver", html)
         self.assertIn("Unmatched Feed Items", html)
-        self.assertIn("Player News Matches", html)
+        self.assertIn("Open player-match diagnostics", html)
         self.assertIn("Data Diagnostics", html)
         self.assertIn("Latest recorded league events", html)
         self.assertIn("historical delta unless a prior receipt says so", html)
@@ -2644,7 +2878,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("document.getElementById('manager-dossiers').innerHTML = managerDossierCards();", html)
         self.assertNotIn("innerHTML = markdownBrief(analysis.managerDossiers)", html)
         self.assertIn("function managerIntelArticle", html)
-        self.assertIn("analysis.managerIntelMode === 'automatic_llm'", html)
+        self.assertIn("['automatic_llm', 'codex_task'].includes(analysis.managerIntelMode)", html)
         self.assertIn('data-testid="manager-intel-preview"', html)
         self.assertIn("document.getElementById('manager-intel').innerHTML = managerIntelArticle();", html)
         # Sprint 15 visual system: color-by-category, rank/headshot media, and

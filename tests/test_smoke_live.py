@@ -312,6 +312,17 @@ class LiveSmokeContractTests(unittest.TestCase):
 
         reviewed = {**payload, "analysis": {**payload["analysis"], "articleReceipts": {**receipts, "daily_brief": {**receipts["daily_brief"], "editorial_review": {"mode": "llm", "status": "approved", "decision": "modify"}}}}}
         self.assertEqual(validate_authenticated_edition(reviewed, "new", "alpha"), [])
+        codex_receipts = {
+            key: {
+                **receipt,
+                "mode": "codex_task",
+                "reporter_id": key,
+                "editorial_review": {"mode": "llm", "status": "approved", "decision": "approve"},
+            }
+            for key, receipt in receipts.items()
+        }
+        codex_payload = {**payload, "analysis": {**payload["analysis"], "articleReceipts": codex_receipts}}
+        self.assertEqual(validate_authenticated_edition(codex_payload, "new", "alpha"), [])
         invalid_review = {**reviewed, "analysis": {**reviewed["analysis"], "articleReceipts": {**reviewed["analysis"]["articleReceipts"], "daily_brief": {**reviewed["analysis"]["articleReceipts"]["daily_brief"], "editorial_review": {"mode": "llm", "status": "maybe", "decision": "approve"}}}}}
         self.assertIn("unknown editorial review status", " ".join(validate_authenticated_edition(invalid_review, "new", "alpha")))
 

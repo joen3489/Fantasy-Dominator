@@ -1292,7 +1292,7 @@ def content_artifact_status(
             if str(editorial_review.get("status") or "").lower() != "approved":
                 return False
         return (
-            str(receipt.get("mode") or "").lower() == "automatic_llm"
+            str(receipt.get("mode") or "").lower() in {"automatic_llm", "codex_task"}
             and str(row[4] or "")
             and str(row[4] or "") == str(receipt.get("content_hash") or "")
             and (

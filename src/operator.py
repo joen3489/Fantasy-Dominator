@@ -37,11 +37,15 @@ from .utils import (
 STATUS_PATH = OPERATOR_STATUS_DIR / "operator_status.json"
 INSIGHT_PACKET_PATH = OPERATOR_INBOX_DIR / "front_office_insight_packet.json"
 INSIGHT_OUTPUT_PATH = OPERATOR_OUTBOX_DIR / "front_office_insight_cards.json"
+CODEX_EDITORIAL_PACKET_PATH = OPERATOR_INBOX_DIR / "codex_editorial_packet.json"
+CODEX_EDITORIAL_IMPORT_RECEIPT_PATH = OPERATOR_STATUS_DIR / "codex_editorial_import.json"
 VALIDATED_INSIGHTS_PATH = ANALYSIS_DIR / "validated_insight_cards.json"
 INSIGHT_VALIDATION_PATH = ANALYSIS_DIR / "insight_card_validation.json"
 DAILY_GM_BRIEF_PATH = ANALYSIS_DIR / "daily_gm_brief.md"
 DAILY_GM_BRIEF_VALIDATION_PATH = ANALYSIS_DIR / "daily_gm_brief_validation.json"
 EDITION_EXECUTION_RECEIPT_SCHEMA_VERSION = "edition_execution_receipt_v1"
+CODEX_EDITORIAL_PACKET_SCHEMA_VERSION = "codex_editorial_packet_v1"
+CODEX_EDITORIAL_IMPORT_SCHEMA_VERSION = "codex_editorial_import_v1"
 
 FORBIDDEN_TERMS = (
     "accepted",
@@ -335,6 +339,8 @@ def operator_scope(paths: LeaguePaths | None):
         "STATUS_PATH": paths.operator_status_dir / "operator_status.json",
         "INSIGHT_PACKET_PATH": paths.operator_inbox_dir / "front_office_insight_packet.json",
         "INSIGHT_OUTPUT_PATH": paths.operator_outbox_dir / "front_office_insight_cards.json",
+        "CODEX_EDITORIAL_PACKET_PATH": paths.operator_inbox_dir / "codex_editorial_packet.json",
+        "CODEX_EDITORIAL_IMPORT_RECEIPT_PATH": paths.operator_status_dir / "codex_editorial_import.json",
         "VALIDATED_INSIGHTS_PATH": paths.analysis_dir / "validated_insight_cards.json",
         "INSIGHT_VALIDATION_PATH": paths.analysis_dir / "insight_card_validation.json",
         "DAILY_GM_BRIEF_PATH": paths.analysis_dir / "daily_gm_brief.md",
@@ -2442,13 +2448,14 @@ def _render_article_markdown(
     evidence_manifest: list[dict[str, Any]] | None = None,
     editorial_review: dict[str, Any] | None = None,
     editor_mode: str = "deterministic",
+    writer_mode: str = "automatic_llm",
 ) -> str:
     existing = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     front_lines = [
         "---",
         f"artifact_type: {article.key}",
         f"generated_at: {generated_at}",
-        "model_mode: automatic_llm",
+        f"model_mode: {str(writer_mode or 'automatic_llm').strip().lower()}",
         f"model: {model}",
         f"editor_mode: {str(editor_mode or 'deterministic').strip().lower()}",
         f"evidence_fingerprint: {evidence_fingerprint}",
@@ -2527,6 +2534,383 @@ def _prepare_fanout_article(
             )
         ),
     }
+
+
+def _require_verified_editorial_context(context: FantasyContext | None) -> FantasyContext:
+    """Fail closed before private evidence is exported or imported."""
+
+    if context is None or context.user_id is None:
+        raise ValueError("A user-scoped fantasy context is required for Codex editorial work.")
+    if not str(context.league_id or "").strip() or not str(context.season or "").strip():
+        raise ValueError("A league and season are required for Codex editorial work.")
+    if context.roster_id is None:
+        raise ValueError("A verified roster_id is required for Codex editorial work.")
+    if str(context.identity_status or "").strip().lower() not in {"verified", "verified_roster_match"}:
+        raise ValueError("The Clerk-to-Sleeper roster identity is not verified.")
+    return context
+
+
+def _editorial_packet_fingerprint(payload: Mapping[str, Any]) -> str:
+    """Hash the exact Codex input contract without its clock or stored hash."""
+
+    stable = {
+        str(key): value
+        for key, value in payload.items()
+        if str(key) not in {"generated_at", "packet_fingerprint", "packet_path"}
+    }
+    encoded = json.dumps(
+        stable,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def build_codex_editorial_packet(
+    paths: LeaguePaths | None = None,
+    context: FantasyContext | None = None,
+    article_keys: set[str] | None = None,
+    *,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Export the one canonical evidence contract used by Codex and API writers.
+
+    The packet contains private league evidence, so callers must already have
+    authenticated operator access.  It is stored only inside the selected
+    user's private league workspace and never under the repository data root.
+    Daily Brief is intentionally a second-stage export: by default the packet
+    contains the five specialist desks, whose imported output can then become
+    bounded room context for a targeted ``daily_brief`` packet.
+    """
+
+    if paths is not None:
+        with operator_scope(paths):
+            return build_codex_editorial_packet(
+                context=context,
+                article_keys=article_keys,
+                persist=persist,
+            )
+    context = _require_verified_editorial_context(context)
+    registry = {article.key: article for article in articles.ARTICLES}
+    requested = (
+        {str(key).strip() for key in article_keys if str(key).strip()}
+        if article_keys
+        else {key for key in registry if key != "daily_brief"}
+    )
+    unknown = sorted(requested - set(registry))
+    if unknown:
+        raise ValueError(f"Unknown editorial article key(s): {', '.join(unknown)}")
+
+    reality_check_path = ANALYSIS_DIR / "reality_check.json"
+    try:
+        raw_reality_check = load_json(reality_check_path) if reality_check_path.is_file() else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        raw_reality_check = {}
+    reality_check = raw_reality_check if isinstance(raw_reality_check, Mapping) else {}
+    llm = configured_llm()
+    ctx = articles.ArticleContext(
+        analysis_dir=ANALYSIS_DIR,
+        active_roster_id=context.roster_id,
+        processed_dir=PROCESSED_DIR,
+        user_id=context.user_id,
+        league_id=context.league_id,
+        season=context.season,
+        team_name=context.team_name,
+        writer_preferences=context.writer_preferences,
+    )
+    _seed_prior_specialist_context(ctx, requested)
+    packet_articles: list[dict[str, Any]] = []
+    blocked: list[dict[str, str]] = []
+    for article in sorted(articles.ARTICLES, key=_article_execution_sort_key):
+        if article.key not in requested:
+            continue
+        output_path = ANALYSIS_DIR / article.output_filename
+        evidence = article.scope(ctx)
+        if article.key != "daily_brief":
+            evidence = articles.apply_entity_dedup(ctx, evidence)
+        evidence = _attach_reality_check_receipts(evidence, reality_check)
+        if not evidence:
+            blocked.append({"article_key": article.key, "reason": "No scoped deterministic evidence is available."})
+            continue
+        system_prompt = _article_system_prompt(article, ctx.writer_preferences, context)
+        editorial_context = _editorial_room_context(ctx, article, output_path)
+        evidence_fingerprint = _article_evidence_fingerprint(
+            article,
+            evidence,
+            system_prompt,
+            context,
+            editorial_context,
+        )
+        reporter = persona_metadata(ctx.writer_preferences, article.key)
+        packet_articles.append(
+            {
+                "article_key": article.key,
+                "title": article.title,
+                "section": article.section,
+                "reporter": reporter,
+                "required_headers": list(article.headers),
+                "system_prompt": system_prompt,
+                "editorial_context": editorial_context,
+                "evidence": evidence,
+                "evidence_manifest": articles.build_evidence_manifest(evidence),
+                "evidence_fingerprint": evidence_fingerprint,
+                "output_tool": {
+                    "name": ARTICLE_TOOL["name"],
+                    "description": ARTICLE_TOOL["description"],
+                    "input_schema": deepcopy(ARTICLE_TOOL["input_schema"]),
+                },
+                "model": llm.model,
+                "reasoning_effort": article_reasoning_effort(article.key, llm.reasoning_effort),
+            }
+        )
+    packet = {
+        "schema_version": CODEX_EDITORIAL_PACKET_SCHEMA_VERSION,
+        "generated_at": _now(),
+        "state": "complete" if packet_articles and not blocked else "partial" if packet_articles else "blocked",
+        "writer_mode": "codex_task",
+        "scope": {
+            "user_id": str(context.user_id),
+            "league_id": str(context.league_id),
+            "league_name": str(context.league_name or ""),
+            "season": str(context.season),
+            "roster_id": int(context.roster_id),
+            "team_name": str(context.team_name or context.display_name or ""),
+            "sleeper_user_id": str(context.sleeper_user_id or ""),
+            "identity_status": str(context.identity_status),
+            "identity_checked_at": str(context.identity_checked_at or ""),
+        },
+        "requested_article_keys": [
+            article.key
+            for article in sorted(articles.ARTICLES, key=_article_execution_sort_key)
+            if article.key in requested
+        ],
+        "article_keys": [item["article_key"] for item in packet_articles],
+        "blocked": blocked,
+        "articles": packet_articles,
+        "workflow": {
+            "facts_owner": "deterministic_data_layer",
+            "interpretation_owner": "codex_task",
+            "api_role": "fallback_only",
+            "publication_rule": "Import the complete structured output through the validated editorial seam; never write article markdown directly.",
+            "daily_brief_rule": "Import specialist desks first, then export daily_brief so it can synthesize their bounded room context.",
+        },
+    }
+    packet["packet_fingerprint"] = _editorial_packet_fingerprint(packet)
+    if persist:
+        _write_json(CODEX_EDITORIAL_PACKET_PATH, packet)
+    return packet
+
+
+def import_codex_editorial_output(
+    payload: Mapping[str, Any],
+    paths: LeaguePaths | None = None,
+    context: FantasyContext | None = None,
+) -> dict[str, Any]:
+    """Validate and atomically publish structured Codex article output."""
+
+    if paths is not None:
+        with operator_scope(paths):
+            return import_codex_editorial_output(payload, context=context)
+    context = _require_verified_editorial_context(context)
+    submitted = dict(payload) if isinstance(payload, Mapping) else {}
+    stored_packet = _safe_json(CODEX_EDITORIAL_PACKET_PATH)
+    if stored_packet.get("schema_version") != CODEX_EDITORIAL_PACKET_SCHEMA_VERSION:
+        raise ValueError("No current Codex editorial packet exists for this league scope.")
+    expected_packet_fingerprint = str(stored_packet.get("packet_fingerprint") or "")
+    if not expected_packet_fingerprint or expected_packet_fingerprint != _editorial_packet_fingerprint(stored_packet):
+        raise ValueError("The stored Codex editorial packet receipt is invalid.")
+    if str(submitted.get("packet_fingerprint") or "") != expected_packet_fingerprint:
+        raise ValueError("The submitted packet_fingerprint does not match the current exported packet.")
+
+    scope = stored_packet.get("scope") if isinstance(stored_packet.get("scope"), Mapping) else {}
+    expected_scope = (
+        str(context.user_id),
+        str(context.league_id),
+        str(context.season),
+        int(context.roster_id),
+    )
+    stored_scope = (
+        str(scope.get("user_id") or ""),
+        str(scope.get("league_id") or ""),
+        str(scope.get("season") or ""),
+        int(scope.get("roster_id")) if str(scope.get("roster_id") or "").isdigit() else None,
+    )
+    if stored_scope != expected_scope:
+        raise ValueError("The exported packet does not belong to the selected user, league, season, and roster_id.")
+
+    packet_keys = [str(key) for key in (stored_packet.get("article_keys") or []) if str(key).strip()]
+    current_packet = build_codex_editorial_packet(
+        context=context,
+        article_keys=set(stored_packet.get("requested_article_keys") or packet_keys),
+        persist=False,
+    )
+    if str(current_packet.get("packet_fingerprint") or "") != expected_packet_fingerprint:
+        raise ValueError("Deterministic evidence or bounded editorial context changed after export; export a new packet.")
+
+    raw_articles = submitted.get("articles")
+    submitted_articles = raw_articles if isinstance(raw_articles, Mapping) else {}
+    submitted_keys = {str(key) for key in submitted_articles}
+    if submitted_keys != set(packet_keys):
+        missing = sorted(set(packet_keys) - submitted_keys)
+        unknown = sorted(submitted_keys - set(packet_keys))
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if unknown:
+            detail.append("unexpected " + ", ".join(unknown))
+        raise ValueError("Codex import must contain every packet article exactly once: " + "; ".join(detail))
+
+    registry = {article.key: article for article in articles.ARTICLES}
+    packet_by_key = {
+        str(item.get("article_key") or ""): item
+        for item in (stored_packet.get("articles") or [])
+        if isinstance(item, Mapping)
+    }
+    model = str(submitted.get("model") or configured_llm().model or "gpt-5.6-luna").strip()
+    prepared: list[dict[str, Any]] = []
+    validation_errors: dict[str, list[str]] = {}
+    from .editorial import review_publication_article
+
+    for article_key in packet_keys:
+        article = registry.get(article_key)
+        packet_article = packet_by_key.get(article_key) or {}
+        item = submitted_articles.get(article_key)
+        item = item if isinstance(item, Mapping) else {}
+        output = item.get("output") if isinstance(item.get("output"), Mapping) else {}
+        fingerprint = str(packet_article.get("evidence_fingerprint") or "")
+        if str(item.get("evidence_fingerprint") or "") != fingerprint:
+            validation_errors.setdefault(article_key, []).append("evidence_fingerprint does not match the exported article packet")
+            continue
+        evidence = [dict(row) for row in (packet_article.get("evidence") or []) if isinstance(row, Mapping)]
+        evidence_ids = {str(row.get("evidence_id")) for row in evidence if row.get("evidence_id")}
+        validation = validate_article_output(
+            dict(output),
+            evidence_ids,
+            article.headers if article else tuple(packet_article.get("required_headers") or []),
+            evidence,
+            article_key=article_key,
+        )
+        structured = dict(validation.get("structured") or {}) | {
+            "evidence_ids": validation.get("evidence_ids") or [],
+            "source_ids": validation.get("source_ids") or [],
+            "source_count": len(validation.get("source_ids") or []),
+            "source_quality": (
+                "multi_source" if len(validation.get("source_ids") or []) > 1
+                else "single_source" if validation.get("source_ids")
+                else "unattributed"
+            ),
+            "boundary_checks": validation.get("boundary_checks") or {},
+            "reality_check": validation.get("reality_check") or {},
+        }
+        gate = review_publication_article(
+            article_key,
+            str(validation.get("narrative") or ""),
+            {"structured": structured},
+            "codex_task",
+        )
+        errors = list(validation.get("errors") or []) + list(gate.get("errors") or [])
+        if not article:
+            errors.append("article is not registered")
+        if gate.get("status") != "approved":
+            errors.append("deterministic publication gate did not approve the article")
+        if errors:
+            validation_errors[article_key] = list(dict.fromkeys(str(error) for error in errors if str(error).strip()))
+            continue
+        prepared.append(
+            {
+                "article": article,
+                "packet_article": packet_article,
+                "validation": validation,
+                "structured": structured,
+                "gate": gate,
+                "evidence": evidence,
+                "evidence_fingerprint": fingerprint,
+            }
+        )
+    if validation_errors:
+        receipt = {
+            "schema_version": CODEX_EDITORIAL_IMPORT_SCHEMA_VERSION,
+            "state": "rejected",
+            "imported_at": _now(),
+            "packet_fingerprint": expected_packet_fingerprint,
+            "scope": dict(scope),
+            "errors": validation_errors,
+            "written_article_keys": [],
+        }
+        _write_json(CODEX_EDITORIAL_IMPORT_RECEIPT_PATH, receipt)
+        return receipt
+
+    imported_at = _now()
+    written: list[str] = []
+    for item in prepared:
+        article = item["article"]
+        validation = item["validation"]
+        output_path = ANALYSIS_DIR / article.output_filename
+        reporter = item["packet_article"].get("reporter") or persona_metadata(context.writer_preferences, article.key)
+        source_receipt = {
+            "scope": "selected_league_validated_evidence",
+            "evidence_fingerprint": item["evidence_fingerprint"],
+            "source_count": len(validation.get("source_ids") or []),
+            "source_ids": validation.get("source_ids") or [],
+            "packet_fingerprint": expected_packet_fingerprint,
+            "reality_check": validation.get("reality_check") or {},
+        }
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            _render_article_markdown(
+                article,
+                validation["narrative"],
+                imported_at,
+                output_path,
+                context.writer_preferences,
+                article.key,
+                item["evidence_fingerprint"],
+                model,
+                item["structured"],
+                source_receipt=source_receipt,
+                evidence_manifest=articles.build_evidence_manifest(item["evidence"]),
+                editorial_review=item["gate"],
+                writer_mode="codex_task",
+            ),
+            encoding="utf-8",
+        )
+        content_hash = _content_hash(output_path)
+        _record_article_artifact(
+            context,
+            article,
+            output_path,
+            validation,
+            evidence_fingerprint=item["evidence_fingerprint"],
+            content_hash=content_hash,
+            reporter=reporter,
+            model=model,
+            generation_metadata={
+                "provider": "codex",
+                "model": model,
+                "writer_mode": "codex_task",
+                "packet_fingerprint": expected_packet_fingerprint,
+                "cost_known": False,
+            },
+            editorial_review=item["gate"],
+            writer_mode="codex_task",
+        )
+        written.append(article.key)
+    receipt = {
+        "schema_version": CODEX_EDITORIAL_IMPORT_SCHEMA_VERSION,
+        "state": "complete",
+        "imported_at": imported_at,
+        "packet_fingerprint": expected_packet_fingerprint,
+        "scope": dict(scope),
+        "model": model,
+        "writer_mode": "codex_task",
+        "article_keys": written,
+        "written_article_keys": written,
+        "errors": {},
+    }
+    _write_json(CODEX_EDITORIAL_IMPORT_RECEIPT_PATH, receipt)
+    return receipt
 
 
 def _fanout_writer_drafts(
@@ -3541,6 +3925,7 @@ def _record_article_artifact(
     fallback_reason: str = "",
     generation_metadata: dict[str, Any] | None = None,
     editorial_review: dict[str, Any] | None = None,
+    writer_mode: str = "automatic_llm",
 ) -> None:
     if context is None or context.user_id is None:
         return
@@ -3548,6 +3933,7 @@ def _record_article_artifact(
         from app import db as app_db
 
         reporter = reporter or persona_metadata(context.writer_preferences, article.key)
+        writer_mode = str(writer_mode or "automatic_llm").strip().lower()
         llm_receipt = writer_api_configuration()
         llm_receipt["reasoning_effort"] = str(reasoning_effort or llm_receipt.get("reasoning_effort") or "")
         app_db.record_content_artifact(
@@ -3558,7 +3944,7 @@ def _record_article_artifact(
             article.key,
             str(output_path),
             source={
-                "mode": "automatic_llm",
+                "mode": writer_mode,
                 "valid": bool(validation.get("valid")),
                 "writer_preferences": context.writer_preferences,
                 "reporter_persona": persona_metadata(context.writer_preferences, article.key),
@@ -3586,7 +3972,7 @@ def _record_article_artifact(
             evidence_fingerprint=evidence_fingerprint,
             content_hash=content_hash,
             reporter_id=str(reporter.get("persona_id") or ""),
-            writer_mode="automatic_llm",
+            writer_mode=writer_mode,
             fallback_reason=fallback_reason,
             model=model,
         )
@@ -3667,7 +4053,7 @@ def _can_reuse_article(
         return False
     if previous.get("reporter_id") != str(reporter.get("persona_id") or ""):
         return False
-    if previous.get("model") != model or previous.get("writer_mode") != "automatic_llm":
+    if previous.get("model") != model or previous.get("writer_mode") not in {"automatic_llm", "codex_task"}:
         return False
     source = previous.get("source") if isinstance(previous.get("source"), dict) else {}
     previous_editor_mode = str(source.get("editor_mode") or "deterministic").strip().lower()

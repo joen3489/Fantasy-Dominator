@@ -1860,7 +1860,13 @@ def _team_report_context_summary(
         parts.append(f"Move ledger: {move_text}.")
     else:
         parts.append("Move ledger: no current-season roster move is recorded.")
-    return "**Observed week context.** " + " ".join(parts)
+    return (
+        "**Observed week context.** "
+        + " ".join(parts)
+        + " The move ledger is historical evidence, not a current-role recommendation; "
+        "for any player without a current NFL team, role and market comparisons are unavailable "
+        "or conditional on signing."
+    )
 
 
 def _team_report_move_summary(row: dict[str, Any]) -> str:

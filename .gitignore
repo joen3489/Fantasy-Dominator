@@ -15,6 +15,7 @@ data/site/refresh_status.json
 data/site/server.*.log
 data/operator/
 data/leagues/
+data/users/
 data/league_registry.json
 data/app.db
 data/attention_queue.json

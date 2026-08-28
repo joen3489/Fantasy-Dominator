@@ -10,6 +10,58 @@ and Manager Intel. Older entries that say `0/5`, “five desks,” or “five
 articles” describe production checkpoints before `horizon_watch` was added;
 they are historical receipts, not the current publication contract.
 
+## 2026-08-28 - Execute the single-brain decision product epic
+
+The next product phase is not another feature expansion. The approved
+[Single-Brain Decision Product Convergence](single_brain_decision_product_epic.md)
+epic organizes the existing data, analysis, recommendation, article, dossier,
+operator, and browser capabilities into one bounded decision experience.
+
+Codex becomes the primary scheduled analyst/editor and the configured API
+writer becomes a fallback, but both consume the same validated, scope-bound
+evidence packets. Neither may use browser research, model memory, prior prose,
+or API output as a fact source. One canonical LLM profile or recommendation
+interpretation supplies every route; separately generated copy is not allowed
+to create a second product brain.
+
+Execution is ordered through contract/export, Codex import, canonical profiles,
+decision-led route composition, the scheduled Luna production loop, and an
+antagonistic feedback/failure audit. Rich profiles belong behind entity pages;
+Today remains limited to three primary decisions and waiver/trade views to five
+serious candidates before progressive disclosure.
+
+## 2026-08-28 - Converge on decisions, not publication volume
+
+The current authenticated product review found that strong evidence receipts,
+editorial identity, search, and dossiers were being diluted by repeated
+summaries, conflicting leads, oversized task views, internal operating states,
+and a clipped mobile headquarters. The product is therefore defined as a
+league-specific decision engine explained through a media facade. The number
+of articles, cards, tables, or desks is not evidence of product depth.
+
+A primary recommendation now has a doctrine-level completeness contract: exact
+league and roster scope, concrete action, comparison with the current
+alternative, cost, why now, expected team benefit, risk, confidence, and fresh
+source evidence. Waiver guidance is incomplete without an add, drop, and bid;
+trade guidance is incomplete without a plausible counterparty, offer range,
+and walk-away price. "No worthwhile move" is an acceptable and preferable
+result when no recommendation clears the impact and evidence gate.
+
+Primary routes have bounded jobs and attention budgets. Today leads with no
+more than three decisions; waiver and trade views promote no more than five
+serious actions before progressive disclosure; My Team leads with its three
+largest problems. One canonical recommendation identity must be reused across
+routes and articles so unchanged advice can be suppressed, returning readers
+can see real deltas, and contradictory leads fail closed instead of becoming
+competing copy.
+
+Copy on a primary surface earns space only by stating evidence, explaining
+team-specific relevance, recommending an action, describing uncertainty, or
+identifying provenance. Operator machinery remains inspectable but separate
+from the manager briefing. A rendered 390-pixel entry-path check is part of the
+product contract because responsive CSS alone did not prevent the live
+headquarters from clipping most of its content.
+
 ## 2026-08-27 - Resume the same edition and make the room queryable
 
 An interrupted writer run must not force a new refresh or a second paid call
@@ -2161,6 +2213,34 @@ The issue-level newsroom now preserves counter-signals and open questions so
 different information desks become a running conversation rather than six
 tones restating one ranking. This remains editorial structure over
 deterministic evidence, with source receipts one click away.
+
+## 2026-08-28 - Codex and the API share one packet, not two product brains
+
+Codex-authored articles and canonical entity profiles now enter through
+authenticated, exact-scope packet export and structured import seams. Imported
+output is published only after the same evidence-ID, Reality Check,
+availability, forbidden-language, and publication gates used by the existing
+writer workflow. Accepted output is labeled `codex_task`; the API writer is a
+fallback consumer of the same deterministic packet, not another recommendation
+engine. Unchanged evidence fingerprints reuse the current artifact.
+
+## 2026-08-28 - Mobile navigation must expose destinations, not merely hide overflow
+
+The edition's 390-pixel page had zero document overflow while its internal
+navigation still clipped later routes behind a horizontal scrollbar. The
+mobile rail now uses a two-row four-column grid so all eight primary
+destinations are visible without scrolling. Responsive acceptance must inspect
+inner scrollers and visible labels, not only compare document scroll width to
+viewport width.
+
+## 2026-08-28 - Observed scoring and known matchup outcome are different facts
+
+Sleeper can preserve player and team scoring for playoff or consolation rows
+while omitting `matchup_id` and opponent identity. Those player receipts are
+now `played` when scoring is observed, while the team outcome remains
+`unplayed`/unknown because no opponent result can be derived. A missing
+opponent may not erase observed production, and observed production may not be
+used to invent an opponent or win/loss.
 
 ## 2026-08-27 - Record the newsroom release boundary honestly
 

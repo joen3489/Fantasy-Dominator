@@ -29,6 +29,21 @@ editorial written in distinct voices.
 8. The media facade should make the data room legible, not hide it. Every
    important story should have a path to the underlying evidence and freshness
    receipt.
+9. The consumer product is decision-first. A prominent recommendation must be
+   scoped to the selected league and exact roster and state the action, the
+   current alternative, likely cost, why now, risk, confidence, and freshness.
+   "No move" is a useful result; generic advice and filler are not.
+10. Attention is a scarce product resource. Rank aggressively, suppress
+    unchanged or duplicate recommendations, and fail closed on contradictory
+    leads instead of publishing every available signal or article.
+11. Copy earns space only when it states evidence, explains team-specific
+    relevance, recommends an action, describes uncertainty, or identifies
+    provenance. Editorial personality may aid comprehension but may not create
+    competing sections or meaningless volume.
+12. Keep operator machinery separate from the manager experience. Writer jobs,
+    storage audits, packet states, and generation controls belong in an
+    operational surface; the primary UI should lead with the manager's next
+    decisions and work at a verified mobile viewport.
 
 ## Source-of-truth map
 
@@ -42,6 +57,9 @@ editorial written in distinct voices.
   failure classes and the current evidence-backed findings.
 - `docs/front_office_operating_lessons.md`: compact durable memory of the
   product model, evidence/editorial boundaries, and anti-recursive guardrails.
+- `docs/single_brain_decision_product_epic.md`: current execution epic for
+  Codex-first editorial artifacts, canonical profiles, decision-led route
+  composition, and the scheduled Luna operating loop.
 - `docs/decision_log.md`: regression lessons and decisions that should not be
   rediscovered by future work.
 - `config/leagues.yml`: legacy/default seed and strategy configuration; it is

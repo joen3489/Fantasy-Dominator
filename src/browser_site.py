@@ -613,6 +613,8 @@ def _analysis_artifacts(analysis_dir: Path) -> dict[str, Any]:
         "managerDossierItems": _json_items(analysis_dir / "manager_dossiers.json"),
         "managerDossierReceipt": _json_receipt(analysis_dir / "manager_dossiers.json"),
         "playerDossierItems": _json_items(analysis_dir / "player_dossiers.json"),
+        "canonicalEntityProfiles": _json_items(analysis_dir / "canonical_entity_profiles.json"),
+        "canonicalEntityProfileReceipt": _json_receipt(analysis_dir / "canonical_entity_profiles.json"),
         "realityCheckPacket": _json_document(analysis_dir / "reality_check.json"),
         "editionPacket": _json_document(analysis_dir / "edition_packet.json"),
         "editionReceipt": _json_document(analysis_dir / "edition_receipt.json"),
@@ -719,7 +721,7 @@ def _article_receipts(analysis_dir: Path) -> dict[str, dict[str, Any]]:
                 "llm" if editorial_review.get("mode") == "llm" else "deterministic"
             ),
             # The raw byline remains available as the assigned newsroom lens,
-            # but only automatic_llm artifacts can claim the persona wrote it.
+            # but only validated writer artifacts can claim the persona wrote it.
             "reporter_id": "front_office" if mode == "deterministic_template" else raw_reporter_id,
             "reporter_name": "The Front Office" if mode == "deterministic_template" else raw_reporter_name,
             "assigned_reporter_id": assigned_reporter_id,
@@ -1612,8 +1614,8 @@ def _page(
       .side-rail p {{ display: none; }}
       .side-rail .nav-group {{ margin-bottom: 10px; }}
       .side-rail .nav-group .nav-group-title {{ display: none; }}
-      .side-rail .section-nav {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }}
-      .side-rail .section-nav a {{ flex: 0 0 auto; padding: 7px 10px; font-size: 12px; white-space: nowrap; }}
+      .side-rail .section-nav {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; overflow: visible; padding-bottom: 3px; }}
+      .side-rail .section-nav a {{ display: flex; min-height: 36px; align-items: center; justify-content: center; padding: 6px 4px; font-size: 11px; line-height: 1.15; text-align: center; white-space: normal; }}
       .side-rail .find-nav {{ margin-bottom: 0; }}
       header {{ padding: 10px 14px; }}
       header h1 {{ display: none; }}
@@ -1637,7 +1639,7 @@ def _page(
         <div class="nav-group-title">Where To</div>
         <nav class="section-nav">
           <a href="#view-today">Today</a>
-          <a href="#view-draft-room">Draft Room</a>
+          <a href="#view-draft-room">Waivers &amp; Draft</a>
           <a href="#view-my-team">My Team</a>
           <a href="#view-players">Players</a>
           <a href="#view-league">League</a>
@@ -1666,42 +1668,16 @@ def _page(
       <h2>Today</h2>
       <div class="panel article-panel"><h3>Daily GM Brief <span id="daily-gm-brief-mode" class="tag"></span></h3><div id="daily-gm-brief"></div></div>
       <h3>Today's Board</h3>
-      <p class="note">One ranked list, highest priority first. Each player/pick/manager appears once, whichever signal ranked it highest.</p>
+      <p class="note">The three highest-priority decisions, ranked once. Each player, pick, or manager appears only where its strongest current signal belongs.</p>
       <div class="panel"><div id="today-priority-board"></div></div>
     </div>
 
-    <div id="decision-board" class="view-block">
-      <h2>Decision Board</h2>
-      <div class="controls">
-        <label>Active team<select id="team-filter"></select></label>
-        <label>Search<input id="global-search" type="search" placeholder="player, team, pick, manager"></label>
-        <button id="reset-filters" type="button">Reset</button>
-      </div>
-      <div class="metrics">
-        <div class="metric"><strong id="metric-roster">0</strong><span>rostered players</span></div>
-        <div class="metric"><strong id="metric-qb">0</strong><span>quarterbacks</span></div>
-        <div class="metric"><strong id="metric-rb">0</strong><span>running backs</span></div>
-        <div class="metric"><strong id="metric-pass">0</strong><span>pass catchers</span></div>
-        <div class="metric"><strong id="metric-my-picks-away">0</strong><span>my original picks elsewhere</span></div>
-        <div class="metric"><strong id="metric-team-trades">0</strong><span>team trades</span></div>
-      </div>
-      <div class="grid">
-        <div class="panel">
-          <h3>My Original Picks Elsewhere</h3>
-          <div id="my-pick-alerts"></div>
-        </div>
-        <div class="panel">
-          <h3>Likely Trade Counterparties</h3>
-          <div id="likely-traders"></div>
-        </div>
-      </div>
-    </div>
     </section>
 
     <section id="view-draft-room">
     <div id="draft-room" class="view-block">
-      <h2>Draft Room</h2>
-      <p class="note">A league-scoped draft-season read: what to circle, what to move, and where your draft capital gives you leverage. Every card shows the evidence behind the read.</p>
+      <h2>Waivers &amp; Draft</h2>
+      <p class="note">Start with the five available names most worth investigating in this league. Draft targets, fades, and pick leverage remain below as research, not competing calls to action.</p>
       <div id="draft-room-status" class="panel article-panel"></div>
       <div class="metrics">
         <div class="metric"><strong id="draft-room-available">0</strong><span>available market names</span></div>
@@ -1709,13 +1685,15 @@ def _page(
         <div class="metric"><strong id="draft-room-fades">0</strong><span>roster fades</span></div>
         <div class="metric"><strong id="draft-room-picks">0</strong><span>future picks in scope</span></div>
       </div>
-      <div class="grid">
-        <div class="panel"><h3>Circle These Names</h3><div id="draft-room-board"></div></div>
-        <div class="panel"><h3>Acquire Before the Draft</h3><div id="draft-room-target-list"></div></div>
-        <div class="panel"><h3>Fades / Price Traps</h3><div id="draft-room-fade-list"></div></div>
-      </div>
-      <h3>Pick Leverage</h3>
-      <div id="draft-room-pick-list"></div>
+      <div class="panel"><h3>Five names to investigate now</h3><div id="draft-room-board"></div></div>
+      <details class="data-drawer"><summary>Open draft targets, fades, and pick leverage</summary>
+        <div class="grid">
+          <div class="panel"><h3>Acquire Before the Draft</h3><div id="draft-room-target-list"></div></div>
+          <div class="panel"><h3>Fades / Price Traps</h3><div id="draft-room-fade-list"></div></div>
+        </div>
+        <h3>Pick Leverage</h3>
+        <div id="draft-room-pick-list"></div>
+      </details>
       <details class="data-drawer">
         <summary>Draft Room data notes</summary>
         <div id="draft-room-data-quality" class="brief-card-evidence"></div>
@@ -1726,22 +1704,42 @@ def _page(
     <section id="view-my-team">
     <div id="team-overview" class="view-block">
       <h2>My Team</h2>
-      <div class="grid">
-        <div class="panel"><h3>Team Overview</h3><div id="team-overview-panel"></div></div>
-        <div class="panel"><h3>Strategy Overlay</h3><div id="strategy-panel"></div></div>
+      <p class="note">Start with the roster thesis. The full roster, strategy, pick, and counterparty tables remain available below as supporting evidence.</p>
+      <div class="panel article-panel"><h3>Your Team Report <span id="team-report-mode" class="tag"></span></h3><div id="team-report"></div></div>
+      <h3>Roster at a glance</h3>
+      <div class="metrics">
+        <div class="metric"><strong id="metric-roster">0</strong><span>rostered players</span></div>
+        <div class="metric"><strong id="metric-qb">0</strong><span>quarterbacks</span></div>
+        <div class="metric"><strong id="metric-rb">0</strong><span>running backs</span></div>
+        <div class="metric"><strong id="metric-pass">0</strong><span>pass catchers</span></div>
+        <div class="metric"><strong id="metric-my-picks-away">0</strong><span>my original picks elsewhere</span></div>
+        <div class="metric"><strong id="metric-team-trades">0</strong><span>team trades</span></div>
       </div>
     </div>
 
-    <div id="roster-value" class="view-block">
-      <h2>Roster Value Board</h2>
-      <div class="panel article-panel"><h3>Your Team Report <span id="team-report-mode" class="tag"></span></h3><div id="team-report"></div></div>
+    <details class="data-drawer route-research-drawer" id="decision-board">
+      <summary>Open roster, strategy, picks, and counterparty evidence</summary>
       <div class="controls">
-        <label>Position<select id="position-filter"></select></label>
-        <label>Status<select id="status-filter"></select></label>
+        <label>Active team<select id="team-filter"></select></label>
+        <label>Search<input id="global-search" type="search" placeholder="player, team, pick, manager"></label>
+        <button id="reset-filters" type="button">Reset</button>
       </div>
-      <p class="note">Strategy tags are deterministic evidence labels from the selected roster's fit, need, liquidity, and action rows. Open a player dossier or the Data Room to inspect the underlying evidence.</p>
-      <div id="roster-table"></div>
-    </div>
+      <div class="grid">
+        <div class="panel"><h3>Team identity</h3><div id="team-overview-panel"></div></div>
+        <div class="panel"><h3>Strategy evidence</h3><div id="strategy-panel"></div></div>
+        <div class="panel"><h3>Original picks elsewhere</h3><div id="my-pick-alerts"></div></div>
+        <div class="panel"><h3>Observed active counterparties</h3><div id="likely-traders"></div></div>
+      </div>
+      <div id="roster-value" class="view-block">
+        <h3>Full roster value board</h3>
+        <div class="controls">
+          <label>Position<select id="position-filter"></select></label>
+          <label>Status<select id="status-filter"></select></label>
+        </div>
+        <p class="note">Strategy tags are deterministic evidence labels from the selected roster's fit, need, liquidity, and action rows. Open a player dossier or the Data Room to inspect the underlying evidence.</p>
+        <div id="roster-table"></div>
+      </div>
+    </details>
     </section>
 
     <section id="view-players">
@@ -1809,8 +1807,15 @@ def _page(
     </section>
 
     <section id="view-trade-desk">
-    <div id="signal-board" class="view-block">
+    <div id="trade-action-board" class="view-block">
       <h2>Trade Desk</h2>
+      <div class="panel article-panel"><h3>Trade Desk Read <span id="trade-desk-read-mode" class="tag"></span></h3><div id="trade-desk-read"></div></div>
+      <h3>Five counterparties worth opening first</h3>
+      <div id="trade-theses"></div>
+    </div>
+    <details class="data-drawer route-research-drawer"><summary>Open the full trade research room</summary>
+    <div id="signal-board" class="view-block">
+      <h2>Market research</h2>
       <div class="panel article-panel"><h3>Market Watch <span id="market-watch-mode" class="tag"></span></h3><div id="market-watch"></div></div>
       <h3>Four-Window Market Board</h3>
       <p class="note">This is the deterministic market underneath the articles. The four scores—next game, rest of season, dynasty, and career window—are position-relative percentiles from 0–100, not dollar market values or cross-position price rankings, and are not yet outcome-calibrated forecasts. Use the clock-versus-market deltas to find same-position repricing leads, then compare immediate utility, remaining-season value, and dynasty value before deciding whether an asset fits a contender, a rebuilder, or neither. Every row links to the player dossier and keeps its evidence receipt one click away.</p>
@@ -1864,7 +1869,6 @@ def _page(
       <div class="grid">
         <div class="panel"><h3>Target Theses</h3><div id="target-theses"></div></div>
         <div class="panel"><h3>Sell Theses</h3><div id="sell-theses"></div></div>
-        <div class="panel"><h3>Trade Theses</h3><div id="trade-theses"></div></div>
       </div>
     </div>
 
@@ -1880,7 +1884,6 @@ def _page(
 
     <div id="counterparty-edges" class="view-block">
       <h2>Counterparty Edges</h2>
-      <div class="panel article-panel"><h3>Trade Desk Read <span id="trade-desk-read-mode" class="tag"></span></h3><div id="trade-desk-read"></div></div>
       <p class="note">These are estimated value disagreements, not trade quotes. Nobody has accepted anything. The commissioner can breathe.</p>
       <div class="grid">
         <div class="panel"><h3>We May Value More Than Owner</h3><div id="edge-we-value-more"></div></div>
@@ -1971,6 +1974,7 @@ def _page(
       </div>
       <div id="waiver-table"></div>
     </div>
+    </details>
     </section>
 
     <section id="view-news">
@@ -1983,8 +1987,7 @@ def _page(
         <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched Feed Items</button>
       </div>
       <div id="news-impact-table"></div>
-      <h3>Player News Matches</h3>
-      <div id="news-match-table"></div>
+      <details class="data-drawer"><summary>Open player-match diagnostics</summary><div id="news-match-table"></div></details>
     </div>
     </section>
 
@@ -2825,7 +2828,7 @@ def _page(
       const passCount = allTeamRoster.filter(row => row.position === 'WR' || row.position === 'TE').length;
       const teamTrades = tables.trades.filter(row => Number(row.team_a_roster_id) === state.teamId || Number(row.team_b_roster_id) === state.teamId);
       const myPicksAway = tables.pick_ownership.filter(row => truthy(row.is_my_original_pick) && !truthy(row.i_currently_own_it));
-      const priorityRows = sortRows(applySearch(tables.today_priority_board), ['priority_score']).reverse().slice(0, 15);
+      const priorityRows = sortRows(applySearch(tables.today_priority_board), ['priority_score']).reverse().slice(0, 3);
 
       setText('metric-roster', allTeamRoster.length);
       setText('metric-qb', qbCount);
@@ -3143,7 +3146,7 @@ def _page(
       if (state.newsScope === 'league-impact') rows = rows.filter(row => Number(row.roster_id));
       if (state.newsScope === 'watchlist') rows = rows.filter(row => !Number(row.roster_id));
       if (state.newsScope === 'unmatched') rows = [];
-      return sortRows(applySearch(rows), ['published_at']).reverse().slice(0, 80);
+      return sortRows(applySearch(rows), ['published_at']).reverse().slice(0, 12);
     }}
 
     function filteredNewsMatches() {{
@@ -3558,21 +3561,21 @@ def _page(
       let rows = (analysis.targetTheses || []).slice();
       if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
-      return applySearch(rows).slice(0, 12);
+      return applySearch(rows).slice(0, 5);
     }}
 
     function filteredSellTheses() {{
       let rows = (analysis.sellTheses || []).slice();
       if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
-      return applySearch(rows).slice(0, 12);
+      return applySearch(rows).slice(0, 5);
     }}
 
     function filteredTradeTheses() {{
       let rows = (analysis.tradeTheses || []).slice();
       if (state.analysisScope === 'team') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.analysisConfidence !== 'ALL') rows = rows.filter(row => row.confidence === state.analysisConfidence);
-      return applySearch(rows).slice(0, 12);
+      return applySearch(rows).slice(0, 5);
     }}
 
     function currentRosterPlayerIds() {{
@@ -4336,7 +4339,10 @@ def _page(
     function draftRoomCards(rows, mode) {{
       if (!rows.length) return `<p class="note">No ${{mode === 'fade' ? 'fade' : mode === 'target' ? 'trade target' : 'available market'}} rows found in the current evidence bundle.</p>`;
       const bucket = mode === 'fade' ? 'sell' : 'buy';
-      return `<div class="brief-list">${{rows.slice(0, 12).map((row, index) => briefCard({{
+      return `<div class="brief-list">${{rows.slice(0, 5).map((row, index) => {{
+        const canonical = row.player_id ? canonicalEntityProfile('player', row.player_id) : null;
+        const profile = canonical?.profile || {{}};
+        return briefCard({{
         title: row.player_name || 'Unknown player',
         category: bucket,
         rank: index + 1,
@@ -4352,12 +4358,14 @@ def _page(
           row.horizon_status !== 'unavailable' ? `windows ${{row.horizon_fit_coverage || 'n/a'}} · next ${{row.next_game_market_score || 'n/a'}} · ROS ${{row.rest_of_season_market_score || 'n/a'}} · dynasty ${{row.dynasty_market_score || 'n/a'}}` : 'four-window unavailable',
           row.value_lane ? label(row.value_lane) : '',
           row.identity_status ? `identity ${{row.identity_status.replaceAll('_', ' ')}}` : '',
-          row.confidence ? `confidence ${{row.confidence}}` : ''
+          row.confidence ? `confidence ${{row.confidence}}` : '',
+          canonical ? 'Codex profile' : ''
         ],
-        summary: row.why || '',
-        watchouts: row.risk || '',
+        summary: profile.recommended_action ? `Codex: ${{profile.recommended_action}}` : row.why || '',
+        watchouts: profile.risk || row.risk || '',
         evidence: `${{row.evidence || 'No evidence provided.'}} Source: ${{row.source_trace || 'not recorded'}}`
-      }})).join('')}}</div>`;
+        }});
+      }}).join('')}}</div>`;
     }}
 
     function draftRoomPickCards(rows) {{
@@ -4460,7 +4468,7 @@ def _page(
     }}
 
     function managerIntelArticle() {{
-      if (analysis.managerIntelMode === 'automatic_llm') return articleBody(analysis.managerIntel);
+      if (['automatic_llm', 'codex_task'].includes(analysis.managerIntelMode)) return articleBody(analysis.managerIntel);
       const items = (analysis.managerDossierItems || [])
         .filter(row => row && row.roster_id !== undefined && row.roster_id !== null)
         .slice()
@@ -4528,7 +4536,30 @@ def _page(
     }}
 
     function articleModeLabel(mode) {{
-      return mode === 'automatic_llm' ? 'LLM-written' : 'Deterministic';
+      if (mode === 'codex_task') return 'Codex analyst';
+      return mode === 'automatic_llm' ? 'API reporter' : 'Deterministic';
+    }}
+
+    function canonicalEntityProfile(entityType, entityId) {{
+      return (analysis.canonicalEntityProfiles || []).find(row =>
+        row && row.status === 'current' && String(row.entity_type || '') === String(entityType || '') && String(row.entity_id || '') === String(entityId || '')
+      ) || {{}};
+    }}
+
+    function canonicalProfileMarkup(record, title) {{
+      const profile = record?.profile || {{}};
+      if (!record?.entity_key || !profile.headline) return '';
+      const fields = [
+        ['Current state', profile.current_state],
+        ['Role / behavior', profile.role_or_behavior],
+        ['Market / trade lane', profile.market_or_trade_lane],
+        ['Availability', profile.availability],
+        ['Fit here', profile.team_fit],
+        ['Action', profile.recommended_action],
+        ['Counter-evidence', profile.counter_evidence],
+        ['Reconsider when', profile.reconsideration_trigger]
+      ].filter(([, value]) => String(value || '').trim());
+      return `<section class="panel article-panel canonical-entity-profile" data-testid="canonical-entity-profile"><div class="brief-card-top"><div><span class="eyebrow">${{escapeHtml(title || 'Canonical profile')}}</span><h3>${{escapeHtml(profile.headline)}}</h3></div><span class="tag">Codex analyst · ${{escapeHtml(profile.confidence || 'confidence unrecorded')}}</span></div><p class="article-p">${{escapeHtml(profile.summary || '')}}</p><div class="brief-list">${{fields.map(([labelText, value]) => `<p class="brief-card-evidence"><strong>${{escapeHtml(labelText)}}:</strong> ${{escapeHtml(String(value))}}</p>`).join('')}}</div><details class="evidence-drawer"><summary>Full profile and receipt</summary>${{articleBody(profile.narrative_markdown || '')}}<p class="note"><strong>Risk:</strong> ${{escapeHtml(profile.risk || 'Not recorded')}} · evidence fingerprint ${{escapeHtml(String(record.evidence_fingerprint || '').slice(0, 12))}}</p></details></section>`;
     }}
 
     function insightFor(entityType, entityId) {{
@@ -5035,6 +5066,7 @@ def _page(
 
     function renderPlayerPage(playerId) {{
       const id = String(playerId ?? '');
+      const canonicalProfile = canonicalEntityProfile('player', id);
       const dossierRow = findRow(tables.player_dossiers, 'player_id', id);
       const signal = findRow(tables.player_signal_scores, 'player_id', id);
       const opp = findRow(tables.player_opportunity_scores, 'player_id', id);
@@ -5148,6 +5180,7 @@ def _page(
             ${{insight.one_line_read ? `<p class="article-p">${{escapeHtml(insight.one_line_read)}}</p>` : ''}}
           </div>
         </div>
+        ${{canonicalProfileMarkup(canonicalProfile, 'Canonical player profile')}}
         <div class="tile-row">
           ${{entityTile('Market Value', marketValue)}}
           ${{entityTile('Production baseline', projectionDisplay)}}
@@ -5180,6 +5213,7 @@ def _page(
 
     function renderTeamPage(rosterId) {{
       const rid = Number(rosterId);
+      const canonicalProfile = canonicalEntityProfile('manager', rid);
       const team = currentSeasonTeams().find(row => Number(row.roster_id) === rid) || findRow(tables.teams, 'roster_id', rid);
       const cycle = (tables.manager_cycle_profiles || []).find(row => Number(row.roster_id) === rid) || {{}};
       const behavior = (tables.manager_behavior_signals || []).find(row => Number(row.roster_id) === rid) || {{}};
@@ -5251,6 +5285,7 @@ def _page(
             ${{cycle.likely_sells ? `<p class="article-p">Likely sells: ${{escapeHtml(cycle.likely_sells)}}</p>` : ''}}
           </div>
         </div>
+        ${{canonicalProfileMarkup(canonicalProfile, 'Canonical manager profile')}}
         <div class="panel article-panel team-construction">
           <h3>Team construction</h3>
           <p class="note">Current-season roster snapshot for exact roster ID ${{escapeHtml(String(rid))}}. These are deterministic joins, not a lineup recommendation.</p>

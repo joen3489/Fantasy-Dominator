@@ -2484,6 +2484,201 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(plan.call_args.args[0], LeaguePaths.for_user_league(str(user_id), "plan-league"))
         self.assertEqual(plan.call_args.args[1].league_id, "plan-league")
 
+    def test_codex_editorial_export_entry_path_is_operator_gated_and_scope_bound(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md Slice 1."""
+
+        token = self._token("user_codex_export")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_codex_export")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "codex-league",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Codex League",
+                "roster_id": 4,
+                "identity_status": "verified_roster_match",
+            },
+        )
+        response_packet = {
+            "schema_version": "codex_editorial_packet_v1",
+            "state": "complete",
+            "packet_fingerprint": "packet-1",
+            "scope": {"league_id": "codex-league", "roster_id": 4},
+            "article_keys": ["trade_desk"],
+            "articles": [],
+        }
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            denied = self.client.post(
+                "/api/operator/export-editorial-packet",
+                cookies={"__session": token},
+                json={"league_id": "codex-league", "article_keys": ["trade_desk"]},
+            )
+            unknown = self.client.post(
+                "/api/operator/export-editorial-packet",
+                cookies={"__session": token},
+                headers={"x-front-office-token": "operator-secret"},
+                json={"league_id": "codex-league", "article_keys": ["made_up_desk"]},
+            )
+            with patch(
+                "app.main.front_operator.build_codex_editorial_packet",
+                return_value=response_packet,
+            ) as export_packet:
+                response = self.client.post(
+                    "/api/operator/export-editorial-packet",
+                    cookies={"__session": token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"league_id": "codex-league", "article_keys": ["trade_desk"]},
+                )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["packet_fingerprint"], "packet-1")
+        export_packet.assert_called_once()
+        self.assertEqual(
+            export_packet.call_args.args[0],
+            LeaguePaths.for_user_league(str(user_id), "codex-league"),
+        )
+        self.assertEqual(export_packet.call_args.args[1].roster_id, 4)
+        self.assertEqual(export_packet.call_args.kwargs["article_keys"], {"trade_desk"})
+
+    def test_codex_editorial_import_entry_path_rebuilds_only_after_validated_publish(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md Slice 2."""
+
+        token = self._token("user_codex_import")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_codex_import")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "codex-import",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Codex Import",
+                "roster_id": 7,
+                "identity_status": "verified_roster_match",
+            },
+        )
+        payload = {
+            "league_id": "codex-import",
+            "packet_fingerprint": "packet-7",
+            "model": "gpt-5.6-luna",
+            "articles": {
+                "trade_desk": {
+                    "evidence_fingerprint": "evidence-7",
+                    "output": {"headline": "Scoped read"},
+                }
+            },
+        }
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False), patch(
+            "app.main.front_operator.import_codex_editorial_output",
+            return_value={
+                "state": "complete",
+                "packet_fingerprint": "packet-7",
+                "writer_mode": "codex_task",
+                "written_article_keys": ["trade_desk"],
+            },
+        ) as import_output, patch(
+            "app.main._rebuild_browser_job",
+            return_value={"state": "complete", "message": "Browser bundle rebuilt."},
+        ) as rebuild:
+            response = self.client.post(
+                "/api/operator/import-editorial",
+                cookies={"__session": token},
+                headers={"x-front-office-token": "operator-secret"},
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["writer_mode"], "codex_task")
+        self.assertEqual(response.json()["browser"]["state"], "complete")
+        import_output.assert_called_once()
+        self.assertEqual(import_output.call_args.args[1], LeaguePaths.for_user_league(str(user_id), "codex-import"))
+        self.assertEqual(import_output.call_args.args[2].roster_id, 7)
+        rebuild.assert_called_once()
+
+    def test_codex_profile_entry_paths_are_operator_gated_and_scope_bound(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md Slice 3."""
+
+        token = self._token("user_codex_profiles")
+        self.client.get("/", cookies={"__session": token})
+        user_id = self._user_id("user_codex_profiles")
+        db.upsert_user_league(
+            user_id,
+            {
+                "league_id": "profile-league",
+                "season": "2026",
+                "league_type": "dynasty",
+                "name": "Profile League",
+                "roster_id": 9,
+                "identity_status": "verified_roster_match",
+            },
+        )
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False):
+            denied = self.client.post(
+                "/api/operator/export-profile-packet",
+                cookies={"__session": token},
+                json={"league_id": "profile-league", "entity_keys": ["player:101"]},
+            )
+            with patch(
+                "app.main.entity_profiles.build_profile_packet",
+                return_value={
+                    "schema_version": "codex_entity_profile_packet_v1",
+                    "state": "complete",
+                    "packet_fingerprint": "profile-packet-1",
+                    "entities": [],
+                },
+            ) as export_packet:
+                exported = self.client.post(
+                    "/api/operator/export-profile-packet",
+                    cookies={"__session": token},
+                    headers={"x-front-office-token": "operator-secret"},
+                    json={"league_id": "profile-league", "entity_keys": ["player:101"]},
+                )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(exported.status_code, 200)
+        self.assertEqual(exported.json()["packet_fingerprint"], "profile-packet-1")
+        export_packet.assert_called_once()
+        self.assertEqual(export_packet.call_args.args[0], LeaguePaths.for_user_league(str(user_id), "profile-league"))
+        self.assertEqual(export_packet.call_args.args[1].roster_id, 9)
+        self.assertEqual(export_packet.call_args.args[2], {"player:101"})
+
+        import_payload = {
+            "league_id": "profile-league",
+            "packet_fingerprint": "profile-packet-1",
+            "model": "gpt-5.6-luna",
+            "profiles": {"player:101": {"headline": "Scoped player read"}},
+        }
+        with patch.dict(os.environ, {"FRONT_OFFICE_OPERATOR_TOKEN": "operator-secret"}, clear=False), patch(
+            "app.main.entity_profiles.import_profile_output",
+            return_value={
+                "state": "complete",
+                "packet_fingerprint": "profile-packet-1",
+                "writer_mode": "codex_task",
+                "written_entity_keys": ["player:101"],
+            },
+        ) as import_output, patch(
+            "app.main._rebuild_browser_job",
+            return_value={"state": "complete", "message": "Browser bundle rebuilt."},
+        ) as rebuild:
+            imported = self.client.post(
+                "/api/operator/import-profiles",
+                cookies={"__session": token},
+                headers={"x-front-office-token": "operator-secret"},
+                json=import_payload,
+            )
+
+        self.assertEqual(imported.status_code, 200)
+        self.assertEqual(imported.json()["writer_mode"], "codex_task")
+        self.assertEqual(imported.json()["browser"]["state"], "complete")
+        import_output.assert_called_once()
+        self.assertEqual(import_output.call_args.args[1], LeaguePaths.for_user_league(str(user_id), "profile-league"))
+        self.assertEqual(import_output.call_args.args[2].roster_id, 9)
+        rebuild.assert_called_once()
+
     def test_operator_status_reports_safe_selected_reader_contract(self) -> None:
         """Encodes AGENTS.md's deployment-proof rule without exposing bundle paths."""
         token = self._token("user_reader_receipt")
@@ -2792,6 +2987,46 @@ class FastAPIClerkAppTests(unittest.TestCase):
         self.assertEqual(mismatched["last_generated_model"], "legacy-writer-model")
         self.assertEqual(mismatched["model_mismatch_count"], 1)
         self.assertEqual(mismatched["model_reconciliation"], "prior run needs regeneration")
+
+    def test_content_artifact_status_accepts_a_current_codex_publication_receipt(self) -> None:
+        """Design source: docs/single_brain_decision_product_epic.md; Codex is a truthful writer mode."""
+
+        user = db.get_or_create_user("user_codex_content_status")
+        user_id = int(user["id"])
+        db.record_content_artifact(
+            user_id,
+            "codex-content-league",
+            "2026",
+            "article",
+            "team_report",
+            "team_report.md",
+            source={"mode": "codex_task"},
+            evidence_fingerprint="codex-evidence-1",
+            bundle_revision="codex-bundle-1",
+            content_hash="codex-content-1",
+            reporter_id="topline_tony",
+            writer_mode="codex_task",
+            model="gpt-5.6-luna",
+        )
+
+        status = db.content_artifact_status(
+            user_id,
+            "codex-content-league",
+            "2026",
+            current_receipts={
+                "team_report": {
+                    "mode": "codex_task",
+                    "model": "gpt-5.6-luna",
+                    "content_hash": "codex-content-1",
+                    "editorial_review": {"mode": "llm", "status": "approved", "decision": "approve"},
+                }
+            },
+            current_bundle_revision="codex-bundle-1",
+            expected_model="gpt-5.6-luna",
+        )
+
+        self.assertEqual(status["state"], "partial")
+        self.assertEqual(status["generated_keys"], ["team_report"])
 
     def test_content_feedback_is_explicit_and_scoped_to_the_verified_roster(self) -> None:
         """Encodes docs/front_office_realization_epic.md Workstream 9 and AGENTS.md privacy rules."""

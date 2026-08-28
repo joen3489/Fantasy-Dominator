@@ -142,6 +142,13 @@ def build_editorial_issue(
         "news_signals": len(league_news_rows),
         "manager_profiles": len(_rows(tables, "manager_behavior_signals")),
         "custom_manager_profiles": len(manager_trade_profiles),
+        "canonical_profiles": len(
+            [
+                profile
+                for profile in (analysis.get("canonicalEntityProfiles") or [])
+                if isinstance(profile, Mapping) and _text(profile.get("status") or "current") == "current"
+            ]
+        ),
         "source_count": len(source_health),
     }
     article_modes = _article_modes(analysis)
@@ -199,7 +206,7 @@ def build_editorial_issue(
         },
         {
             "question": "Who should I study next?",
-            "answer": f"{signal_summary['manager_profiles']} manager profiles and {signal_summary['custom_manager_profiles']} private lenses are available.",
+            "answer": f"{signal_summary['manager_profiles']} manager dossiers and {signal_summary['canonical_profiles']} Codex profiles are available.",
             "route": "#view-league",
         },
         {
@@ -231,7 +238,7 @@ def build_editorial_issue(
         "newsroom_summary": newsroom_summary,
         "conversation_schema_version": "publication_edges_v1",
         "publication_receipt": {
-            "current_count": sum(1 for article in publication_articles if article.get("mode") == "automatic_llm" and article.get("publication_status") == "approved"),
+            "current_count": sum(1 for article in publication_articles if article.get("mode") in {"automatic_llm", "codex_task"} and article.get("publication_status") == "approved"),
             "available_count": len(publication_articles),
             "published_count": sum(1 for article in publication_articles if article.get("publication_status") == "approved"),
             "held_count": sum(1 for article in publication_articles if article.get("publication_status") == "held"),
@@ -2388,7 +2395,7 @@ def review_publication_article(
         "structured_story_spine": True,
         "evidence_receipt": bool([item for item in evidence_ids if str(item).strip()]),
         "source_receipt": bool([item for item in source_ids if str(item).strip()]),
-        "mode_contract": mode in {"deterministic_template", "automatic_llm"},
+        "mode_contract": mode in {"deterministic_template", "automatic_llm", "codex_task"},
     }
     if not checks["body_present"]:
         errors.append("article body is empty")
@@ -2408,7 +2415,12 @@ def review_publication_article(
     editor_mode = _text(stored_review.get("mode"))
     stored_status = _text(stored_review.get("status"))
     if not errors and stored_review:
-        if editor_mode == "llm" and stored_status in {"approved", "held"}:
+        # The deterministic gate's own receipt is persisted with Codex-task
+        # imports and must be safe to consume again when the browser bundle is
+        # rebuilt. We still rerun every structural and evidence check above, so
+        # accepting that receipt cannot revive an invalid article. Keep the
+        # mode explicit instead of mislabeling a Codex draft as LLM-reviewed.
+        if editor_mode in {"llm", "deterministic"} and stored_status in {"approved", "held"}:
             if stored_status == "held":
                 errors.extend(
                     str(item).strip()
@@ -2629,7 +2641,7 @@ def _neutralize_reader_story(
 
 def _writer_mode_label(article_modes: Mapping[str, str]) -> str:
     modes = set(article_modes.values())
-    has_llm = "automatic_llm" in modes
+    has_llm = bool(modes & {"automatic_llm", "codex_task"})
     has_template = "deterministic_template" in modes
     if has_llm and has_template:
         return "Mixed edition"

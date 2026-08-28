@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from src import articles, operator as front_operator
+from src import articles, entity_profiles, operator as front_operator
 from src.analysis import FALLBACK_ARTICLE_SCHEMA_VERSION
 from src.attention import load_attention
 from src.browser_site import (
@@ -53,6 +53,25 @@ class OperatorBody(BaseModel):
     league_id: str | None = None
     article_keys: list[str] = Field(default_factory=list)
     run_id: str | None = None
+
+
+class CodexEditorialImportBody(BaseModel):
+    league_id: str
+    packet_fingerprint: str
+    model: str = "gpt-5.6-luna"
+    articles: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class ProfilePacketBody(BaseModel):
+    league_id: str
+    entity_keys: list[str] = Field(default_factory=list)
+
+
+class CodexProfileImportBody(BaseModel):
+    league_id: str
+    packet_fingerprint: str
+    model: str = "gpt-5.6-luna"
+    profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class TeamProfileBody(BaseModel):
@@ -146,7 +165,7 @@ def create_app() -> FastAPI:
             "public_url_configured": bool(os.environ.get("FRONT_OFFICE_PUBLIC_URL", "").strip()),
             "public_url_ready": public_url_ready,
             "data_root_configured": bool(os.environ.get("FRONT_OFFICE_DATA_DIR", "").strip()),
-            "database_present": (DATA_DIR / "app.db").is_file(),
+            "database_present": Path(db.DB_PATH).is_file(),
             **storage,
             "writer_api_configured": writer_config["configured"],
             "writer_provider": writer_config["provider"],
@@ -598,6 +617,110 @@ def create_app() -> FastAPI:
         league = _owned_enabled_league(user, body.league_id) if body and body.league_id else None
         paths = _private_paths(int(user["id"]), str(league["league_id"])) if league else None
         return front_operator.build_insight_packet(paths)
+
+    @app.post("/api/operator/export-editorial-packet")
+    def operator_export_editorial_packet(
+        request: Request,
+        body: OperatorBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Export the private, scope-bound writer packet used by Codex and the API fallback."""
+
+        _require_operator_access(request)
+        if not str(body.league_id or "").strip():
+            raise HTTPException(status_code=400, detail="league_id is required")
+        article_keys = _validated_writer_article_keys(body.article_keys)
+        league = _owned_enabled_league(user, str(body.league_id))
+        paths = _private_paths(int(user["id"]), str(league["league_id"]))
+        context = _context_for_league(int(user["id"]), league)
+        try:
+            return front_operator.build_codex_editorial_packet(
+                paths,
+                context,
+                article_keys=article_keys or None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/operator/import-editorial")
+    def operator_import_editorial(
+        request: Request,
+        body: CodexEditorialImportBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Validate Codex output, publish it atomically, then rebuild the private reader bundle."""
+
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, body.league_id)
+        paths = _private_paths(int(user["id"]), str(league["league_id"]))
+        context = _context_for_league(int(user["id"]), league)
+        try:
+            imported = front_operator.import_codex_editorial_output(
+                (
+                    body.model_dump(exclude={"league_id"})
+                    if hasattr(body, "model_dump")
+                    else body.dict(exclude={"league_id"})
+                ),
+                paths,
+                context,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if imported.get("state") != "complete":
+            return imported
+        return {
+            **imported,
+            "browser": _rebuild_browser_job(league, int(user["id"])),
+        }
+
+    @app.post("/api/operator/export-profile-packet")
+    def operator_export_profile_packet(
+        request: Request,
+        body: ProfilePacketBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Export only eligible player/manager profiles whose evidence changed."""
+
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, body.league_id)
+        paths = _private_paths(int(user["id"]), str(league["league_id"]))
+        context = _context_for_league(int(user["id"]), league)
+        try:
+            return entity_profiles.build_profile_packet(
+                paths,
+                context,
+                {str(key).strip() for key in body.entity_keys if str(key).strip()} or None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/operator/import-profiles")
+    def operator_import_profiles(
+        request: Request,
+        body: CodexProfileImportBody,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        """Validate canonical profiles, store current/history receipts, and rebuild the reader."""
+
+        _require_operator_access(request)
+        league = _owned_enabled_league(user, body.league_id)
+        paths = _private_paths(int(user["id"]), str(league["league_id"]))
+        context = _context_for_league(int(user["id"]), league)
+        body_payload = (
+            body.model_dump(exclude={"league_id"})
+            if hasattr(body, "model_dump")
+            else body.dict(exclude={"league_id"})
+        )
+        try:
+            imported = entity_profiles.import_profile_output(body_payload, paths, context)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if imported.get("state") != "complete":
+            return imported
+        return {
+            **imported,
+            "browser": _rebuild_browser_job(league, int(user["id"])),
+        }
 
     @app.post("/api/operator/validate-insights")
     def operator_validate_insights(
@@ -2172,13 +2295,13 @@ def _writer_publication_ledger_view(league: dict[str, Any]) -> dict[str, Any]:
         default_reporter = persona_metadata({"persona_id": article.reporter_id})
         generated_at = str(receipt.get("generated_at") or "").strip()
 
-        if mode == "automatic_llm" and review_status not in {"held", "failed"}:
+        if mode in {"automatic_llm", "codex_task"} and review_status not in {"held", "failed"}:
             status = "published"
-            status_label = "Luna article"
+            status_label = "Codex analyst" if mode == "codex_task" else "Luna API article"
             byline = str(receipt.get("reporter_name") or default_reporter["name"])
             detail = str(receipt.get("model") or "gpt-5.6-luna")
             review_label = "Editor approved" if review_status == "approved" else "Desk review not recorded"
-        elif mode == "automatic_llm" and review_status in {"held", "failed"}:
+        elif mode in {"automatic_llm", "codex_task"} and review_status in {"held", "failed"}:
             status = "held"
             status_label = "Held by editor"
             byline = str(receipt.get("reporter_name") or default_reporter["name"])
@@ -2336,6 +2459,7 @@ def _load_writer_preview(user_id: int, league: dict[str, Any]) -> dict[str, Any]
     mode = front_matter.get("model_mode", "").strip()
     mode_label = {
         "automatic_llm": "API reporter",
+        "codex_task": "Codex analyst",
         "deterministic_template": "Evidence-led fallback",
     }.get(mode, "Writer output")
     generated_at = front_matter.get("generated_at", "").strip()

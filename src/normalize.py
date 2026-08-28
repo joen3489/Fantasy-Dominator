@@ -555,10 +555,17 @@ def normalize_matchup_player_points(
                 points_against = _number_or_none(opponent_raw.get("points"))
                 if points_against is None:
                     points_against = _number_or_none(opponent_raw.get("custom_points"))
-                matchup_status = "played" if _matchup_result(points_for, points_against) in {"win", "loss", "tie"} else "unplayed"
-
                 players_points = raw.get("players_points")
                 players_points = players_points if isinstance(players_points, dict) else {}
+                scoring_observed = any(
+                    value is not None and value != 0
+                    for value in (_number_or_none(points_for), *(_number_or_none(value) for value in players_points.values()))
+                )
+                matchup_status = (
+                    "played"
+                    if _matchup_result(points_for, points_against) in {"win", "loss", "tie"} or scoring_observed
+                    else "unplayed"
+                )
                 player_ids = {str(pid) for pid in listify(raw.get("players")) if pid not in (None, "")}
                 player_ids.update(str(pid) for pid in players_points if pid not in (None, ""))
                 starters = {str(pid) for pid in listify(raw.get("starters")) if pid not in (None, "")}

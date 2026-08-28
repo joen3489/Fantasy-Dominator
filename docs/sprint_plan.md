@@ -967,6 +967,36 @@ the current contract to six. Tests assert the evidence classes and league/
 roster scoping; the protected Luna run remains the paid operational acceptance
 step.
 
+### Epic 23: Single-Brain Decision Product Convergence
+
+The current execution plan lives in
+[`docs/single_brain_decision_product_epic.md`](single_brain_decision_product_epic.md).
+It reuses the existing data, recommendation, article, dossier, operator, and
+browser capabilities instead of adding another feature layer. The ordered
+release packages are:
+
+1. freeze the single-brain data and evidence-packet contract;
+2. add a structured, validated Codex import and same-packet API fallback seam;
+3. publish one canonical LLM profile per relevant player or manager;
+4. recompose existing routes around bounded decisions and progressive detail;
+5. operate the three-times-daily Luna task through authenticated publication;
+6. close the feedback loop and run the antagonistic failure/mobile audit.
+
+The epic is not complete when custom prose exists. It is complete when Today,
+Waivers, Trade Desk, entity pages, and the API fallback all reuse the same
+scope-bound evidence, recommendation identities, and canonical profiles without
+contradictions, unnecessary regeneration, or data-layer bypass.
+
+2026-08-28 local checkpoint: packages 1-4 are implemented and covered by
+entry-path tests; the active three-times-daily Luna heartbeat now names the
+real packet/import/profile/reuse/browser sequence. The refreshed data audit and
+426-test suite pass, and rendered 390-pixel Today, Waivers, Trade Desk, and My
+Team checks satisfy the 3/5/5 attention budgets without horizontal navigation
+overflow. Package 5 remains open until a current authenticated production
+edition proves Codex article/profile publication and a durable scheduled run
+receipt. Package 6 remains open for production feedback/reuse and failure-mode
+evidence.
+
 ## Source And Ownership Contracts
 
 ### Layer 0: Raw Sources

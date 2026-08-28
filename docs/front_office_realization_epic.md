@@ -16,6 +16,13 @@ making the run restartable, turning `daily_brief` into an issue-level synthesis,
 and adding a proposed Reality Check information desk. The target roster is not
 active code until its evidence scopes and entry-path tests land.
 
+Current convergence epic (2026-08-28):
+[Single-Brain Decision Product Convergence](single_brain_decision_product_epic.md)
+organizes the capabilities realized here into one decision-led experience. It
+does not add a second analysis stack: Codex and the API remain editorial workers
+over the same deterministic packets, canonical profiles feed every route, and
+the scheduled Luna loop publishes only through the validated operator seam.
+
 ## 2026-08-26 career-window presentation amendment
 
 The player dossier now gives the bounded five-year career-window score its own

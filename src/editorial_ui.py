@@ -419,7 +419,7 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
             <span id="issue-latest-news">Latest news is loading</span>
             <span id="issue-publication-receipt">Publication receipt is loading</span>
           </div>
-          <div class="issue-quick-links"><a href="#view-draft-room">Open the Draft Room</a><a href="#view-my-team">Open My Team</a></div>
+          <div class="issue-quick-links"><a href="#view-draft-room">Open Waivers &amp; Draft</a><a href="#view-my-team">Open My Team</a></div>
           <div id="issue-publication-nav" class="issue-quick-links" aria-label="Open desk reports"></div>
         </div>
         <div class="editorial-layout">
@@ -432,15 +432,19 @@ EDITORIAL_HTML = """    <div id="todays-board" class="view-block">
           </aside>
         </div>
         <div class="editorial-divider"><span>Front page desk</span></div>
+        <p class="note issue-primary-limit">Three highest-priority decision lenses. Everything else stays available below without competing for the front page.</p>
         <div id="issue-front-page" class="front-page-grid" data-testid="front-page-desk"></div>
-        <div class="editorial-divider"><span>The room is talking</span></div>
-        <section id="issue-newsroom" class="newsroom-room" data-testid="newsroom-conversation"></section>
-        <div class="editorial-divider"><span>More from this edition</span></div>
-        <div id="issue-stories" class="editorial-story-grid"></div>
-        <div class="editorial-divider"><span>Desk reports</span></div>
-        <div id="issue-publication" class="publication-grid"></div>
-        <div class="editorial-divider"><span>Read by question</span></div>
-        <div id="issue-questions" class="question-grid"></div>
+        <details class="data-drawer issue-data-drawer">
+          <summary><span>Open the editorial room and desk reports</span><span class="summary-note">secondary context</span></summary>
+          <div class="editorial-divider"><span>The room is talking</span></div>
+          <section id="issue-newsroom" class="newsroom-room" data-testid="newsroom-conversation"></section>
+          <div class="editorial-divider"><span>More from this edition</span></div>
+          <div id="issue-stories" class="editorial-story-grid"></div>
+          <div class="editorial-divider"><span>Desk reports</span></div>
+          <div id="issue-publication" class="publication-grid"></div>
+          <div class="editorial-divider"><span>Read by question</span></div>
+          <div id="issue-questions" class="question-grid"></div>
+        </details>
         <details class="data-drawer issue-data-drawer">
           <summary><span>Today's Board</span><span class="summary-note">ranked signals</span></summary>
           <div id="today-priority-board"></div>
@@ -489,7 +493,7 @@ EDITORIAL_JS = r"""
       document.getElementById('issue-lead').innerHTML = editorialStoryMarkup(issue.lead || {}, true);
       const frontPage = document.getElementById('issue-front-page');
       if (frontPage) {
-        const panels = issue.front_page_panels || [];
+        const panels = (issue.front_page_panels || []).slice(0, 3);
         frontPage.innerHTML = panels.length
           ? panels.map(frontPagePanelMarkup).join('')
           : '<p class="note">The front-page desk has no connected panels yet. Open the Data Room to inspect the available evidence.</p>';
@@ -774,8 +778,8 @@ EDITORIAL_JS = r"""
         ['priority_reads', 'ranked reads'],
         ['market_consensus', 'market values'],
         ['news_signals', 'news signals'],
-        ['manager_profiles', 'manager profiles'],
-        ['custom_manager_profiles', 'private profiles']
+        ['manager_profiles', 'manager dossiers'],
+        ['canonical_profiles', 'Codex profiles']
       ];
       return metrics.map(([key, labelText]) => `<div class="pulse-metric"><strong>${escapeHtml(String(summary[key] ?? 0))}</strong><span>${escapeHtml(labelText)}</span></div>`).join('');
     }
@@ -840,7 +844,12 @@ def inject_editorial_facade(page: str) -> str:
     )
 
     start = page.find('    <div id="todays-board" class="view-block">')
-    end = page.find('    <div id="decision-board" class="view-block">', start)
+    # Today owns only the bounded editorial front page.  Route composition may
+    # move roster diagnostics elsewhere, so use the section boundary rather
+    # than a sibling component as the replacement seam.
+    end = page.find("    </section>", start)
+    if end < 0 and start >= 0:
+        end = page.find("</section>", start)
     if start >= 0 and end > start:
         page = page[:start] + EDITORIAL_HTML + page[end:]
 
