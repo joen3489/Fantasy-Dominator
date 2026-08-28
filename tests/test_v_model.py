@@ -2348,6 +2348,7 @@ class VModelTests(unittest.TestCase):
         self.assertIn("Strategy alignment", html)
         self.assertIn("function strategyRosterRows", html)
         self.assertIn("team_needs_matrix", html)
+
         self.assertIn("strategy_fit", html)
         self.assertNotIn("Value tags are planned as a strategy overlay", html)
         self.assertIn("Projection Board", html)
@@ -2680,6 +2681,60 @@ class VModelTests(unittest.TestCase):
         self.assertIn("drafts", bundle["tables"])
         self.assertEqual(bundle["draftRoom"]["schema_version"], "draft_room_v1")
         self.assertTrue(draft_room_exists)
+
+    def test_browser_entry_path_persists_one_writer_fragment_across_reader_surfaces(self) -> None:
+        """Design source: docs/durable_newsroom_epic.md; one accepted desk call must survive the real browser entry path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            processed = root / "processed"
+            analysis = root / "analysis"
+            site = root / "site"
+            processed.mkdir()
+            analysis.mkdir()
+            self._write_minimal_processed_tables(processed)
+            (analysis / "team_report.md").write_text(
+                "\n".join(
+                    [
+                        "---",
+                        "model_mode: automatic_llm",
+                        "reporter_persona: topline_tony",
+                        "reporter_name: Topline Tony",
+                        "assigned_reporter_persona: topline_tony",
+                        "assigned_reporter_name: Topline Tony",
+                        "generated_at: 2026-08-27T23:00:00+00:00",
+                        "evidence_fingerprint: newsroom-entry-path-fingerprint",
+                        "source_receipt_json: {\"source_ids\": [\"player_dossiers\"], \"source_count\": 1}",
+                        "evidence_manifest_schema: article_evidence_manifest_v1",
+                        "evidence_manifest_json: [{\"evidence_id\": \"player:1:2026\", \"source_table\": \"player_dossiers\"}]",
+                        "article_payload_json: {\"headline\": \"The late-season stash window is opening\", \"lede\": \"Lonnie sees the next turn before the standings do.\", \"thesis\": \"The best dynasty edge is acting before the schedule forces the market to react.\", \"what_changed\": \"The schedule and role evidence now point toward a longer runway.\", \"action\": \"Investigate the stash before the next waiver cycle.\", \"counter_evidence\": \"The role is not guaranteed and the sample remains small.\", \"confidence\": \"medium\", \"evidence_ids\": [\"player:1:2026\"], \"source_ids\": [\"player_dossiers\"]}",
+                        "---",
+                        "",
+                        "# The room is shifting before Sunday",
+                        "",
+                        "## The team pulse",
+                        "Tony sees the next matchup turn before the standings do.",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            build_browser_site(site, processed, analysis_dir=analysis, league_id="league")
+            bundle = json.loads((site / "data" / "app_bundle.json").read_text(encoding="utf-8"))
+            persisted_issue = json.loads((site / "data" / "editorial_issue.json").read_text(encoding="utf-8"))
+
+        editorial = bundle["editorial"]
+        publication = next(item for item in editorial["publication_articles"] if item["key"] == "team_report")
+        panel = next(item for item in editorial["front_page_panels"] if item["key"] == "team_pulse")
+        fragment = publication["story_fragment"]
+
+        self.assertEqual(fragment["schema_version"], "writer_fragment_v1")
+        self.assertTrue(fragment["available"])
+        self.assertEqual(fragment["headline"], "The late-season stash window is opening")
+        self.assertEqual(fragment["evidence_ids"], ["player:1:2026"])
+        self.assertEqual(panel["writer_fragment"], fragment)
+        persisted_publication = next(item for item in persisted_issue["publication_articles"] if item["key"] == "team_report")
+        self.assertEqual(persisted_publication["story_fragment"], fragment)
+        self.assertIn("The late-season stash window is opening", json.dumps(bundle["editorial"], ensure_ascii=False))
 
     def test_draft_room_is_league_scoped_and_evidence_backed(self) -> None:
         room = build_draft_room(
