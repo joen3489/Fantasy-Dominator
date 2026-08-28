@@ -1772,10 +1772,12 @@ def _page(
     <div id="manager-room" class="view-block">
       <h2>League</h2>
       <div class="panel article-panel"><h3>Manager Intel <span id="manager-intel-mode" class="tag"></span></h3><div id="manager-intel"></div></div>
-      <div class="panel"><h3>Standings &amp; outcome coverage</h3><div id="league-standings" data-testid="standings-panel"></div></div>
       <h3>Manager Room</h3>
       <p class="note">Manager tags are deterministic reads from observed trades, waivers, FAAB, picks, roster shape, and recency. They estimate tendencies; they do not read minds, sadly. Click a manager card to open their page.</p>
       <div id="manager-grid"></div>
+    </div>
+      <details id="league-evidence-room" class="data-drawer route-research-drawer"><summary>Open standings, dossiers, and manager evidence</summary>
+      <div class="panel"><h3>Standings &amp; outcome coverage</h3><div id="league-standings" data-testid="standings-panel"></div></div>
       <div class="grid">
         <div class="panel"><h3>Active Manager Dossier</h3><div id="active-manager-lens"></div><div id="active-manager-dossier"></div></div>
         <div class="panel"><h3>League Manager Tags</h3><div id="manager-tag-cards"></div></div>
@@ -1786,7 +1788,6 @@ def _page(
       <h3>Manager Tag Evidence</h3>
       <div id="manager-profile-tag-table"></div>
       <div class="panel"><h3>Manager Dossiers</h3><div id="manager-dossier-receipt" class="note"></div><div id="manager-dossiers"></div></div>
-    </div>
 
     <div id="manager-map" class="view-block">
       <h2>Manager Map</h2>
@@ -1804,6 +1805,7 @@ def _page(
       <h3>League Manager Profiles</h3>
       <div id="manager-table"></div>
     </div>
+    </details>
     </section>
 
     <section id="view-trade-desk">
@@ -1980,14 +1982,19 @@ def _page(
     <section id="view-news">
     <div id="news-desk" class="view-block">
       <h2>News Desk</h2>
-      <div class="panel article-panel"><h3>News Impact Brief</h3><div id="news-impact-brief"></div></div>
+      <p class="note">Start with news tied to the selected roster. Broaden the lens only when you want the league market or waiver context.</p>
       <div class="controls">
-        <button class="news-scope active" data-news-scope="league-impact" type="button">League Impact</button>
+        <button class="news-scope active" data-news-scope="team-impact" type="button">My Team</button>
+        <button class="news-scope" data-news-scope="league-impact" type="button">League Impact</button>
         <button class="news-scope" data-news-scope="watchlist" type="button">Watchlist / Waiver</button>
         <button class="news-scope" data-news-scope="unmatched" type="button">Unmatched Feed Items</button>
       </div>
-      <div id="news-impact-table"></div>
-      <details class="data-drawer"><summary>Open player-match diagnostics</summary><div id="news-match-table"></div></details>
+      <div id="news-impact-cards"></div>
+      <details id="news-evidence-room" class="data-drawer route-research-drawer"><summary>Open player-match diagnostics and the full news feed</summary>
+        <div class="panel article-panel"><h3>Automated Feed Brief</h3><div id="news-impact-brief"></div></div>
+        <div id="news-impact-table"></div>
+        <h3>Player-match diagnostics</h3><div id="news-match-table"></div>
+      </details>
     </div>
     </section>
 
@@ -2112,7 +2119,7 @@ def _page(
       waiverScope: 'team',
       waiverStatus: 'ALL',
       gapScope: 'targets',
-      newsScope: 'league-impact'
+      newsScope: 'team-impact'
       , projectionScope: 'team',
       projectionConfidence: 'ALL',
       signalScope: 'team',
@@ -2503,7 +2510,7 @@ def _page(
         state.waiverScope = 'team';
         state.waiverStatus = 'ALL';
         state.gapScope = 'targets';
-        state.newsScope = 'league-impact';
+        state.newsScope = 'team-impact';
         state.projectionScope = 'team';
         state.projectionConfidence = 'ALL';
         state.signalScope = 'team';
@@ -2897,6 +2904,7 @@ def _page(
         assetLedgerColumns
       );
       document.getElementById('opportunity-table').innerHTML = table(applySearch(tables.opportunity_board), opportunityColumns);
+      document.getElementById('news-impact-cards').innerHTML = newsImpactCards(filteredNewsImpact());
       document.getElementById('news-impact-table').innerHTML = table(filteredNewsImpact(), newsImpactColumns);
       document.getElementById('news-match-table').innerHTML = table(filteredNewsMatches(), newsMatchColumns);
       document.getElementById('manager-grid').innerHTML = managerGridCards();
@@ -3143,6 +3151,7 @@ def _page(
 
     function filteredNewsImpact() {{
       let rows = scopedCurrentLeagueNews();
+      if (state.newsScope === 'team-impact') rows = rows.filter(row => Number(row.roster_id) === state.teamId);
       if (state.newsScope === 'league-impact') rows = rows.filter(row => Number(row.roster_id));
       if (state.newsScope === 'watchlist') rows = rows.filter(row => !Number(row.roster_id));
       if (state.newsScope === 'unmatched') rows = [];
@@ -4232,6 +4241,50 @@ def _page(
         ],
         evidence: `${{row.why || ''}} Evidence: ${{row.evidence || ''}}`
       }})).join('')}}</div>`;
+    }}
+
+    function newsImpactCards(rows) {{
+      if (!rows.length) {{
+        const scope = state.newsScope === 'team-impact' ? 'the selected roster' : 'this view';
+        return `<p class="note">No current news-impact rows are attached to ${{scope}}. No signal is better than filler.</p>`;
+      }}
+      const grouped = [];
+      const byPlayer = new Map();
+      rows.forEach(row => {{
+        const key = String(row.player_id || row.player_name || row.event_id || grouped.length);
+        if (!byPlayer.has(key)) {{
+          const item = {{ ...row, impactTypes: [], evidenceLines: [], sourceTraces: [] }};
+          grouped.push(item);
+          byPlayer.set(key, item);
+        }}
+        const item = byPlayer.get(key);
+        if (row.impact_type && !item.impactTypes.includes(row.impact_type)) item.impactTypes.push(row.impact_type);
+        if (row.evidence && !item.evidenceLines.includes(row.evidence)) item.evidenceLines.push(row.evidence);
+        const trace = row.source_trace || row.source;
+        if (trace && !item.sourceTraces.includes(trace)) item.sourceTraces.push(trace);
+      }});
+      return `<div class="brief-list">${{grouped.slice(0, 8).map((row, index) => {{
+        const mixed = row.impactTypes.length > 1;
+        const impactLabel = mixed ? 'mixed signal' : label(row.impactTypes[0] || row.impact_type || 'news update');
+        const caution = mixed ? ' Contradictory attention is a watch signal, not an action.' : '';
+        return briefCard({{
+        title: `${{row.player_name || 'Unmatched player'}} - ${{impactLabel}}`,
+        category: mixed ? 'info' : categoryFor('impact_type', row.impactTypes[0] || row.impact_type),
+        rank: index + 1,
+        playerId: row.player_id,
+        reporterKey: 'daily_brief',
+        entityHash: row.player_id ? `player-${{row.player_id}}` : '',
+        chips: [
+          row.team_name || 'waiver / watchlist',
+          row.source,
+          mixed ? row.impactTypes.map(label).join(' + ') : '',
+          row.confidence ? `confidence ${{row.confidence}}` : '',
+          row.risk ? `risk ${{row.risk}}` : '',
+          row.published_at ? `published ${{String(row.published_at).slice(0, 10)}}` : ''
+        ],
+        evidence: `${{row.evidenceLines.join(' · ') || 'No evidence summary was recorded.'}}${{caution}} Source: ${{row.sourceTraces.join(' · ') || 'source trace unavailable'}}`
+      }});
+      }}).join('')}}</div>`;
     }}
 
     function counterpartyCards(rows) {{
